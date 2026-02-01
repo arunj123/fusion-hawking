@@ -4,11 +4,11 @@ import os
 import struct
 import socket
 
-# Add src to path
-sys.path.append(os.path.join(os.getcwd(), 'src'))
+# Add build/generated/python to path
+sys.path.insert(0, os.path.join(os.getcwd(), 'build', 'generated', 'python'))
 
-from generated.runtime import SomeIpRuntime
-from generated.bindings import MathServiceStub, MathServiceClient
+from runtime import SomeIpRuntime
+from bindings import MathServiceStub, MathServiceClient
 
 class MockSocket:
     def __init__(self):

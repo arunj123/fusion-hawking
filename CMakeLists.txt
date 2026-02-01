@@ -4,7 +4,7 @@ project(FusionHawking_Cpp)
 set(CMAKE_CXX_STANDARD 17)
 
 # Bindings Header location
-include_directories(${CMAKE_SOURCE_DIR}/src/generated)
+include_directories(${CMAKE_BINARY_DIR}/generated/cpp)
 
 # 1. C++ App (Demo)
 add_executable(cpp_app examples/cpp_app/main.cpp)

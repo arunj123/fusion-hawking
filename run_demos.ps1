@@ -1,4 +1,11 @@
 # Run Demos Script
+Write-Host "Generating bindings..."
+python -m tools.codegen.main examples/interface.py
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Code Generation Failed"
+    exit 1
+}
+
 Write-Host "Building Fusion Hawking..."
 cargo build --examples
 if ($LASTEXITCODE -ne 0) {

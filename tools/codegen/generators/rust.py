@@ -4,10 +4,10 @@ from ..models import Struct, Service, Method, Field, Type
 class RustGenerator(AbstractGenerator):
     def generate(self, structs: list[Struct], services: list[Service]) -> dict[str, str]:
         lines = [
-            "use crate::codec::{SomeIpSerialize, SomeIpDeserialize, SomeIpHeader};",
+            "use fusion_hawking::codec::{SomeIpSerialize, SomeIpDeserialize, SomeIpHeader};",
             "use std::io::{Result, Write, Read, Cursor};",
             "use std::sync::Arc;",
-            "use crate::transport::{UdpTransport, SomeIpTransport};",
+            "use fusion_hawking::transport::{UdpTransport, SomeIpTransport};",
             "use std::net::SocketAddr;",
             ""
         ]
@@ -43,7 +43,7 @@ class RustGenerator(AbstractGenerator):
             # Client Proxy
             lines.append(self._generate_client_proxy(svc))
 
-        return {"src/generated/mod.rs": "\n".join(lines)}
+        return {"build/generated/rust/mod.rs": "\n".join(lines)}
 
     def _generate_struct(self, s: Struct) -> str:
         lines = []
@@ -92,7 +92,7 @@ class RustGenerator(AbstractGenerator):
         lines.append("    pub fn new(provider: Arc<T>) -> Self { Self { provider } }")
         lines.append("}")
         
-        lines.append(f"impl<T: {svc.name}Provider> crate::runtime::RequestHandler for {svc.name}Server<T> {{")
+        lines.append(f"impl<T: {svc.name}Provider> fusion_hawking::runtime::RequestHandler for {svc.name}Server<T> {{")
         lines.append(f"    fn service_id(&self) -> u16 {{ {svc.id} }}")
         lines.append("    fn handle(&self, header: &SomeIpHeader, payload: &[u8]) -> Option<Vec<u8>> {")
         lines.append(f"        if header.service_id != {svc.id} {{ return None; }}")
@@ -131,7 +131,7 @@ class RustGenerator(AbstractGenerator):
         lines.append("    target: SocketAddr,")
         lines.append("}")
         
-        lines.append(f"impl crate::runtime::ServiceClient for {svc.name}Client {{")
+        lines.append(f"impl fusion_hawking::runtime::ServiceClient for {svc.name}Client {{")
         lines.append(f"    const SERVICE_ID: u16 = {svc.id};")
         lines.append("    fn new(transport: Arc<UdpTransport>, target: SocketAddr) -> Self { Self { transport, target } }")
         lines.append("}")

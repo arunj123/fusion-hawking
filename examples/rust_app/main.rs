@@ -1,9 +1,15 @@
 use fusion_hawking::runtime::SomeIpRuntime;
-use fusion_hawking::generated::{
+// Include generated code relative to the workspace root (assumed CWD for cargo run usually, but path relative to file is tricky with include)
+// Using CARGO_MANIFEST_DIR which points to the package root (fusion-hawking dir)
+pub mod generated {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/build/generated/rust/mod.rs"));
+}
+use generated::{
     MathServiceProvider, MathServiceServer,
     StringServiceClient
 };
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -11,20 +17,27 @@ use std::time::Duration;
 struct MathImpl;
 impl MathServiceProvider for MathImpl {
     fn add(&self, a: i32, b: i32) -> i32 {
-        println!("Server: Math.Add({}, {})", a, b);
+        println!("[RUST] Server: Math.Add({}, {})", a, b);
         a + b
     }
     fn sub(&self, a: i32, b: i32) -> i32 {
-        println!("Server: Math.Sub({}, {})", a, b);
+        println!("[RUST] Server: Math.Sub({}, {})", a, b);
         a - b
     }
 }
 
-fn main() -> std::io::Result<()> {
-    println!("--- High-Level Rust Runtime Demo (Configured) ---");
+fn main() {
+    println!("[RUST] --- High-Level Rust Runtime Demo (Configured) ---");
+    
+    // Setup Ctrl+C handler for graceful shutdown
+    let running = Arc::new(AtomicBool::new(true));
+    let r = running.clone();
+    ctrlc::set_handler(move || {
+        println!("[RUST] Shutting down gracefully...");
+        r.store(false, Ordering::SeqCst);
+    }).expect("Error setting Ctrl-C handler");
     
     // 1. Initialize Runtime from Config
-    // Assumes running from project root where examples/config.json exists
     let rt = SomeIpRuntime::load("examples/config.json", "rust_app_instance");
     
     // 2. Offer Services
@@ -32,27 +45,30 @@ fn main() -> std::io::Result<()> {
     rt.offer_service("math-service", Box::new(math_service));
     
     // 3. Start Runtime Loop (Background)
-    let rt_clone = rt.clone();
+    let rt_for_loop = rt.clone();
     thread::spawn(move || {
-        rt_clone.run();
+        rt_for_loop.run();
     });
     
     // 4. Client Logic
     thread::sleep(Duration::from_secs(2));
     
-    println!("Client: Waiting to discover services...");
+    println!("[RUST] Client: Waiting to discover services...");
     
-    loop {
+    while running.load(Ordering::Relaxed) {
         // Try to get StringClient (Python) using Alias
         if let Some(client) = rt.get_client::<StringServiceClient>("string-client") {
-             println!("Client: Found StringService! Sending Request...");
+             println!("[RUST] Client: Found StringService! Sending Request...");
              match client.reverse("Hello World".to_string()) {
-                 Ok(_) => println!("Client: Request Sent OK"),
-                 Err(e) => println!("Client: Request Failed: {}", e),
+                 Ok(_) => println!("[RUST] Client: Request Sent OK"),
+                 Err(e) => println!("[RUST] Client: Request Failed: {}", e),
              }
         }
         
         thread::sleep(Duration::from_secs(2));
     }
-    Ok(())
+    
+    rt.stop();
+    println!("[RUST] Shutdown complete.");
 }
+

@@ -28,7 +28,15 @@ impl FusionLogger for ConsoleLogger {
             LogLevel::Warn => "WARN ",
             LogLevel::Error => "ERROR",
         };
-        // Simple timestamp could be added if dependencies allowed, but keeping minimal.
-        println!("[{}] [{}] {}", level_str, component, msg);
+        // Timestamp using system time (seconds since program start would need static, so using epoch millis % day)
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        let secs = now.as_secs() % 86400; // seconds in day
+        let millis = now.subsec_millis();
+        let h = secs / 3600;
+        let m = (secs % 3600) / 60;
+        let s = secs % 60;
+        println!("[{:02}:{:02}:{:02}.{:03}] [{}] [{}] {}", h, m, s, millis, level_str, component, msg);
     }
 }

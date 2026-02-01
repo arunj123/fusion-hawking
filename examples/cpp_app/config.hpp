@@ -25,6 +25,7 @@ struct ClientConfig {
 
 struct InstanceConfig {
     std::string ip;
+    int ip_version = 4; // Default to IPv4
     std::map<std::string, ServiceConfig> providing;
     std::map<std::string, ClientConfig> required;
 };
@@ -91,6 +92,10 @@ public:
             std::string req_block = block.substr(r_start, r_end - r_start);
             ParseRequired(req_block, config.required);
         }
+        
+        // 4. Parse ip_version
+        config.ip_version = ExtractInt(block, "ip_version");
+        if (config.ip_version == 0) config.ip_version = 4; // Default
 
         return config;
     }

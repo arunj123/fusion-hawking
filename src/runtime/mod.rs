@@ -8,7 +8,7 @@ use std::fs::File;
 use std::io::BufReader;
 
 use std::sync::{Arc, Mutex, RwLock};
-use std::net::SocketAddr;
+use std::net::{SocketAddr, Ipv4Addr};
 use std::collections::HashMap;
 use std::thread;
 use std::time::Duration;
@@ -62,11 +62,17 @@ impl SomeIpRuntime {
         logger.log(LogLevel::Info, "Runtime", &format!("Initializing '{}' on port {}", instance_name, bind_port));
 
         let sd_multicast: SocketAddr = "224.0.0.1:30490".parse().unwrap();
-        let sd_bind: SocketAddr = "0.0.0.0:0".parse().unwrap();
-        let sd_transport = UdpTransport::new(sd_bind).expect("Failed to bind SD transport");
+        // Bind to multicast port with SO_REUSEADDR for port sharing
+        let sd_bind: SocketAddr = "0.0.0.0:30490".parse().unwrap();
+        let sd_transport = UdpTransport::new_multicast(sd_bind).expect("Failed to bind SD transport");
+        // Join multicast group
+        let multicast_ip: Ipv4Addr = "224.0.0.1".parse().unwrap();
+        let any_interface: Ipv4Addr = "0.0.0.0".parse().unwrap();
+        let _ = sd_transport.join_multicast_v4(&multicast_ip, &any_interface);
         let sd = ServiceDiscovery::new(sd_transport, sd_multicast);
         
-        let addr: SocketAddr = format!("0.0.0.0:{}", bind_port).parse().unwrap();
+        let bind_any = if instance_config.ip_version == 6 { "[::]" } else { "0.0.0.0" };
+        let addr: SocketAddr = format!("{}:{}", bind_any, bind_port).parse().unwrap();
         let transport = UdpTransport::new(addr).expect("Failed to bind Transport");
         transport.set_nonblocking(true).unwrap();
 

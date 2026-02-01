@@ -2,6 +2,7 @@
     "instances": {
         "rust_app_instance": {
             "ip": "127.0.0.1",
+            "ip_version": 4,
             "providing": {
                 "math-service": {
                     "service_id": 4097,

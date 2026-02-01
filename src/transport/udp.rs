@@ -12,6 +12,29 @@ impl UdpTransport {
         Ok(UdpTransport { socket })
     }
     
+    /// Create a multicast-ready socket with SO_REUSEADDR for shared port binding
+    pub fn new_multicast(bind_addr: SocketAddr) -> Result<Self> {
+        use socket2::{Socket, Domain, Type, Protocol};
+        
+        let domain = match bind_addr {
+            SocketAddr::V4(_) => Domain::IPV4,
+            SocketAddr::V6(_) => Domain::IPV6,
+        };
+        
+        let socket = Socket::new(domain, Type::DGRAM, Some(Protocol::UDP))?;
+        
+        // Set SO_REUSEADDR to allow multiple processes to bind
+        socket.set_reuse_address(true)?;
+        
+        // On some platforms, also need SO_REUSEPORT
+        #[cfg(not(windows))]
+        socket.set_reuse_port(true)?;
+        
+        socket.bind(&bind_addr.into())?;
+        
+        Ok(UdpTransport { socket: socket.into() })
+    }
+    
     pub fn try_clone(&self) -> Result<Self> {
          Ok(UdpTransport { socket: self.socket.try_clone()? })
     }

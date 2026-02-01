@@ -14,4 +14,5 @@ pub use sd::entries::{SdEntry, EntryType};
 pub use sd::options::SdOption;
 pub use runtime::*;
 
-pub mod generated;
+// Generated code is now in build/generated/rust/ and should be
+// included directly by applications, not as a module of this crate.

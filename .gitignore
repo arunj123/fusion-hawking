@@ -11,3 +11,10 @@ build
 .venv
 
 src/generated/__pycache__/bindings.cpython-312.pyc
+build_err.txt
+.gitignore
+test_output.txt
+cargo_warnings.txt
+build_warnings.txt
+build_cpp_err.txt
+rust_test_out.txt

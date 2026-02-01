@@ -2,6 +2,8 @@
 #include <string>
 #include <iostream>
 #include <memory>
+#include <chrono>
+#include <iomanip>
 
 enum class LogLevel {
     DEBUG,
@@ -26,6 +28,18 @@ public:
             case LogLevel::WARN:  levelStr = "WARN "; break;
             case LogLevel::ERR:   levelStr = "ERROR"; break;
         }
-        std::cout << "[" << levelStr << "] [" << component << "] " << msg << std::endl;
+        // Timestamp
+        auto now = std::chrono::system_clock::now();
+        auto time = std::chrono::system_clock::to_time_t(now);
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
+        std::tm tm_buf;
+#ifdef _WIN32
+        localtime_s(&tm_buf, &time);
+#else
+        localtime_r(&time, &tm_buf);
+#endif
+        std::cout << "[" << std::put_time(&tm_buf, "%H:%M:%S") << "." << std::setfill('0') << std::setw(3) << ms.count() 
+                  << "] [" << levelStr << "] [" << component << "] " << msg << std::endl;
     }
 };
+

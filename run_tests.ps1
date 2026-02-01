@@ -13,6 +13,13 @@ if (Test-Path ".venv/Scripts/Activate.ps1") {
 Write-Host "Installing requirements..."
 pip install -r requirements.txt
 
+Write-Host "Generating bindings..."
+python -m tools.codegen.main examples/interface.py
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Code Generation Failed"
+    exit 1
+}
+
 Write-Host "Running Rust Unit Tests..."
 cargo test
 if ($LASTEXITCODE -ne 0) {

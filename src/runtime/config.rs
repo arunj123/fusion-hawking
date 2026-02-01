@@ -31,11 +31,15 @@ pub struct ClientConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct InstanceConfig {
     pub ip: String,
+    #[serde(default = "default_ip_version")]
+    pub ip_version: u8,
     #[serde(default)]
     pub providing: HashMap<String, ServiceConfig>,
     #[serde(default)]
     pub required: HashMap<String, ClientConfig>,
 }
+
+fn default_ip_version() -> u8 { 4 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct SystemConfig {

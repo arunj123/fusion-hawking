@@ -44,7 +44,7 @@ class PythonGenerator(AbstractGenerator):
             # Client
             lines.append(self._generate_client(svc))
 
-        return {"src/generated/bindings.py": "\n".join(lines), "src/generated/runtime.py": self._generate_runtime_code()}
+        return {"build/generated/python/bindings.py": "\n".join(lines), "build/generated/python/runtime.py": self._generate_runtime_code()}
 
     def _generate_runtime_code(self) -> str:
         return """
@@ -70,8 +70,10 @@ class Logger:
 
 class ConsoleLogger(Logger):
     def log(self, level, component, msg):
+        import datetime
+        ts = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
         lvl_str = ["DEBUG", "INFO ", "WARN ", "ERROR"][level]
-        print(f"[{lvl_str}] [{component}] {msg}")
+        print(f"[{ts}] [{lvl_str}] [{component}] {msg}")
 
 # --- Runtime ---
 class SomeIpRuntime:
@@ -146,10 +148,7 @@ class SomeIpRuntime:
         self._send_offer(service_id, instance_id, port)
 
     def _send_offer(self, service_id, instance_id, port):
-        # ... (Same as before)
-        # Assuming unchanged logic for packet construction, omitting full body for brevity in this step if possible?
-        # No, must include full body in replacement.
-        
+        # Build SD payload
         flags_res = 0x80000000
         opt_len_val = 9
         opt_type = 0x04
@@ -173,10 +172,23 @@ class SomeIpRuntime:
         
         entry = struct.pack(">BBBBHHII", entry_type, idx1, idx2, num_opts_byte, service_id, instance_id, maj_ttl, minor)
         
-        header = struct.pack(">II", flags_res, len_entries)
+        sd_header = struct.pack(">II", flags_res, len_entries)
         opt_len_field = struct.pack(">I", len(option))
         
-        msg = header + entry + opt_len_field + option
+        sd_payload = sd_header + entry + opt_len_field + option
+        
+        # SOME/IP Header for SD (service=0xFFFF, method=0x8100)
+        payload_len = len(sd_payload) + 8  # +8 for client_id to return_code
+        someip_header = struct.pack(">HHIHH4B",
+            0xFFFF,  # service_id
+            0x8100,  # method_id
+            payload_len,  # length
+            0x0000,  # client_id
+            0x0001,  # session_id
+            0x01, 0x01, 0x02, 0x00  # proto_ver, iface_ver, msg_type, ret_code
+        )
+        
+        msg = someip_header + sd_payload
         try:
             self.sd_sock.sendto(msg, ('224.0.0.1', 30490))
         except: pass
@@ -215,7 +227,26 @@ class SomeIpRuntime:
                             if stub:
                                 stub.handle_request(data, addr, self.sock)
                     elif s == self.sd_sock:
-                        pass 
+                        # Parse SD offer packet
+                        # SOME/IP Header: 16 bytes
+                        # SD Payload: flags(4) + entries_len(4) + entry(16) + opts_len(4) + option(...)
+                        # Entry: type(1)+idx1(1)+idx2(1)+num_opts(1)+service_id(2)+instance_id(2)+ver_ttl(4)+minor(4)
+                        # Option IPv4: length(2)+type(1)+res(1)+ip(4)+res(1)+proto(1)+port(2)
+                        if len(data) >= 56:
+                            # Service ID at offset 16+4+4+4 = 28-29
+                            service_id = struct.unpack(">H", data[28:30])[0]
+                            # IP at offset 16+4+4+16+4+4 = 48-51
+                            ip_bytes = data[48:52]
+                            ip_str = f"{ip_bytes[0]}.{ip_bytes[1]}.{ip_bytes[2]}.{ip_bytes[3]}"
+                            # Port at offset 16+4+4+16+4+10 = 54-55
+                            port = struct.unpack(">H", data[54:56])[0]
+                            if ip_str != "0.0.0.0" and port > 0 and ip_str != "127.0.0.1":
+                                self.remote_services[service_id] = (ip_str, port)
+                                self.logger.log(LogLevel.DEBUG, "SD", f"Discovered 0x{service_id:04x} at {ip_str}:{port}")
+                            elif ip_str == "127.0.0.1" and port > 0:
+                                # Local loopback, still register
+                                self.remote_services[service_id] = (ip_str, port)
+                                self.logger.log(LogLevel.DEBUG, "SD", f"Discovered 0x{service_id:04x} at {ip_str}:{port}")
                 except: pass
 """
 

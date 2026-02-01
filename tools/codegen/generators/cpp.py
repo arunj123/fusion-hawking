@@ -48,7 +48,7 @@ class CppGenerator(AbstractGenerator):
 
         lines.append("")
         lines.append("// Glue for Clients")
-        lines.append("void SendRequestGlue(void* rt, uint16_t sid, const std::vector<uint8_t>& payload);")
+        lines.append("void SendRequestGlue(void* rt, uint16_t sid, uint16_t mid, const std::vector<uint8_t>& payload);")
         lines.append("")
 
         for s in structs:
@@ -138,13 +138,13 @@ class CppGenerator(AbstractGenerator):
                  lines.append(f"        // Expect user to provide 'ISomeIpRuntime' before including this?")
                  lines.append(f"        // Let's use void* and cast, confusing.")
                  lines.append(f"        // Better: Expect 'extern void SendRequestGlue(void* rt, uint16_t sid, const std::vector<uint8_t>& payload);'")
-                 lines.append(f"        SendRequestGlue(runtime, service_id, payload);")
+                 lines.append(f"        SendRequestGlue(runtime, service_id, {m.id}, payload);")
                  lines.append(f"    }}")
 
              lines.append("};")
 
         lines.append("} // namespace generated")
-        return {"src/generated/bindings.h": "\n".join(lines)}
+        return {"build/generated/cpp/bindings.h": "\n".join(lines)}
 
     def _generate_struct(self, s: Struct) -> str:
         lines = []

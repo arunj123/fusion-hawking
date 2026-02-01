@@ -29,8 +29,9 @@ def main():
         output_files.update(gen.generate(structs, services))
         
     # 3. Write
-    os.makedirs("src/generated", exist_ok=True)
     for filename, content in output_files.items():
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
         print(f"Writing {filename}...")
         with open(filename, "w") as f:
             f.write(content)
