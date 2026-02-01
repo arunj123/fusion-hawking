@@ -88,22 +88,20 @@ class MathServiceStub:
         return False
 class MathServiceClient:
     SERVICE_ID = 0x1001
-    def __init__(self, sock, addr):
-        self.sock = sock
-        self.addr = addr
+    def __init__(self, runtime, alias=None):
+        self.runtime = runtime
+        self.alias = alias
     def add(self, a, b):
         req = MathServiceAddRequest(a, b)
         payload = req.serialize()
-        # Header: SvcID, MethodID, Len, ReqID, Proto, Ver, Type, Ret
         hdr = struct.pack('>HHIIBBBB', 4097, 1, len(payload)+8, 0x11110001, 0x01, 0x01, 0x00, 0x00)
-        self.sock.sendto(hdr + payload, self.addr)
+        self.runtime.send_request(self.alias, 4097, hdr + payload)
 
     def sub(self, a, b):
         req = MathServiceSubRequest(a, b)
         payload = req.serialize()
-        # Header: SvcID, MethodID, Len, ReqID, Proto, Ver, Type, Ret
         hdr = struct.pack('>HHIIBBBB', 4097, 2, len(payload)+8, 0x11110001, 0x01, 0x01, 0x00, 0x00)
-        self.sock.sendto(hdr + payload, self.addr)
+        self.runtime.send_request(self.alias, 4097, hdr + payload)
 
 # --- Service StringService ---
 class StringServiceReverseRequest:
@@ -177,22 +175,20 @@ class StringServiceStub:
         return False
 class StringServiceClient:
     SERVICE_ID = 0x2001
-    def __init__(self, sock, addr):
-        self.sock = sock
-        self.addr = addr
+    def __init__(self, runtime, alias=None):
+        self.runtime = runtime
+        self.alias = alias
     def reverse(self, text):
         req = StringServiceReverseRequest(text)
         payload = req.serialize()
-        # Header: SvcID, MethodID, Len, ReqID, Proto, Ver, Type, Ret
         hdr = struct.pack('>HHIIBBBB', 8193, 1, len(payload)+8, 0x11110001, 0x01, 0x01, 0x00, 0x00)
-        self.sock.sendto(hdr + payload, self.addr)
+        self.runtime.send_request(self.alias, 8193, hdr + payload)
 
     def uppercase(self, text):
         req = StringServiceUppercaseRequest(text)
         payload = req.serialize()
-        # Header: SvcID, MethodID, Len, ReqID, Proto, Ver, Type, Ret
         hdr = struct.pack('>HHIIBBBB', 8193, 2, len(payload)+8, 0x11110001, 0x01, 0x01, 0x00, 0x00)
-        self.sock.sendto(hdr + payload, self.addr)
+        self.runtime.send_request(self.alias, 8193, hdr + payload)
 
 # --- Service SortService ---
 class SortServiceSortAscRequest:
@@ -272,19 +268,17 @@ class SortServiceStub:
         return False
 class SortServiceClient:
     SERVICE_ID = 0x3001
-    def __init__(self, sock, addr):
-        self.sock = sock
-        self.addr = addr
+    def __init__(self, runtime, alias=None):
+        self.runtime = runtime
+        self.alias = alias
     def sort_asc(self, data):
         req = SortServiceSortAscRequest(data)
         payload = req.serialize()
-        # Header: SvcID, MethodID, Len, ReqID, Proto, Ver, Type, Ret
         hdr = struct.pack('>HHIIBBBB', 12289, 1, len(payload)+8, 0x11110001, 0x01, 0x01, 0x00, 0x00)
-        self.sock.sendto(hdr + payload, self.addr)
+        self.runtime.send_request(self.alias, 12289, hdr + payload)
 
     def sort_desc(self, data):
         req = SortServiceSortDescRequest(data)
         payload = req.serialize()
-        # Header: SvcID, MethodID, Len, ReqID, Proto, Ver, Type, Ret
         hdr = struct.pack('>HHIIBBBB', 12289, 2, len(payload)+8, 0x11110001, 0x01, 0x01, 0x00, 0x00)
-        self.sock.sendto(hdr + payload, self.addr)
+        self.runtime.send_request(self.alias, 12289, hdr + payload)

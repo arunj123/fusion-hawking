@@ -1,4 +1,5 @@
 pub mod codec;
+pub mod logging;
 pub mod ffi;
 pub mod runtime;
 pub mod sd;

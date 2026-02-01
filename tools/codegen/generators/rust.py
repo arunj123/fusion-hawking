@@ -90,8 +90,11 @@ class RustGenerator(AbstractGenerator):
         lines.append("}")
         lines.append(f"impl<T: {svc.name}Provider> {svc.name}Server<T> {{")
         lines.append("    pub fn new(provider: Arc<T>) -> Self { Self { provider } }")
+        lines.append("}")
         
-        lines.append("    pub fn handle_request(&self, header: &SomeIpHeader, payload: &[u8]) -> Option<Vec<u8>> {")
+        lines.append(f"impl<T: {svc.name}Provider> crate::runtime::RequestHandler for {svc.name}Server<T> {{")
+        lines.append(f"    fn service_id(&self) -> u16 {{ {svc.id} }}")
+        lines.append("    fn handle(&self, header: &SomeIpHeader, payload: &[u8]) -> Option<Vec<u8>> {")
         lines.append(f"        if header.service_id != {svc.id} {{ return None; }}")
         lines.append("        match header.method_id {")
         for m in svc.methods:
@@ -127,8 +130,13 @@ class RustGenerator(AbstractGenerator):
         lines.append("    transport: Arc<UdpTransport>,")
         lines.append("    target: SocketAddr,")
         lines.append("}")
+        
+        lines.append(f"impl crate::runtime::ServiceClient for {svc.name}Client {{")
+        lines.append(f"    const SERVICE_ID: u16 = {svc.id};")
+        lines.append("    fn new(transport: Arc<UdpTransport>, target: SocketAddr) -> Self { Self { transport, target } }")
+        lines.append("}")
+        
         lines.append(f"impl {svc.name}Client {{")
-        lines.append("    pub fn new(transport: Arc<UdpTransport>, target: SocketAddr) -> Self { Self { transport, target } }")
         
         for m in svc.methods:
             method_pascal = m.name.title().replace('_', '')

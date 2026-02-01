@@ -1,11 +1,10 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::sd::entries::{SdEntry, EntryType};
+    use std::net::{Ipv4Addr, Ipv6Addr};
     use crate::sd::options::SdOption;
     use crate::sd::packet::SdPacket;
     use crate::codec::{SomeIpSerialize, SomeIpDeserialize};
-    use std::net::{Ipv4Addr, Ipv6Addr};
 
     #[test]
     fn test_sd_packet_serialization() {

@@ -108,7 +108,10 @@ pub struct MathServiceServer<T: MathServiceProvider> {
 }
 impl<T: MathServiceProvider> MathServiceServer<T> {
     pub fn new(provider: Arc<T>) -> Self { Self { provider } }
-    pub fn handle_request(&self, header: &SomeIpHeader, payload: &[u8]) -> Option<Vec<u8>> {
+}
+impl<T: MathServiceProvider> crate::runtime::RequestHandler for MathServiceServer<T> {
+    fn service_id(&self) -> u16 { 4097 }
+    fn handle(&self, header: &SomeIpHeader, payload: &[u8]) -> Option<Vec<u8>> {
         if header.service_id != 4097 { return None; }
         match header.method_id {
             1 => {
@@ -139,8 +142,11 @@ pub struct MathServiceClient {
     transport: Arc<UdpTransport>,
     target: SocketAddr,
 }
+impl crate::runtime::ServiceClient for MathServiceClient {
+    const SERVICE_ID: u16 = 4097;
+    fn new(transport: Arc<UdpTransport>, target: SocketAddr) -> Self { Self { transport, target } }
+}
 impl MathServiceClient {
-    pub fn new(transport: Arc<UdpTransport>, target: SocketAddr) -> Self { Self { transport, target } }
     pub fn add(&self, a: i32, b: i32) -> std::io::Result<i32> {
         let req = MathServiceAddRequest { a, b };
         let mut payload = Vec::new();
@@ -242,7 +248,10 @@ pub struct StringServiceServer<T: StringServiceProvider> {
 }
 impl<T: StringServiceProvider> StringServiceServer<T> {
     pub fn new(provider: Arc<T>) -> Self { Self { provider } }
-    pub fn handle_request(&self, header: &SomeIpHeader, payload: &[u8]) -> Option<Vec<u8>> {
+}
+impl<T: StringServiceProvider> crate::runtime::RequestHandler for StringServiceServer<T> {
+    fn service_id(&self) -> u16 { 8193 }
+    fn handle(&self, header: &SomeIpHeader, payload: &[u8]) -> Option<Vec<u8>> {
         if header.service_id != 8193 { return None; }
         match header.method_id {
             1 => {
@@ -273,8 +282,11 @@ pub struct StringServiceClient {
     transport: Arc<UdpTransport>,
     target: SocketAddr,
 }
+impl crate::runtime::ServiceClient for StringServiceClient {
+    const SERVICE_ID: u16 = 8193;
+    fn new(transport: Arc<UdpTransport>, target: SocketAddr) -> Self { Self { transport, target } }
+}
 impl StringServiceClient {
-    pub fn new(transport: Arc<UdpTransport>, target: SocketAddr) -> Self { Self { transport, target } }
     pub fn reverse(&self, text: String) -> std::io::Result<String> {
         let req = StringServiceReverseRequest { text };
         let mut payload = Vec::new();
@@ -376,7 +388,10 @@ pub struct SortServiceServer<T: SortServiceProvider> {
 }
 impl<T: SortServiceProvider> SortServiceServer<T> {
     pub fn new(provider: Arc<T>) -> Self { Self { provider } }
-    pub fn handle_request(&self, header: &SomeIpHeader, payload: &[u8]) -> Option<Vec<u8>> {
+}
+impl<T: SortServiceProvider> crate::runtime::RequestHandler for SortServiceServer<T> {
+    fn service_id(&self) -> u16 { 12289 }
+    fn handle(&self, header: &SomeIpHeader, payload: &[u8]) -> Option<Vec<u8>> {
         if header.service_id != 12289 { return None; }
         match header.method_id {
             1 => {
@@ -407,8 +422,11 @@ pub struct SortServiceClient {
     transport: Arc<UdpTransport>,
     target: SocketAddr,
 }
+impl crate::runtime::ServiceClient for SortServiceClient {
+    const SERVICE_ID: u16 = 12289;
+    fn new(transport: Arc<UdpTransport>, target: SocketAddr) -> Self { Self { transport, target } }
+}
 impl SortServiceClient {
-    pub fn new(transport: Arc<UdpTransport>, target: SocketAddr) -> Self { Self { transport, target } }
     pub fn sort_asc(&self, data: Vec<i32>) -> std::io::Result<Vec<i32>> {
         let req = SortServiceSortAscRequest { data };
         let mut payload = Vec::new();

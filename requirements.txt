@@ -1,0 +1,5 @@
+# Standard library only needed for core functionality.
+# Testing requires standard library 'unittest'.
+# No 3rd party package dependencies for the demo.
+# Listing development tools just in case.
+pytest

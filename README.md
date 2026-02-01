@@ -28,65 +28,46 @@ A lightweight, dependency-free SOME/IP library implemented in Rust, adhering to 
 cargo build --release
 ```
 
-### 2. Run the Demo (Manual)
+### 2. Run the Demo
 
-The demo consists of three components communicating via SOME/IP and SD over the loopback interface.
+The demo showcases the "Zero Boilerplate" Runtime architecture where services are automatically discovered and traffic is routed.
 
 **Step 1: Start the Rust Service (Math Service)**
-This service offers a Math function (Add/Sub) on port 30501.
 ```bash
-cargo run --example rust_demo
+cargo run --example rust_app
 ```
 
 **Step 2: Start the Python Client/Service**
-This script listens for SD offers, discovers the Rust service, and sends requests. It also responds to queries (though the Rust demo focuses on being a server).
 ```bash
 # In a new terminal
 python examples/python_app/main.py
 ```
 
- You should see output indicating:
- - Rust Service offering 0x1001.
- - Python Client discovering 0x1001.
- - Python Client sending requests and receiving responses.
+### 3. Generator Usage
 
-### 3. Run the Demo (Script)
+The project now uses a modular code generator package.
 
-Windows (PowerShell):
-```powershell
-./run_demos.ps1
-```
-
-### 4. Run Tests
-
-To run unit tests and integration verifications:
-```bash
-cargo test
-# or
-./run_tests.ps1
-```
-
-## IDL Workflow
-
-1.  **Define Interface**: Create a Python file defining data structures.
+1.  **Define Interface**: Create a Python file defining data structures and services using decorators.
     ```python
     # examples/interface.py
     from dataclasses import dataclass
-    @dataclass
-    class MyMessage:
-        id: int
-        data: List[int]
+    # Import mock decorators ...
+    
+    @service(id=0x1001)
+    class MathService:
+        @method(id=1)
+        def add(self, a: int, b: int) -> int: ...
     ```
 
 2.  **Generate Code**:
     ```bash
-    python tools/codegenerator.py examples/interface.py
+    python -m tools.codegen.main examples/interface.py
     ```
 
 3.  **Use generated code**:
-    - Rust: `src/generated/mod.rs`
-    - Python: `src/generated/bindings.py`
-    - C++: `src/generated/bindings.hpp`
+    - Rust: `src/generated/mod.rs` (use `SomeIpRuntime`)
+    - Python: `src/generated/bindings.py` & `src/generated/runtime.py`
+    - C++: `src/generated/bindings.h`
 
 ## Architecture
 

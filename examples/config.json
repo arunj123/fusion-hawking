@@ -1,0 +1,76 @@
+{
+    "instances": {
+        "rust_app_instance": {
+            "ip": "127.0.0.1",
+            "providing": {
+                "math-service": {
+                    "service_id": 4097,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "minor_version": 0,
+                    "port": 30509,
+                    "protocol": "udp",
+                    "multicast": {
+                        "ip": "224.0.0.1",
+                        "port": 30490
+                    }
+                }
+            },
+            "required": {
+                "string-client": {
+                    "service_id": 8193,
+                    "instance_id": 1,
+                    "major_version": 1
+                }
+            }
+        },
+        "python_app_instance": {
+            "ip": "127.0.0.1",
+            "providing": {
+                "string-service": {
+                    "service_id": 8193,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "minor_version": 0,
+                    "port": 30510,
+                    "protocol": "udp",
+                    "multicast": {
+                        "ip": "224.0.0.1",
+                        "port": 30490
+                    }
+                }
+            },
+            "required": {
+                "math-client": {
+                    "service_id": 4097,
+                    "instance_id": 1,
+                    "major_version": 1
+                }
+            }
+        },
+        "cpp_app_instance": {
+            "ip": "127.0.0.1",
+            "providing": {
+                "sort-service": {
+                    "service_id": 12289,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "minor_version": 0,
+                    "port": 30503,
+                    "protocol": "udp",
+                    "multicast": {
+                        "ip": "224.0.0.1",
+                        "port": 30490
+                    }
+                }
+            },
+            "required": {
+                "math-client": {
+                    "service_id": 4097,
+                    "instance_id": 1,
+                    "major_version": 1
+                }
+            }
+        }
+    }
+}

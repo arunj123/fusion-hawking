@@ -9,7 +9,7 @@ use std::time::{Instant, Duration, SystemTime, UNIX_EPOCH};
 use std::io::ErrorKind;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum ServicePhase {
+pub enum ServicePhase {
     Down,
     InitialWait,
     Repetition,
@@ -17,15 +17,15 @@ enum ServicePhase {
 }
 
 #[derive(Debug, Clone)]
-struct LocalService {
-    entry: SdEntry, // Template entry
-    endpoint_options: Vec<SdOption>,
-    phase: ServicePhase,
+pub(crate) struct LocalService {
+    pub entry: SdEntry, // Template entry
+    pub endpoint_options: Vec<SdOption>,
+    pub phase: ServicePhase,
     
     // Timer state
-    phase_start: Instant,
-    next_transmission: Instant,
-    repetition_count: u32,
+    pub phase_start: Instant,
+    pub next_transmission: Instant,
+    pub repetition_count: u32,
 
     // Config
     initial_delay_min: Duration,
@@ -36,7 +36,7 @@ struct LocalService {
 }
 
 impl LocalService {
-    fn new(entry: SdEntry, options: Vec<SdOption>) -> Self {
+    pub(crate) fn new(entry: SdEntry, options: Vec<SdOption>) -> Self {
         LocalService {
             entry,
             endpoint_options: options,
@@ -54,7 +54,7 @@ impl LocalService {
         }
     }
 
-    fn transition_to_initial_wait(&mut self) {
+    pub(crate) fn transition_to_initial_wait(&mut self) {
         self.phase = ServicePhase::InitialWait;
         self.phase_start = Instant::now();
         
@@ -66,14 +66,14 @@ impl LocalService {
         self.next_transmission = Instant::now() + Duration::from_millis(random_millis);
     }
 
-    fn transition_to_repetition(&mut self) {
+    pub(crate) fn transition_to_repetition(&mut self) {
         self.phase = ServicePhase::Repetition;
         self.phase_start = Instant::now();
         self.repetition_count = 0;
         self.next_transmission = Instant::now(); // Send immediately upon entering
     }
 
-    fn transition_to_main(&mut self) {
+    pub(crate) fn transition_to_main(&mut self) {
         self.phase = ServicePhase::Main;
         self.phase_start = Instant::now();
         self.next_transmission = Instant::now(); 
@@ -94,8 +94,8 @@ pub struct RemoteService {
 pub struct ServiceDiscovery {
     transport: UdpTransport,
     multicast_group: SocketAddr,
-    local_services: HashMap<(u16, u16), LocalService>, // (ServiceId, InstanceId) -> Service
-    remote_services: HashMap<(u16, u16), RemoteService>,
+    pub(crate) local_services: HashMap<(u16, u16), LocalService>, // (ServiceId, InstanceId) -> Service
+    pub(crate) remote_services: HashMap<(u16, u16), RemoteService>,
 }
 
 impl ServiceDiscovery {
@@ -164,6 +164,19 @@ impl ServiceDiscovery {
     
     pub fn find_service(&self, service_id: u16, instance_id: u16) -> Option<&RemoteService> {
         self.remote_services.get(&(service_id, instance_id))
+    }
+    
+    pub fn get_service(&self, service_id: u16) -> Option<SocketAddr> {
+        for ((sid, _), remote) in &self.remote_services {
+            if *sid == service_id {
+                 for opt in &remote.endpoint {
+                     if let SdOption::Ipv4Endpoint { address, port, .. } = opt {
+                         return Some(SocketAddr::new(std::net::IpAddr::V4(*address), *port));
+                     }
+                 }
+            }
+        }
+        None
     }
 
     pub fn poll(&mut self) {
@@ -354,7 +367,6 @@ impl ServiceDiscovery {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
 
     fn create_dummy_entry() -> SdEntry {
         SdEntry {

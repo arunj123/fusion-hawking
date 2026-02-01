@@ -1,1 +1,13 @@
 /target
+*.pyc
+*.obj
+*.exe
+*.log
+*.bin
+*.pyc
+src/generated/__pycache__/bindings.cpython-312.pyc
+compilation_error.txt
+build
+.venv
+
+src/generated/__pycache__/bindings.cpython-312.pyc
