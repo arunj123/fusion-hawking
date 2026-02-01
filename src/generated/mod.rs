@@ -1,134 +1,432 @@
-use crate::codec::{SomeIpSerialize, SomeIpDeserialize};
-use std::io::{Result, Write, Read};
+use crate::codec::{SomeIpSerialize, SomeIpDeserialize, SomeIpHeader};
+use std::io::{Result, Write, Read, Cursor};
+use std::sync::Arc;
+use crate::transport::{UdpTransport, SomeIpTransport};
+use std::net::SocketAddr;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct RustMathRequest {
-    pub op: i32,
+pub struct SortData {
+    pub values: Vec<i32>,
+}
+impl SomeIpSerialize for SortData {
+    fn serialize<W: Write>(&self, writer: &mut W) -> Result<()> {
+        self.values.serialize(writer)?;
+        Ok(())
+    }
+}
+impl SomeIpDeserialize for SortData {
+    fn deserialize<R: Read>(reader: &mut R) -> Result<Self> {
+        Ok(SortData {
+            values: <Vec<i32>>::deserialize(reader)?,
+        })
+    }
+}
+
+// --- Service: MathService (ID: 0x1001) ---
+#[derive(Debug, Clone, PartialEq)]
+pub struct MathServiceAddRequest {
     pub a: i32,
     pub b: i32,
 }
-
-impl SomeIpSerialize for RustMathRequest {
+impl SomeIpSerialize for MathServiceAddRequest {
     fn serialize<W: Write>(&self, writer: &mut W) -> Result<()> {
-        self.op.serialize(writer)?;
         self.a.serialize(writer)?;
         self.b.serialize(writer)?;
         Ok(())
     }
 }
-
-impl SomeIpDeserialize for RustMathRequest {
+impl SomeIpDeserialize for MathServiceAddRequest {
     fn deserialize<R: Read>(reader: &mut R) -> Result<Self> {
-        Ok(RustMathRequest {
-            op: <i32>::deserialize(reader)?,
+        Ok(MathServiceAddRequest {
             a: <i32>::deserialize(reader)?,
             b: <i32>::deserialize(reader)?,
         })
     }
 }
-
 #[derive(Debug, Clone, PartialEq)]
-pub struct RustMathResponse {
+pub struct MathServiceAddResponse {
     pub result: i32,
 }
-
-impl SomeIpSerialize for RustMathResponse {
+impl SomeIpSerialize for MathServiceAddResponse {
     fn serialize<W: Write>(&self, writer: &mut W) -> Result<()> {
         self.result.serialize(writer)?;
         Ok(())
     }
 }
-
-impl SomeIpDeserialize for RustMathResponse {
+impl SomeIpDeserialize for MathServiceAddResponse {
     fn deserialize<R: Read>(reader: &mut R) -> Result<Self> {
-        Ok(RustMathResponse {
+        Ok(MathServiceAddResponse {
             result: <i32>::deserialize(reader)?,
         })
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct PyStringRequest {
-    pub op: i32,
-    pub text: String,
+pub struct MathServiceSubRequest {
+    pub a: i32,
+    pub b: i32,
 }
-
-impl SomeIpSerialize for PyStringRequest {
+impl SomeIpSerialize for MathServiceSubRequest {
     fn serialize<W: Write>(&self, writer: &mut W) -> Result<()> {
-        self.op.serialize(writer)?;
-        self.text.serialize(writer)?;
+        self.a.serialize(writer)?;
+        self.b.serialize(writer)?;
         Ok(())
     }
 }
-
-impl SomeIpDeserialize for PyStringRequest {
+impl SomeIpDeserialize for MathServiceSubRequest {
     fn deserialize<R: Read>(reader: &mut R) -> Result<Self> {
-        Ok(PyStringRequest {
-            op: <i32>::deserialize(reader)?,
-            text: <String>::deserialize(reader)?,
+        Ok(MathServiceSubRequest {
+            a: <i32>::deserialize(reader)?,
+            b: <i32>::deserialize(reader)?,
         })
     }
 }
-
 #[derive(Debug, Clone, PartialEq)]
-pub struct PyStringResponse {
-    pub result: String,
+pub struct MathServiceSubResponse {
+    pub result: i32,
 }
-
-impl SomeIpSerialize for PyStringResponse {
+impl SomeIpSerialize for MathServiceSubResponse {
     fn serialize<W: Write>(&self, writer: &mut W) -> Result<()> {
         self.result.serialize(writer)?;
         Ok(())
     }
 }
-
-impl SomeIpDeserialize for PyStringResponse {
+impl SomeIpDeserialize for MathServiceSubResponse {
     fn deserialize<R: Read>(reader: &mut R) -> Result<Self> {
-        Ok(PyStringResponse {
+        Ok(MathServiceSubResponse {
+            result: <i32>::deserialize(reader)?,
+        })
+    }
+}
+
+pub trait MathServiceProvider: Send + Sync {
+    fn add(&self, a: i32, b: i32) -> i32;
+    fn sub(&self, a: i32, b: i32) -> i32;
+}
+pub struct MathServiceServer<T: MathServiceProvider> {
+    provider: Arc<T>,
+}
+impl<T: MathServiceProvider> MathServiceServer<T> {
+    pub fn new(provider: Arc<T>) -> Self { Self { provider } }
+    pub fn handle_request(&self, header: &SomeIpHeader, payload: &[u8]) -> Option<Vec<u8>> {
+        if header.service_id != 4097 { return None; }
+        match header.method_id {
+            1 => {
+                let mut cursor = Cursor::new(payload);
+                if let Ok(req) = MathServiceAddRequest::deserialize(&mut cursor) {
+                    let result = self.provider.add(req.a, req.b);
+                    let resp = MathServiceAddResponse { result };
+                    let mut out = Vec::new();
+                    resp.serialize(&mut out).ok()?;
+                    Some(out)
+                } else { None }
+            },
+            2 => {
+                let mut cursor = Cursor::new(payload);
+                if let Ok(req) = MathServiceSubRequest::deserialize(&mut cursor) {
+                    let result = self.provider.sub(req.a, req.b);
+                    let resp = MathServiceSubResponse { result };
+                    let mut out = Vec::new();
+                    resp.serialize(&mut out).ok()?;
+                    Some(out)
+                } else { None }
+            },
+            _ => None
+        }
+    }
+}
+pub struct MathServiceClient {
+    transport: Arc<UdpTransport>,
+    target: SocketAddr,
+}
+impl MathServiceClient {
+    pub fn new(transport: Arc<UdpTransport>, target: SocketAddr) -> Self { Self { transport, target } }
+    pub fn add(&self, a: i32, b: i32) -> std::io::Result<i32> {
+        let req = MathServiceAddRequest { a, b };
+        let mut payload = Vec::new();
+        req.serialize(&mut payload)?;
+        let header = SomeIpHeader::new(4097, 1, 0x1234, 0x01, 0x00, payload.len() as u32);
+        let mut msg = header.serialize().to_vec();
+        msg.extend(payload);
+        self.transport.send(&msg, Some(self.target))?;
+        Ok(Default::default())
+    }
+    pub fn sub(&self, a: i32, b: i32) -> std::io::Result<i32> {
+        let req = MathServiceSubRequest { a, b };
+        let mut payload = Vec::new();
+        req.serialize(&mut payload)?;
+        let header = SomeIpHeader::new(4097, 2, 0x1234, 0x01, 0x00, payload.len() as u32);
+        let mut msg = header.serialize().to_vec();
+        msg.extend(payload);
+        self.transport.send(&msg, Some(self.target))?;
+        Ok(Default::default())
+    }
+}
+// --- Service: StringService (ID: 0x2001) ---
+#[derive(Debug, Clone, PartialEq)]
+pub struct StringServiceReverseRequest {
+    pub text: String,
+}
+impl SomeIpSerialize for StringServiceReverseRequest {
+    fn serialize<W: Write>(&self, writer: &mut W) -> Result<()> {
+        self.text.serialize(writer)?;
+        Ok(())
+    }
+}
+impl SomeIpDeserialize for StringServiceReverseRequest {
+    fn deserialize<R: Read>(reader: &mut R) -> Result<Self> {
+        Ok(StringServiceReverseRequest {
+            text: <String>::deserialize(reader)?,
+        })
+    }
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct StringServiceReverseResponse {
+    pub result: String,
+}
+impl SomeIpSerialize for StringServiceReverseResponse {
+    fn serialize<W: Write>(&self, writer: &mut W) -> Result<()> {
+        self.result.serialize(writer)?;
+        Ok(())
+    }
+}
+impl SomeIpDeserialize for StringServiceReverseResponse {
+    fn deserialize<R: Read>(reader: &mut R) -> Result<Self> {
+        Ok(StringServiceReverseResponse {
             result: <String>::deserialize(reader)?,
         })
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CppSortRequest {
-    pub method: i32,
-    pub data: Vec<i32>,
+pub struct StringServiceUppercaseRequest {
+    pub text: String,
+}
+impl SomeIpSerialize for StringServiceUppercaseRequest {
+    fn serialize<W: Write>(&self, writer: &mut W) -> Result<()> {
+        self.text.serialize(writer)?;
+        Ok(())
+    }
+}
+impl SomeIpDeserialize for StringServiceUppercaseRequest {
+    fn deserialize<R: Read>(reader: &mut R) -> Result<Self> {
+        Ok(StringServiceUppercaseRequest {
+            text: <String>::deserialize(reader)?,
+        })
+    }
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct StringServiceUppercaseResponse {
+    pub result: String,
+}
+impl SomeIpSerialize for StringServiceUppercaseResponse {
+    fn serialize<W: Write>(&self, writer: &mut W) -> Result<()> {
+        self.result.serialize(writer)?;
+        Ok(())
+    }
+}
+impl SomeIpDeserialize for StringServiceUppercaseResponse {
+    fn deserialize<R: Read>(reader: &mut R) -> Result<Self> {
+        Ok(StringServiceUppercaseResponse {
+            result: <String>::deserialize(reader)?,
+        })
+    }
 }
 
-impl SomeIpSerialize for CppSortRequest {
+pub trait StringServiceProvider: Send + Sync {
+    fn reverse(&self, text: String) -> String;
+    fn uppercase(&self, text: String) -> String;
+}
+pub struct StringServiceServer<T: StringServiceProvider> {
+    provider: Arc<T>,
+}
+impl<T: StringServiceProvider> StringServiceServer<T> {
+    pub fn new(provider: Arc<T>) -> Self { Self { provider } }
+    pub fn handle_request(&self, header: &SomeIpHeader, payload: &[u8]) -> Option<Vec<u8>> {
+        if header.service_id != 8193 { return None; }
+        match header.method_id {
+            1 => {
+                let mut cursor = Cursor::new(payload);
+                if let Ok(req) = StringServiceReverseRequest::deserialize(&mut cursor) {
+                    let result = self.provider.reverse(req.text);
+                    let resp = StringServiceReverseResponse { result };
+                    let mut out = Vec::new();
+                    resp.serialize(&mut out).ok()?;
+                    Some(out)
+                } else { None }
+            },
+            2 => {
+                let mut cursor = Cursor::new(payload);
+                if let Ok(req) = StringServiceUppercaseRequest::deserialize(&mut cursor) {
+                    let result = self.provider.uppercase(req.text);
+                    let resp = StringServiceUppercaseResponse { result };
+                    let mut out = Vec::new();
+                    resp.serialize(&mut out).ok()?;
+                    Some(out)
+                } else { None }
+            },
+            _ => None
+        }
+    }
+}
+pub struct StringServiceClient {
+    transport: Arc<UdpTransport>,
+    target: SocketAddr,
+}
+impl StringServiceClient {
+    pub fn new(transport: Arc<UdpTransport>, target: SocketAddr) -> Self { Self { transport, target } }
+    pub fn reverse(&self, text: String) -> std::io::Result<String> {
+        let req = StringServiceReverseRequest { text };
+        let mut payload = Vec::new();
+        req.serialize(&mut payload)?;
+        let header = SomeIpHeader::new(8193, 1, 0x1234, 0x01, 0x00, payload.len() as u32);
+        let mut msg = header.serialize().to_vec();
+        msg.extend(payload);
+        self.transport.send(&msg, Some(self.target))?;
+        Ok(Default::default())
+    }
+    pub fn uppercase(&self, text: String) -> std::io::Result<String> {
+        let req = StringServiceUppercaseRequest { text };
+        let mut payload = Vec::new();
+        req.serialize(&mut payload)?;
+        let header = SomeIpHeader::new(8193, 2, 0x1234, 0x01, 0x00, payload.len() as u32);
+        let mut msg = header.serialize().to_vec();
+        msg.extend(payload);
+        self.transport.send(&msg, Some(self.target))?;
+        Ok(Default::default())
+    }
+}
+// --- Service: SortService (ID: 0x3001) ---
+#[derive(Debug, Clone, PartialEq)]
+pub struct SortServiceSortAscRequest {
+    pub data: Vec<i32>,
+}
+impl SomeIpSerialize for SortServiceSortAscRequest {
     fn serialize<W: Write>(&self, writer: &mut W) -> Result<()> {
-        self.method.serialize(writer)?;
         self.data.serialize(writer)?;
         Ok(())
     }
 }
-
-impl SomeIpDeserialize for CppSortRequest {
+impl SomeIpDeserialize for SortServiceSortAscRequest {
     fn deserialize<R: Read>(reader: &mut R) -> Result<Self> {
-        Ok(CppSortRequest {
-            method: <i32>::deserialize(reader)?,
+        Ok(SortServiceSortAscRequest {
             data: <Vec<i32>>::deserialize(reader)?,
+        })
+    }
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct SortServiceSortAscResponse {
+    pub result: Vec<i32>,
+}
+impl SomeIpSerialize for SortServiceSortAscResponse {
+    fn serialize<W: Write>(&self, writer: &mut W) -> Result<()> {
+        self.result.serialize(writer)?;
+        Ok(())
+    }
+}
+impl SomeIpDeserialize for SortServiceSortAscResponse {
+    fn deserialize<R: Read>(reader: &mut R) -> Result<Self> {
+        Ok(SortServiceSortAscResponse {
+            result: <Vec<i32>>::deserialize(reader)?,
         })
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CppSortResponse {
-    pub sorted_data: Vec<i32>,
+pub struct SortServiceSortDescRequest {
+    pub data: Vec<i32>,
 }
-
-impl SomeIpSerialize for CppSortResponse {
+impl SomeIpSerialize for SortServiceSortDescRequest {
     fn serialize<W: Write>(&self, writer: &mut W) -> Result<()> {
-        self.sorted_data.serialize(writer)?;
+        self.data.serialize(writer)?;
         Ok(())
     }
 }
-
-impl SomeIpDeserialize for CppSortResponse {
+impl SomeIpDeserialize for SortServiceSortDescRequest {
     fn deserialize<R: Read>(reader: &mut R) -> Result<Self> {
-        Ok(CppSortResponse {
-            sorted_data: <Vec<i32>>::deserialize(reader)?,
+        Ok(SortServiceSortDescRequest {
+            data: <Vec<i32>>::deserialize(reader)?,
         })
+    }
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct SortServiceSortDescResponse {
+    pub result: Vec<i32>,
+}
+impl SomeIpSerialize for SortServiceSortDescResponse {
+    fn serialize<W: Write>(&self, writer: &mut W) -> Result<()> {
+        self.result.serialize(writer)?;
+        Ok(())
+    }
+}
+impl SomeIpDeserialize for SortServiceSortDescResponse {
+    fn deserialize<R: Read>(reader: &mut R) -> Result<Self> {
+        Ok(SortServiceSortDescResponse {
+            result: <Vec<i32>>::deserialize(reader)?,
+        })
+    }
+}
+
+pub trait SortServiceProvider: Send + Sync {
+    fn sort_asc(&self, data: Vec<i32>) -> Vec<i32>;
+    fn sort_desc(&self, data: Vec<i32>) -> Vec<i32>;
+}
+pub struct SortServiceServer<T: SortServiceProvider> {
+    provider: Arc<T>,
+}
+impl<T: SortServiceProvider> SortServiceServer<T> {
+    pub fn new(provider: Arc<T>) -> Self { Self { provider } }
+    pub fn handle_request(&self, header: &SomeIpHeader, payload: &[u8]) -> Option<Vec<u8>> {
+        if header.service_id != 12289 { return None; }
+        match header.method_id {
+            1 => {
+                let mut cursor = Cursor::new(payload);
+                if let Ok(req) = SortServiceSortAscRequest::deserialize(&mut cursor) {
+                    let result = self.provider.sort_asc(req.data);
+                    let resp = SortServiceSortAscResponse { result };
+                    let mut out = Vec::new();
+                    resp.serialize(&mut out).ok()?;
+                    Some(out)
+                } else { None }
+            },
+            2 => {
+                let mut cursor = Cursor::new(payload);
+                if let Ok(req) = SortServiceSortDescRequest::deserialize(&mut cursor) {
+                    let result = self.provider.sort_desc(req.data);
+                    let resp = SortServiceSortDescResponse { result };
+                    let mut out = Vec::new();
+                    resp.serialize(&mut out).ok()?;
+                    Some(out)
+                } else { None }
+            },
+            _ => None
+        }
+    }
+}
+pub struct SortServiceClient {
+    transport: Arc<UdpTransport>,
+    target: SocketAddr,
+}
+impl SortServiceClient {
+    pub fn new(transport: Arc<UdpTransport>, target: SocketAddr) -> Self { Self { transport, target } }
+    pub fn sort_asc(&self, data: Vec<i32>) -> std::io::Result<Vec<i32>> {
+        let req = SortServiceSortAscRequest { data };
+        let mut payload = Vec::new();
+        req.serialize(&mut payload)?;
+        let header = SomeIpHeader::new(12289, 1, 0x1234, 0x01, 0x00, payload.len() as u32);
+        let mut msg = header.serialize().to_vec();
+        msg.extend(payload);
+        self.transport.send(&msg, Some(self.target))?;
+        Ok(Default::default())
+    }
+    pub fn sort_desc(&self, data: Vec<i32>) -> std::io::Result<Vec<i32>> {
+        let req = SortServiceSortDescRequest { data };
+        let mut payload = Vec::new();
+        req.serialize(&mut payload)?;
+        let header = SomeIpHeader::new(12289, 2, 0x1234, 0x01, 0x00, payload.len() as u32);
+        let mut msg = header.serialize().to_vec();
+        msg.extend(payload);
+        self.transport.send(&msg, Some(self.target))?;
+        Ok(Default::default())
     }
 }

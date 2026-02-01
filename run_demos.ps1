@@ -7,7 +7,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Starting Rust Service (Math Service)..."
-$rustProcess = Start-Process -FilePath "cargo" -ArgumentList "run --bin rust_demo" -PassThru -NoNewWindow
+$rustProcess = Start-Process -FilePath "cargo" -ArgumentList "run --example rust_app" -PassThru -NoNewWindow
 Start-Sleep -Seconds 2
 
 Write-Host "Starting Python Client/Service..."

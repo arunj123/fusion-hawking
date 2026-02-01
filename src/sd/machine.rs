@@ -350,3 +350,78 @@ impl ServiceDiscovery {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    fn create_dummy_entry() -> SdEntry {
+        SdEntry {
+            entry_type: EntryType::OfferService,
+            index_1: 0, index_2: 0, number_of_opts_1: 0, number_of_opts_2: 0,
+            service_id: 0x1234, instance_id: 1, major_version: 1, ttl: 0, minor_version: 0
+        }
+    }
+
+    #[test]
+    fn test_local_service_initial_state() {
+        let entry = create_dummy_entry();
+        let service = LocalService::new(entry, vec![]);
+        assert_eq!(service.phase, ServicePhase::Down);
+    }
+
+    #[test]
+    fn test_local_service_transitions() {
+        let entry = create_dummy_entry();
+        let mut service = LocalService::new(entry, vec![]);
+
+        // Down -> InitialWait
+        service.transition_to_initial_wait();
+        assert_eq!(service.phase, ServicePhase::InitialWait);
+        assert!(service.next_transmission > Instant::now());
+
+        // InitialWait -> Repetition
+        service.transition_to_repetition();
+        assert_eq!(service.phase, ServicePhase::Repetition);
+        assert_eq!(service.repetition_count, 0);
+
+        // Repetition -> Main
+        service.transition_to_main();
+        assert_eq!(service.phase, ServicePhase::Main);
+    }
+
+    #[test]
+    fn test_service_discovery_find() {
+        let multicast: SocketAddr = "224.0.0.1:30490".parse().unwrap();
+        let transport = UdpTransport::new("0.0.0.0:0".parse().unwrap()).unwrap();
+        let mut sd = ServiceDiscovery::new(transport, multicast);
+
+        let remote = RemoteService {
+            service_id: 0x5678,
+            instance_id: 1,
+            version_major: 1,
+            version_minor: 0,
+            endpoint: vec![],
+            last_seen: Instant::now(),
+            ttl: 10,
+        };
+
+        // Accessing private field logic - wait, remote_services is private?
+        // machine.rs definition: pub struct ServiceDiscovery { remote_services: HashMap ... }
+        // Line 98: remote_services: HashMap <...>, // Private by default.
+        // I cannot access it from tests module? 
+        // "mod tests" is a child module, it can access private items of parent.
+        // Yes, "use super::*;" allows access to private items.
+        
+        sd.remote_services.insert((0x5678, 1), remote);
+
+        let found = sd.find_service(0x5678, 1);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().service_id, 0x5678);
+
+        let not_found = sd.find_service(0x9999, 1);
+        assert!(not_found.is_none());
+    }
+}
+

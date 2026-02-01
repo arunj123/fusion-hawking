@@ -5,6 +5,8 @@ edition = "2024"
 
 [dependencies]
 
-[[bin]]
-name = "rust_demo"
-path = "examples/rust_app/main.rs"
+[dev-dependencies]
+ctrlc = "3.4"
+
+# Removed [[bin]] target to treat rust_demo as proper example
+
