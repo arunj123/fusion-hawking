@@ -5,6 +5,8 @@
 #include <chrono>
 #include <iomanip>
 
+namespace fusion_hawking {
+
 enum class LogLevel {
     DEBUG,
     INFO,
@@ -43,3 +45,4 @@ public:
     }
 };
 
+} // namespace fusion_hawking

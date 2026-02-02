@@ -69,8 +69,8 @@ class MyService:
     def test_rust_generator(self):
         structs, services = self.parser.parse(self.tmp_file.name)
         output = self.rust_gen.generate(structs, services)
-        self.assertIn("src/generated/mod.rs", output)
-        content = output["src/generated/mod.rs"]
+        self.assertIn("build/generated/rust/mod.rs", output)
+        content = output["build/generated/rust/mod.rs"]
         
         self.assertIn("pub struct MyStruct", content)
         self.assertIn("pub trait MyServiceProvider", content)
@@ -80,18 +80,21 @@ class MyService:
     def test_python_generator(self):
         structs, services = self.parser.parse(self.tmp_file.name)
         output = self.py_gen.generate(structs, services)
-        self.assertIn("src/generated/bindings.py", output)
-        content = output["src/generated/bindings.py"]
+        self.assertIn("build/generated/python/bindings.py", output)
+        content = output["build/generated/python/bindings.py"]
         
-        self.assertIn("class MyStruct:", content)
-        self.assertIn("class MyServiceStub:", content)
-        self.assertIn("class MyServiceClient:", content)
+        self.assertIn("class MyStruct", content)
+        
+        self.assertIn("build/generated/python/runtime.py", output)
+        runtime_content = output["build/generated/python/runtime.py"]
+        self.assertIn("class MyServiceStub", runtime_content)
+        self.assertIn("class MyServiceClient", runtime_content)
 
     def test_cpp_generator(self):
         structs, services = self.parser.parse(self.tmp_file.name)
         output = self.cpp_gen.generate(structs, services)
-        self.assertIn("src/generated/bindings.h", output)
-        content = output["src/generated/bindings.h"]
+        self.assertIn("build/generated/cpp/bindings.h", output)
+        content = output["build/generated/cpp/bindings.h"]
         
         self.assertIn("struct MyStruct", content)
         # Check generated types

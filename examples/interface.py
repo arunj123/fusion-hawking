@@ -6,6 +6,10 @@ def service(id):
     return lambda cls: cls
 def method(id): 
     return lambda func: func
+def event(id):
+    return lambda func: func
+def field(id, get_id=None, set_id=None, notifier_id=None):
+    return lambda func: func
 
 # Complex Types (if needed) are still dataclasses
 @dataclass
@@ -38,4 +42,10 @@ class SortService:
     
     @method(id=2)
     def sort_desc(self, data: List[int]) -> List[int]: ...
+
+    @event(id=0x8001)
+    def on_sort_completed(self, count: int): ...
+    
+    @field(id=10, get_id=0x10, set_id=0x11, notifier_id=0x12)
+    def status(self) -> str: ...
 

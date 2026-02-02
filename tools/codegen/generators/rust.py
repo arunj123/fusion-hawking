@@ -5,9 +5,13 @@ class RustGenerator(AbstractGenerator):
     def generate(self, structs: list[Struct], services: list[Service]) -> dict[str, str]:
         lines = [
             "use fusion_hawking::codec::{SomeIpSerialize, SomeIpDeserialize, SomeIpHeader};",
+            "#[allow(unused_imports)]",
             "use std::io::{Result, Write, Read, Cursor};",
+            "#[allow(unused_imports)]",
             "use std::sync::Arc;",
+            "#[allow(unused_imports)]",
             "use fusion_hawking::transport::{UdpTransport, SomeIpTransport};",
+            "#[allow(unused_imports)]",
             "use std::net::SocketAddr;",
             ""
         ]
@@ -34,6 +38,18 @@ class RustGenerator(AbstractGenerator):
                 lines.append(self._generate_struct(Struct(res_name, res_fields)))
                 lines.append("")
 
+            for e in svc.events:
+                event_pascal = e.name.title().replace('_', '')
+                event_name = f"{svc.name}{event_pascal}Event"
+                lines.append(self._generate_struct(Struct(event_name, e.args)))
+                lines.append("")
+            
+            for f in svc.fields:
+                field_pascal = f.name.title().replace('_', '')
+                # Generate field type struct or just use primitive
+                # For now, let's just make sure it parses.
+                pass
+
             # Provider Trait
             lines.append(self._generate_provider_trait(svc))
             
@@ -47,6 +63,7 @@ class RustGenerator(AbstractGenerator):
 
     def _generate_struct(self, s: Struct) -> str:
         lines = []
+        lines.append(f"#[allow(dead_code)]")
         lines.append(f"#[derive(Debug, Clone, PartialEq)]")
         lines.append(f"pub struct {s.name} {{")
         for f in s.fields:
@@ -75,6 +92,7 @@ class RustGenerator(AbstractGenerator):
 
     def _generate_provider_trait(self, svc: Service) -> str:
         lines = []
+        lines.append(f"#[allow(dead_code)]")
         lines.append(f"pub trait {svc.name}Provider: Send + Sync {{")
         for m in svc.methods:
             args_str = ", ".join([f"{a.name}: {self._rust_type(a.type)}" for a in m.args])
@@ -85,9 +103,11 @@ class RustGenerator(AbstractGenerator):
 
     def _generate_server_stub(self, svc: Service) -> str:
         lines = []
+        lines.append(f"#[allow(dead_code)]")
         lines.append(f"pub struct {svc.name}Server<T: {svc.name}Provider> {{")
         lines.append("    provider: Arc<T>,")
         lines.append("}")
+        lines.append(f"#[allow(dead_code)]")
         lines.append(f"impl<T: {svc.name}Provider> {svc.name}Server<T> {{")
         lines.append("    pub fn new(provider: Arc<T>) -> Self { Self { provider } }")
         lines.append("}")
@@ -126,6 +146,7 @@ class RustGenerator(AbstractGenerator):
 
     def _generate_client_proxy(self, svc: Service) -> str:
         lines = []
+        lines.append(f"#[allow(dead_code)]")
         lines.append(f"pub struct {svc.name}Client {{")
         lines.append("    transport: Arc<UdpTransport>,")
         lines.append("    target: SocketAddr,")
@@ -136,6 +157,7 @@ class RustGenerator(AbstractGenerator):
         lines.append("    fn new(transport: Arc<UdpTransport>, target: SocketAddr) -> Self { Self { transport, target } }")
         lines.append("}")
         
+        lines.append(f"#[allow(dead_code)]")
         lines.append(f"impl {svc.name}Client {{")
         
         for m in svc.methods:

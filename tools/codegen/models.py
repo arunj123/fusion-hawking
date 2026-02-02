@@ -24,10 +24,27 @@ class Method:
     ret_type: Type
 
 @dataclass
+class Event:
+    name: str
+    id: int
+    args: List[Field]
+
+@dataclass
+class FieldSpec: # Named FieldSpec to avoid conflict with Field
+    name: str
+    id: int
+    type: Type
+    get_id: Optional[int] = None
+    set_id: Optional[int] = None
+    notifier_id: Optional[int] = None
+
+@dataclass
 class Service:
     name: str
     id: int
-    methods: List[Method]
+    methods: List[Method] = field(default_factory=list)
+    events: List[Event] = field(default_factory=list)
+    fields: List[FieldSpec] = field(default_factory=list)
 
 @dataclass
 class Struct:

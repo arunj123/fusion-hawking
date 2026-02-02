@@ -4,11 +4,11 @@ import os
 import struct
 import socket
 
-# Add build/generated/python to path
+# Add build/generated/python and src/python to path
 sys.path.insert(0, os.path.join(os.getcwd(), 'build', 'generated', 'python'))
+sys.path.insert(0, os.path.join(os.getcwd(), 'src', 'python'))
 
-from runtime import SomeIpRuntime
-from bindings import MathServiceStub, MathServiceClient
+from runtime import SomeIpRuntime, MathServiceStub, MathServiceClient
 
 class MockSocket:
     def __init__(self):
@@ -40,10 +40,10 @@ class TestPythonRuntime(unittest.TestCase):
         # Use relative path to test config
         config_path = os.path.join(os.getcwd(), 'tests', 'test_config.json')
         self.runtime = SomeIpRuntime(config_path, "test_instance")
+        self.runtime.start()
 
     def tearDown(self):
-        self.runtime.running = False
-        # self.runtime.thread.join() # Might hang if in select
+        self.runtime.stop()
 
     def test_offer_service(self):
         stub = MathServiceStub()
@@ -51,6 +51,8 @@ class TestPythonRuntime(unittest.TestCase):
         self.assertIn(stub.SERVICE_ID, self.runtime.services)
         
     def test_get_client(self):
+        # Inject service discovery
+        self.runtime.remote_services[4097] = ('127.0.0.1', 12345)
         client = self.runtime.get_client("math-client", MathServiceClient)
         self.assertIsInstance(client, MathServiceClient)
         self.assertEqual(client.runtime, self.runtime)

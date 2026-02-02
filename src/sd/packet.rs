@@ -71,16 +71,9 @@ impl SomeIpDeserialize for SdPacket {
         let options_len = u32::from_be_bytes(options_len_buf);
         
         let mut options = Vec::new();
-        { // Start of scope for options_reader
-            let current_options_len = 0;
+        {
             let mut options_reader = reader.take(options_len as u64);
-            
-            // Options are variable length.
-            // We need to read exactly options_len bytes.
-            // We can use `take` here safely because we are essentially finishing the packet read (mostly).
-            // But to properly track bytes read, `take` is good.
-            
-            while current_options_len < options_len {
+            while options_reader.limit() > 0 {
                  // We need to peek or read the length of the next option to know if we are done?
                  // No, `options_reader` will return EOF when limit is reached.
                  // But `SdOption::deserialize` will try to read length(2).
@@ -88,9 +81,6 @@ impl SomeIpDeserialize for SdPacket {
                  // We need to check if we have consumed `options_len`.
                  // `options_reader.limit()` tells us how many bytes left.
                  
-                 if options_reader.limit() == 0 {
-                     break;
-                 }
                  
                  // We can attempt to deserialize.
                  let opt = SdOption::deserialize(&mut options_reader)?;

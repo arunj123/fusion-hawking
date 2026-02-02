@@ -96,6 +96,10 @@ pub struct ServiceDiscovery {
     multicast_group: SocketAddr,
     pub(crate) local_services: HashMap<(u16, u16), LocalService>, // (ServiceId, InstanceId) -> Service
     pub(crate) remote_services: HashMap<(u16, u16), RemoteService>,
+    // Event subscriptions: (ServiceId, EventgroupId) -> list of subscriber endpoints
+    pub(crate) subscriptions: HashMap<(u16, u16), Vec<SocketAddr>>,
+    // Pending subscription requests: (ServiceId, EventgroupId) -> callback/flag
+    pub(crate) pending_subscriptions: HashMap<(u16, u16), bool>,
 }
 
 impl ServiceDiscovery {
@@ -108,6 +112,8 @@ impl ServiceDiscovery {
             multicast_group,
             local_services: HashMap::new(),
             remote_services: HashMap::new(),
+            subscriptions: HashMap::new(),
+            pending_subscriptions: HashMap::new(),
         }
     }
 
@@ -177,6 +183,47 @@ impl ServiceDiscovery {
             }
         }
         None
+    }
+
+    /// Subscribe to an eventgroup from a remote service.
+    /// Sends a SubscribeEventgroup entry and waits for SubscribeEventgroupAck.
+    pub fn subscribe_eventgroup(&mut self, service_id: u16, instance_id: u16, eventgroup_id: u16, ttl: u32) {
+        // Build SubscribeEventgroup entry
+        // Note: For eventgroup entries, minor_version field is repurposed as (eventgroup_id << 16 | counter)
+        let entry = SdEntry {
+            entry_type: EntryType::SubscribeEventgroup,
+            index_1: 0,
+            index_2: 0,
+            number_of_opts_1: 1,  // We'll include our endpoint option
+            number_of_opts_2: 0,
+            service_id,
+            instance_id,
+            major_version: 0x01,
+            ttl,
+            minor_version: (eventgroup_id as u32) << 16,  // eventgroup_id in upper 16 bits
+        };
+
+        // Include our local endpoint so the server knows where to send events
+        let local_port = self.transport.local_addr().map(|a| a.port()).unwrap_or(0);
+        let option = SdOption::Ipv4Endpoint {
+            address: Ipv4Addr::new(127, 0, 0, 1),
+            transport_proto: 0x11, // UDP
+            port: local_port,
+        };
+
+        self.pending_subscriptions.insert((service_id, eventgroup_id), false);
+        let _ = self.send_packet(entry, vec![option]);
+    }
+
+    /// Unsubscribe from an eventgroup (sends SubscribeEventgroup with TTL=0).
+    pub fn unsubscribe_eventgroup(&mut self, service_id: u16, instance_id: u16, eventgroup_id: u16) {
+        self.subscribe_eventgroup(service_id, instance_id, eventgroup_id, 0);
+        self.pending_subscriptions.remove(&(service_id, eventgroup_id));
+    }
+
+    /// Check if subscription was acknowledged.
+    pub fn is_subscription_acked(&self, service_id: u16, eventgroup_id: u16) -> bool {
+        self.pending_subscriptions.get(&(service_id, eventgroup_id)).copied().unwrap_or(false)
     }
 
     pub fn poll(&mut self) {
@@ -251,7 +298,6 @@ impl ServiceDiscovery {
                 Ok((len, _addr)) => {
                      // Parse SOME/IP Header (16 bytes)
                      if len < 16 { continue; }
-                     let _header_buf = &buf[0..16];
                      // ... Validation ...
                      
                      // Helper to parse header?
@@ -259,8 +305,17 @@ impl ServiceDiscovery {
                      // Payload starts at 16.
                      if len > 16 {
                         let mut payload_reader = &buf[16..len];
-                        if let Ok(packet) = SdPacket::deserialize(&mut payload_reader) {
-                            self.handle_incoming_packet(packet);
+                        match SdPacket::deserialize(&mut payload_reader) {
+                            Ok(packet) => {
+                                // self.logger is not easily accessible here without self.
+                                // But SdMachine is part of SomeIpRuntime.
+                                // Actually, let's just use println for now.
+                                // println!("[SD] Received packet with {} entries", packet.entries.len());
+                                self.handle_incoming_packet(packet);
+                            }
+                            Err(_e) => {
+                                // println!("[SD] Failed to parse: {}", _e);
+                            }
                         }
                      }
                 }
@@ -357,6 +412,62 @@ impl ServiceDiscovery {
                 },
                 EntryType::FindService => {
                     // TODO: Send Offer if we have it?
+                },
+                EntryType::SubscribeEventgroup => {
+                    // Someone is subscribing to our eventgroup
+                    let eventgroup_id = (entry.minor_version >> 16) as u16;
+                    
+                    if entry.ttl == 0 {
+                        // Unsubscribe
+                        if let Some(subscribers) = self.subscriptions.get_mut(&(entry.service_id, eventgroup_id)) {
+                            // Remove this subscriber (would need source addr from packet)
+                            // For now, just log
+                        }
+                    } else {
+                        // Subscribe - extract subscriber endpoint from options
+                        let start_idx = entry.index_1 as usize;
+                        let end_idx = start_idx + entry.number_of_opts_1 as usize;
+                        
+                        if end_idx <= packet.options.len() {
+                            for i in start_idx..end_idx {
+                                if let SdOption::Ipv4Endpoint { address, port, .. } = &packet.options[i] {
+                                    let subscriber_addr = SocketAddr::new(std::net::IpAddr::V4(*address), *port);
+                                    
+                                    // Add to subscriptions
+                                    self.subscriptions
+                                        .entry((entry.service_id, eventgroup_id))
+                                        .or_insert_with(Vec::new)
+                                        .push(subscriber_addr);
+                                    
+                                    // Send SubscribeEventgroupAck
+                                    let ack_entry = SdEntry {
+                                        entry_type: EntryType::SubscribeEventgroupAck,
+                                        index_1: 0,
+                                        index_2: 0,
+                                        number_of_opts_1: 0,
+                                        number_of_opts_2: 0,
+                                        service_id: entry.service_id,
+                                        instance_id: entry.instance_id,
+                                        major_version: entry.major_version,
+                                        ttl: entry.ttl,
+                                        minor_version: entry.minor_version,
+                                    };
+                                    let _ = self.send_packet(ack_entry, vec![]);
+                                }
+                            }
+                        }
+                    }
+                },
+                EntryType::SubscribeEventgroupAck => {
+                    // Our subscription was acknowledged
+                    let eventgroup_id = (entry.minor_version >> 16) as u16;
+                    if entry.ttl > 0 {
+                        // ACK - mark subscription as active
+                        self.pending_subscriptions.insert((entry.service_id, eventgroup_id), true);
+                    } else {
+                        // NACK - mark subscription as failed
+                        self.pending_subscriptions.insert((entry.service_id, eventgroup_id), false);
+                    }
                 },
                 _ => {}
             }

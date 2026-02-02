@@ -48,7 +48,7 @@ impl SomeIpRuntime {
         let sys_config: SystemConfig = serde_json::from_reader(reader).expect("Failed to parse config json");
         
         let instance_config = sys_config.instances.get(instance_name)
-            .expect(&format!("Instance '{}' not found in config", instance_name))
+            .unwrap_or_else(|| panic!("Instance '{}' not found in config", instance_name))
             .clone();
 
         // Determine bind port (use first providing service or 0)
@@ -76,16 +76,14 @@ impl SomeIpRuntime {
         let transport = UdpTransport::new(addr).expect("Failed to bind Transport");
         transport.set_nonblocking(true).unwrap();
 
-        let rt = Arc::new(Self {
+        Arc::new(Self {
             transport: Arc::new(transport),
             sd: Arc::new(Mutex::new(sd)),
             services: Arc::new(RwLock::new(HashMap::new())),
             running: Arc::new(AtomicBool::new(true)),
             config: Some(instance_config),
             logger,
-        });
-        
-        rt
+        })
     }
 
     // Deprecated constructor for backward compatibility during migration
@@ -115,6 +113,10 @@ impl SomeIpRuntime {
     pub fn get_transport(&self) -> Arc<UdpTransport> {
         self.transport.clone()
     }
+
+    pub fn get_logger(&self) -> Arc<dyn FusionLogger> {
+        self.logger.clone()
+    }
     
     pub fn get_client<T: ServiceClient>(&self, alias: &str) -> Option<T> {
         // Resolve Alias
@@ -128,25 +130,33 @@ impl SomeIpRuntime {
             T::SERVICE_ID
         };
 
-        let sd = self.sd.lock().unwrap();
-        if let Some(endpoint) = sd.get_service(service_id) {
-             Some(T::new(self.transport.clone(), endpoint))
-        } else {
-             // Check config for static IP?
-             if let Some(cfg) = &self.config {
-                 if let Some(req_cfg) = cfg.required.get(alias) {
-                     if let (Some(ip), Some(port)) = (&req_cfg.static_ip, &req_cfg.static_port) {
-                          let addr_str = format!("{}:{}", ip, port);
-                          if let Ok(addr) = addr_str.parse() {
-                              self.logger.log(LogLevel::Info, "Runtime", &format!("Validated static config for {}", alias));
-                              return Some(T::new(self.transport.clone(), addr));
-                          }
-                     }
-                 }
-             }
-             
-             self.logger.log(LogLevel::Debug, "Runtime", &format!("Service '{}' (0x{:04x}) not found yet.", alias, service_id));
-             None
+        // Wait for service discovery with timeout (5 seconds, polling every 100ms)
+        let timeout = Duration::from_secs(5);
+        let poll_interval = Duration::from_millis(100);
+        let start = std::time::Instant::now();
+
+        loop {
+            // Poll SD to process incoming offers
+            {
+                let mut sd = self.sd.lock().unwrap();
+                sd.poll();
+            }
+
+            // Check if service is now available
+            {
+                let sd = self.sd.lock().unwrap();
+                if let Some(endpoint) = sd.get_service(service_id) {
+                    self.logger.log(LogLevel::Info, "Runtime", &format!("Discovered service '{}' (0x{:04x}) at {}", alias, service_id, endpoint));
+                    return Some(T::new(self.transport.clone(), endpoint));
+                }
+            }
+
+            if start.elapsed() >= timeout {
+                self.logger.log(LogLevel::Warn, "Runtime", &format!("Timeout waiting for service '{}' (0x{:04x})", alias, service_id));
+                return None;
+            }
+
+            thread::sleep(poll_interval);
         }
     }
 
@@ -197,17 +207,20 @@ impl SomeIpRuntime {
                          // Dispatch
                          let services = self.services.read().unwrap();
                          if let Some(handler) = services.get(&header.service_id) {
-                             if let Some(res_payload) = handler.handle(&header, &buf[16..size]) {
-                                 // Send Response
-                                  let res_header = SomeIpHeader::new(
-                                     header.service_id, header.method_id, 
-                                     header.client_id, header.session_id, 
-                                     0x80, res_payload.len() as u32
-                                 );
-                                 
-                                 let mut msg = res_header.serialize().to_vec();
-                                 msg.extend(res_payload);
-                                 let _ = self.transport.send(&msg, Some(src));
+                             // Only handle Requests (0x00) or Requests No Return (0x01)
+                             if header.message_type == 0x00 || header.message_type == 0x01 {
+                                 if let Some(res_payload) = handler.handle(&header, &buf[16..size]) {
+                                     // Send Response
+                                      let res_header = SomeIpHeader::new(
+                                         header.service_id, header.method_id, 
+                                         header.client_id, header.session_id, 
+                                         0x80, res_payload.len() as u32
+                                     );
+                                     
+                                     let mut msg = res_header.serialize().to_vec();
+                                     msg.extend(res_payload);
+                                     let _ = self.transport.send(&msg, Some(src));
+                                 }
                              }
                          }
                      }

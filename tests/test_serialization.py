@@ -4,8 +4,9 @@ import sys
 import os
 import struct
 
-# Add build/generated/python to path
+# Add build/generated/python and src/python to path
 sys.path.insert(0, os.path.join(os.getcwd(), 'build', 'generated', 'python'))
+sys.path.insert(0, os.path.join(os.getcwd(), 'src', 'python'))
 
 from bindings import (
     MathServiceAddRequest, MathServiceAddResponse,
