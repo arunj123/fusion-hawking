@@ -67,9 +67,13 @@ impl SomeIpRuntime {
         let sd_transport = UdpTransport::new_multicast(sd_bind).expect("Failed to bind SD transport");
         // Join multicast group
         let multicast_ip: Ipv4Addr = "224.0.0.1".parse().unwrap();
-        let any_interface: Ipv4Addr = "0.0.0.0".parse().unwrap();
-        let _ = sd_transport.join_multicast_v4(&multicast_ip, &any_interface);
-        let sd = ServiceDiscovery::new(sd_transport, sd_multicast);
+        let interface_ip: Ipv4Addr = instance_config.ip.parse().unwrap_or("0.0.0.0".parse().unwrap());
+        let _ = sd_transport.join_multicast_v4(&multicast_ip, &interface_ip);
+        // Set outgoing multicast interface to configured IP
+        let _ = sd_transport.set_multicast_if_v4(&interface_ip);
+        // Enable multicast loopback
+        let _ = sd_transport.set_multicast_loop_v4(true);
+        let sd = ServiceDiscovery::new(sd_transport, sd_multicast, interface_ip);
         
         let bind_any = if instance_config.ip_version == 6 { "[::]" } else { "0.0.0.0" };
         let addr: SocketAddr = format!("{}:{}", bind_any, bind_port).parse().unwrap();
@@ -94,7 +98,7 @@ impl SomeIpRuntime {
         let sd_multicast: SocketAddr = "224.0.0.1:30490".parse().unwrap();
         let sd_bind: SocketAddr = "0.0.0.0:0".parse().unwrap();
         let sd_transport = UdpTransport::new(sd_bind).expect("Failed to bind SD transport");
-        let sd = ServiceDiscovery::new(sd_transport, sd_multicast);
+        let sd = ServiceDiscovery::new(sd_transport, sd_multicast, "127.0.0.1".parse().unwrap());
         
         let addr: SocketAddr = format!("0.0.0.0:{}", port).parse().unwrap();
         let transport = UdpTransport::new(addr).expect("Failed to bind Transport");
@@ -160,6 +164,12 @@ impl SomeIpRuntime {
         }
     }
 
+    pub fn subscribe_eventgroup(&self, service_id: u16, instance_id: u16, eventgroup_id: u16, ttl: u32) {
+        let mut sd = self.sd.lock().unwrap();
+        sd.subscribe_eventgroup(service_id, instance_id, eventgroup_id, ttl, self.transport.local_addr().unwrap().port());
+        self.logger.log(LogLevel::Info, "Runtime", &format!("Subscribing to Service 0x{:04x} EventGroup {}", service_id, eventgroup_id));
+    }
+
     pub fn offer_service(&self, alias: &str, instance: Box<dyn RequestHandler>) {
         // Resolve Config
         let (service_id, instance_id, port) = if let Some(cfg) = &self.config {
@@ -206,6 +216,13 @@ impl SomeIpRuntime {
                      if let Ok(header) = SomeIpHeader::deserialize(&buf[..16]) {
                          // Dispatch
                          let services = self.services.read().unwrap();
+                         
+                         // Handle Notification (0x02)
+                         if header.message_type == 0x02 {
+                             self.logger.log(LogLevel::Info, "Runtime", &format!("Received Notification: Service 0x{:04x} Event/Method 0x{:04x} Payload {} bytes", header.service_id, header.method_id, buf[16..size].len()));
+                             continue;
+                         }
+
                          if let Some(handler) = services.get(&header.service_id) {
                              // Only handle Requests (0x00) or Requests No Return (0x01)
                              if header.message_type == 0x00 || header.message_type == 0x01 {

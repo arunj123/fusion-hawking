@@ -52,18 +52,15 @@ impl SomeIpDeserialize for SdPacket {
         let entries_len = u32::from_be_bytes(entries_len_buf);
 
         // Read Entries
-        // We need to read exactly entries_len bytes.
         let mut entries = Vec::new();
-        { // Start of scope for entries_reader
+        {
             let mut current_entries_len = 0;
-            let mut entries_reader = reader.take(entries_len as u64);
-            // Each SD Entry is 16 bytes.
             while current_entries_len < entries_len {
-                let entry = SdEntry::deserialize(&mut entries_reader)?;
+                let entry = SdEntry::deserialize(reader)?;
                 entries.push(entry);
                 current_entries_len += 16;
             }
-        } // entries_reader dropped here, releasing borrow on reader
+        }
 
         // Options Length
         let mut options_len_buf = [0u8; 4];

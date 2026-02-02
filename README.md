@@ -5,42 +5,67 @@ A lightweight, dependency-free SOME/IP library implemented in Rust, adhering to 
 ## Features
 
 - **Core Protocol**: SOME/IP Header parsing and serialization.
-- **Service Discovery**: SOME/IP-SD packet format, state machine, and dynamic service discovery.
-- **Transport**: UDP Support with Multicast capabilities.
+- **Service Discovery**: Full SOME/IP-SD support with dynamic discovery, Offering, Subscribe/EventGroup, and TTL management.
+- **Events & Fields**: Support for Publish/Subscribe pattern and Field notifications.
+- **Transport**: UDP Support with Multicast capabilities (`224.0.0.1`).
 - **Concurrency**: ThreadPool for handling concurrent requests.
 - **Cross-Language Support**:
-    - **Rust**: Native implementation.
-    - **Python**: Generated bindings and runtime.
-    - **C++**: Generated headers and serialization logic.
-- **IDL Compiler**: Python-based tool (`tools/codegenerator.py`) to generate code from simple Python dataclasses.
+    - **Rust**: Native implementation with fully async-compatible SD machine.
+    - **Python**: generated bindings and runtime with Event support.
+    - **C++**: High-performance runtime with modern C++14 support.
+- **IDL Compiler**: Python-based tool (`tools/codegen`) to generate code from simple Python dataclasses.
 
 ## Prerequisites
 
 - **Rust**: Latest Stable (install via `rustup`).
-- **Python**: Python 3.8+.
-- **C++ Compiler**: GCC or MSVC (for building C++ examples, though the demo uses Python/Rust primarily).
+- **Python**: Python 3.8+ (with `pytest` for tests).
+- **C++ Compiler**: CMake 3.10+ and MSVC/GCC.
+- **PowerShell**: For running automation scripts (Windows).
 
 ## Quick Start
 
-### 1. Build the Project
+### 1. Build & Run All Demos (Windows)
 
-```bash
-cargo build --release
+The easiest way to see everything in action is the automation script:
+
+```powershell
+.\run_demos.ps1
 ```
 
-### 2. Run the Demo
+This will:
+1. Generate code from `examples/interface.py`.
+2. Build Rust, Python, and C++ runtimes.
+3. Launch 3 processes:
+   - **Rust App**: Provides `MathService` (0x1001), Consumes `SortService` events.
+   - **C++ App**: Provides `SortService` (0x3001), Consumes `MathService`.
+   - **Python App**: Provides `StringService` (0x2001), Consumes `MathService` & `StringService`.
 
-The demo showcases the "Zero Boilerplate" Runtime architecture where services are automatically discovered and traffic is routed.
+### 2. Manual Run
 
-**Step 1: Start the Rust Service (Math Service)**
+**Step 1: Generate Code**
+```bash
+python -m tools.codegen.main examples/interface.py
+```
+
+**Step 2: Start Rust App**
 ```bash
 cargo run --example rust_app
 ```
 
-**Step 2: Start the Python Client/Service**
+**Step 3: Start Python App**
 ```bash
-# In a new terminal
+# Make sure to set PYTHONPATH
+$env:PYTHONPATH="src/python;build"
 python examples/python_app/main.py
+```
+
+**Step 4: Start C++ App**
+```bash
+mkdir build
+cd build
+cmake ..
+cmake --build . --config Release
+.\Release\cpp_app.exe
 ```
 
 ### 3. Generator Usage

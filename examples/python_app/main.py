@@ -20,6 +20,7 @@ class StringImpl(StringServiceStub):
 def main():
     # 1. Initialize Runtime
     rt = SomeIpRuntime("examples/config.json", "python_app_instance")
+    # Logger uses default level
     rt.logger.log(LogLevel.INFO, "Main", "--- High-Level Python Runtime Demo ---")
     rt.start()
     
@@ -27,8 +28,18 @@ def main():
     rt.offer_service("string-service", StringImpl(rt.logger))
     
     # 3. Client Logic
-    client = rt.get_client("math-client", MathServiceClient)
-    
+    # 3. Client Logic
+    client = None
+    while client is None:
+        try:
+            client = rt.get_client("math-client", MathServiceClient, timeout=1.0)
+            if client is None:
+                rt.logger.log(LogLevel.INFO, "Main", "Waiting for MathService...")
+        except KeyboardInterrupt:
+            return
+
+    # Loop for logic
+    # Loop for logic
     try:
         while True:
             rt.logger.log(LogLevel.INFO, "Main", "Client: Sending Add(10, 20)...")
@@ -36,11 +47,14 @@ def main():
             
             # Test calling itself
             string_client = rt.get_client("string-client", StringServiceClient)
-            string_client.reverse("Loopback")
+            if string_client:
+                string_client.reverse("Loopback")
             
             time.sleep(2)
     except KeyboardInterrupt:
         rt.logger.log(LogLevel.INFO, "Main", "Stopping...")
+    finally:
+        rt.stop()
 
 if __name__ == "__main__":
     main()

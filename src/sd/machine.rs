@@ -100,10 +100,11 @@ pub struct ServiceDiscovery {
     pub(crate) subscriptions: HashMap<(u16, u16), Vec<SocketAddr>>,
     // Pending subscription requests: (ServiceId, EventgroupId) -> callback/flag
     pub(crate) pending_subscriptions: HashMap<(u16, u16), bool>,
+    pub local_ip: Ipv4Addr,
 }
 
 impl ServiceDiscovery {
-    pub fn new(transport: UdpTransport, multicast_group: SocketAddr) -> Self {
+    pub fn new(transport: UdpTransport, multicast_group: SocketAddr, local_ip: Ipv4Addr) -> Self {
         // Try to set non-blocking
         let _ = transport.set_nonblocking(true);
         
@@ -114,6 +115,7 @@ impl ServiceDiscovery {
             remote_services: HashMap::new(),
             subscriptions: HashMap::new(),
             pending_subscriptions: HashMap::new(),
+            local_ip,
         }
     }
 
@@ -131,11 +133,9 @@ impl ServiceDiscovery {
             minor_version: minor,
         };
 
-        // Determine IPv4/IPv6 from transport local addr?
-        // For MVP, assume IPv4 127.0.0.1 or similar, or let user pass it.
-        // TODO: Resolve actual IP.
+        // Use configured local IP instead of hardcoded 127.0.0.1
         let option = SdOption::Ipv4Endpoint {
-            address: Ipv4Addr::new(127, 0, 0, 1),
+            address: self.local_ip,
             transport_proto: proto,
             port,
         };
@@ -187,7 +187,7 @@ impl ServiceDiscovery {
 
     /// Subscribe to an eventgroup from a remote service.
     /// Sends a SubscribeEventgroup entry and waits for SubscribeEventgroupAck.
-    pub fn subscribe_eventgroup(&mut self, service_id: u16, instance_id: u16, eventgroup_id: u16, ttl: u32) {
+    pub fn subscribe_eventgroup(&mut self, service_id: u16, instance_id: u16, eventgroup_id: u16, ttl: u32, port: u16) {
         // Build SubscribeEventgroup entry
         // Note: For eventgroup entries, minor_version field is repurposed as (eventgroup_id << 16 | counter)
         let entry = SdEntry {
@@ -204,11 +204,10 @@ impl ServiceDiscovery {
         };
 
         // Include our local endpoint so the server knows where to send events
-        let local_port = self.transport.local_addr().map(|a| a.port()).unwrap_or(0);
         let option = SdOption::Ipv4Endpoint {
-            address: Ipv4Addr::new(127, 0, 0, 1),
+            address: self.local_ip,
             transport_proto: 0x11, // UDP
-            port: local_port,
+            port,
         };
 
         self.pending_subscriptions.insert((service_id, eventgroup_id), false);
@@ -217,7 +216,7 @@ impl ServiceDiscovery {
 
     /// Unsubscribe from an eventgroup (sends SubscribeEventgroup with TTL=0).
     pub fn unsubscribe_eventgroup(&mut self, service_id: u16, instance_id: u16, eventgroup_id: u16) {
-        self.subscribe_eventgroup(service_id, instance_id, eventgroup_id, 0);
+        self.subscribe_eventgroup(service_id, instance_id, eventgroup_id, 0, 0);
         self.pending_subscriptions.remove(&(service_id, eventgroup_id));
     }
 
@@ -314,7 +313,7 @@ impl ServiceDiscovery {
                                 self.handle_incoming_packet(packet);
                             }
                             Err(_e) => {
-                                // println!("[SD] Failed to parse: {}", _e);
+                                // Silent fail for now
                             }
                         }
                      }
@@ -407,6 +406,11 @@ impl ServiceDiscovery {
                             ttl: entry.ttl,
                         };
                         
+                        // Note: SD machine doesn't have a logger, so we'll just use println for debugging
+                        // but actually, we should probably pass a logger or just rely on runtime to log.
+                        // For now, let's keep it silent but ensure it's correct.
+                        // Actually, I'll add a println that will show up in the captured output if any.
+                        println!("[SD] Discovered Service 0x{:04x}:{}", entry.service_id, entry.instance_id);
                         self.remote_services.insert((entry.service_id, entry.instance_id), remote);
                     }
                 },
@@ -419,7 +423,7 @@ impl ServiceDiscovery {
                     
                     if entry.ttl == 0 {
                         // Unsubscribe
-                        if let Some(subscribers) = self.subscriptions.get_mut(&(entry.service_id, eventgroup_id)) {
+                        if let Some(_subscribers) = self.subscriptions.get_mut(&(entry.service_id, eventgroup_id)) {
                             // Remove this subscriber (would need source addr from packet)
                             // For now, just log
                         }

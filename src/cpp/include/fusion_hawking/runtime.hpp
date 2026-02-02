@@ -57,6 +57,7 @@ public:
 
     void SendOffer(uint16_t service_id, uint16_t instance_id, uint16_t port);
     void SendRequest(uint16_t service_id, uint16_t method_id, const std::vector<uint8_t>& payload, sockaddr_in target);
+    void SendNotification(uint16_t service_id, uint16_t event_id, const std::vector<uint8_t>& payload);
     bool get_remote_service(uint16_t service_id, sockaddr_in& out);
     
     // Event subscription
@@ -73,6 +74,10 @@ private:
     std::vector<std::tuple<uint16_t, uint16_t, uint16_t>> offered_services; // (svc_id, inst_id, port)
     std::chrono::steady_clock::time_point last_offer_time;
     std::map<std::pair<uint16_t, uint16_t>, bool> subscriptions; // (service_id, eventgroup_id) -> acked
+    
+    // Server-side: Subscribers for my events
+    // (service_id, eventgroup_id) -> list of subscriber addresses
+    std::map<std::pair<uint16_t, uint16_t>, std::vector<sockaddr_in>> subscribers; 
 };
 
 } // namespace fusion_hawking

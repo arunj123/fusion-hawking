@@ -46,6 +46,17 @@ impl UdpTransport {
     pub fn join_multicast_v4(&self, multiaddr: &Ipv4Addr, interface: &Ipv4Addr) -> Result<()> {
         self.socket.join_multicast_v4(multiaddr, interface)
     }
+    
+    pub fn set_multicast_if_v4(&self, interface: &Ipv4Addr) -> Result<()> {
+        use socket2::SockRef;
+        
+        let sock_ref = SockRef::from(&self.socket);
+        sock_ref.set_multicast_if_v4(interface)
+    }
+    
+    pub fn set_multicast_loop_v4(&self, val: bool) -> Result<()> {
+        self.socket.set_multicast_loop_v4(val)
+    }
 }
 
 impl SomeIpTransport for UdpTransport {

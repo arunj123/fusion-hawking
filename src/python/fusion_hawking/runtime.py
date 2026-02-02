@@ -47,8 +47,16 @@ class SomeIpRuntime:
         self.sd_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sd_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sd_sock.bind(('0.0.0.0', 30490))
-        mreq = struct.pack("4sl", socket.inet_aton("224.0.0.1"), socket.INADDR_ANY)
+        # Get interface IP from config (mandatory)
+        interface_ip = self.config.get('ip', '127.0.0.1') if self.config else '127.0.0.1'
+        # Join Multicast on configured interface
+        self.interface_ip = interface_ip
+        mreq = struct.pack("4s4s", socket.inet_aton("224.0.0.1"), socket.inet_aton(self.interface_ip))
         self.sd_sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+        # Ensure outgoing multicast uses configured interface
+        self.sd_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(self.interface_ip))
+        # Enable Multicast Loopback
+        self.sd_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1)
         
         self.sock.setblocking(False)
         self.sd_sock.setblocking(False)
@@ -63,7 +71,7 @@ class SomeIpRuntime:
         # Wake up select
         try:
             ws = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            ws.sendto(b'', ('127.0.0.1', self.port))
+            ws.sendto(b'', (self.interface_ip, self.port))
             ws.close()
         except Exception: pass
         
@@ -151,14 +159,152 @@ class SomeIpRuntime:
 
     def _handle_sd_packet(self, data: bytes):
         """Parse and handle an SD packet."""
-        if len(data) >= 56:
-            sid = struct.unpack(">H", data[28:30])[0]
-            ip_bytes = data[48:52]
-            ip_str = f"{ip_bytes[0]}.{ip_bytes[1]}.{ip_bytes[2]}.{ip_bytes[3]}"
-            port = struct.unpack(">H", data[54:56])[0]
-            if ip_str != '0.0.0.0' and port > 0:
-                self.remote_services[sid] = (ip_str, port)
-                self.logger.log(LogLevel.DEBUG, "SD", f"Discovered 0x{sid:04x} at {ip_str}:{port}")
+        if len(data) < 20: return
+        
+        # Header (12 bytes) + Entries Len (4 bytes) -> Start of Entries at 12?
+        # Header: Flags(1)+Res(3)+Len(4) = 8 bytes.
+        # Wait, My sending code above: Flags(4) + EntriesLen(4). So Header is 8 bytes.
+        # Entries start at index 12? No, 8 bytes of header. 
+        # C++ impl said: Flags(1)+Res(3)+Len(4).
+        # Python buffer `data` in `_run`:
+        # `recvfrom(1500)`. This returns SOME/IP Message (Header 16 bytes + Payload).
+        # My `_run` loop: `if len(data) >= 16: ... elif s == self.sd_sock:`.
+        # SD Socket receives raw SD or SOME/IP-SD? 
+        # SD port 30490. Packets have SOME/IP Header (16 bytes).
+        # So `data` has 16 bytes SOME/IP Header.
+        # Payload starts at 16.
+        # SD Header inside Payload: Flags(1)+Res(3)+LengthOfEntries(4).
+        # So Entries start at 16 + 8 = 24.
+        # Let's verify `send_offer` above.
+        # `someip_header` (16 bytes) + `sd_payload` (Flags...EntriesLen...Entries).
+        # So yes, offsets need adjustment.
+        
+        # Existing code: `sid = struct.unpack(">H", data[28:30])[0]`
+        # 28 = 16 (Header) + 8 (SD Header) + 4 (Type, Idx, Opts). 
+        # SvcID is at offset 4 of Entry.
+        # So 24 + 4 = 28. Correct.
+        
+        offset = 16 # Start of SD Payload
+        if len(data) < offset + 8: return
+        
+        flags = data[offset]
+        len_entries = struct.unpack(">I", data[offset+4:offset+8])[0]
+        entries_start = offset + 8
+        entries_end = entries_start + len_entries
+        
+        if len(data) < entries_end: return
+        
+        current = entries_start
+        while current + 16 <= entries_end:
+            entry_type = data[current]
+            index1 = data[current+1]
+            index2 = data[current+2]
+            num_opts_byte = data[current+3]
+            num_opts_1 = (num_opts_byte >> 4) & 0x0F
+            n_opts_2 = num_opts_byte & 0x0F
+            
+            sid = struct.unpack(">H", data[current+4:current+6])[0]
+            iid = struct.unpack(">H", data[current+6:current+8])[0]
+            ttl = struct.unpack(">I", data[current+8:current+12])[0]
+            ttl = ttl & 0xFFFFFF # Mask Major Version
+            min_ver = struct.unpack(">I", data[current+12:current+16])[0]
+            
+            # Options Handling (Simplified: Scan all options after entries)
+            options_start = entries_end + 4 # Skip Options Len
+            
+            if entry_type == 0x01: # OfferService
+                # Find Endpoint Option (assuming standard layout with 1 option)
+                # In this simplified parser, we scan options for IPv4Endpoint
+                # Ideally, we look at indices.
+                # Assuming simple 1-1 mapping for demo/test compatibility.
+                # Or just scan *all* options for now because Python Demo is Client-only mostly.
+                
+                # Robust way: parse options into list
+                parsed_opts = []
+                opt_ptr = options_start
+                if len(data) > options_start:
+                    try:
+                        len_opts = struct.unpack(">I", data[entries_end:entries_end+4])[0]
+                        opts_end = options_start + len_opts
+                        
+                        while opt_ptr + 3 <= opts_end and opt_ptr < len(data):
+                            l = struct.unpack(">H", data[opt_ptr:opt_ptr+2])[0]
+                            t = data[opt_ptr+2]
+                            if t == 0x04: # IPv4
+                                ip_raw = data[opt_ptr+4:opt_ptr+8]
+                                ip_str = f"{ip_raw[0]}.{ip_raw[1]}.{ip_raw[2]}.{ip_raw[3]}"
+                                p = struct.unpack(">H", data[opt_ptr+10:opt_ptr+12])[0]
+                                parsed_opts.append( (ip_str, p) )
+                            else:
+                                parsed_opts.append(None)
+                            opt_ptr += 2 + l # Length field is 2 bytes, then 'l' bytes of content
+                    except: pass
+                    
+                if ttl > 0:
+                    # Resolve endpoint
+                    endpoint = None
+                    if num_opts_1 > 0 and index1 < len(parsed_opts):
+                        endpoint = parsed_opts[index1]
+                    
+                    if endpoint and endpoint[0] != '0.0.0.0':
+                        self.remote_services[sid] = endpoint
+                        self.logger.log(LogLevel.DEBUG, "SD", f"Discovered 0x{sid:04x} at {endpoint[0]}:{endpoint[1]}")
+                        
+            elif entry_type == 0x06: # SubscribeEventgroup
+                # Verify if we provide this service? 
+                # For test Mock server, we want to ACK.
+                # We check `self.offered_services`
+                
+                base_endpoint = None
+                 # Parse options same as above
+                parsed_opts = []
+                opt_ptr = options_start
+                if len(data) > options_start:
+                    try:
+                        len_opts = struct.unpack(">I", data[entries_end:entries_end+4])[0]
+                        opts_end = options_start + len_opts
+                        while opt_ptr + 3 <= opts_end and opt_ptr < len(data):
+                            l = struct.unpack(">H", data[opt_ptr:opt_ptr+2])[0]
+                            t = data[opt_ptr+2]
+                            if t == 0x04: # IPv4
+                                ip_raw = data[opt_ptr+4:opt_ptr+8]
+                                ip_str = f"{ip_raw[0]}.{ip_raw[1]}.{ip_raw[2]}.{ip_raw[3]}"
+                                p = struct.unpack(">H", data[opt_ptr+10:opt_ptr+12])[0]
+                                parsed_opts.append( (ip_str, p) )
+                            else:
+                                parsed_opts.append(None)
+                            opt_ptr += 3 + l
+                    except: pass
+
+                if num_opts_1 > 0 and index1 < len(parsed_opts):
+                    base_endpoint = parsed_opts[index1]
+
+                is_offered = any(s[0] == sid for s in self.offered_services)
+                
+                if is_offered and ttl > 0 and base_endpoint:
+                     # Send ACK
+                     # Simplified ACK Packet
+                     eventgroup_id = min_ver >> 16
+                     ack_payload = bytearray([0x80, 0, 0, 0])
+                     ack_payload += struct.pack(">I", 16)
+                     # Entry: Type 0x07 (Ack)
+                     ack_payload += struct.pack(">BBBBHHII", 0x07, 0, 0, 0, sid, iid, ttl | (1<<24), min_ver)
+                     ack_payload += struct.pack(">I", 0) # 0 Options
+                     
+                     plen = len(ack_payload) + 8
+                     sh = struct.pack(">HHIHH4B", 0xFFFF, 0x8100, plen, 0, 1, 1, 1, 2, 0)
+                     
+                     # Send to Multicast (or Unicast if we implemented it properly)
+                     self.sd_sock.sendto(sh + ack_payload, ("224.0.0.1", 30490))
+                    
+            elif entry_type == 0x07: # SubscribeEventgroupAck
+                eventgroup_id = min_ver >> 16
+                if ttl > 0:
+                    self.subscriptions[(sid, eventgroup_id)] = True
+                else:
+                    self.subscriptions[(sid, eventgroup_id)] = False
+
+            current += 16
 
     # Event subscription tracking
     subscriptions: Dict[Tuple[int, int], bool] = {}  # (service_id, eventgroup_id) -> acked
@@ -180,7 +326,7 @@ class SomeIpRuntime:
         
         # Option IPv4 endpoint (our address for receiving events)
         sd_payload += struct.pack(">HBB", 9, 0x04, 0)  # Len=9, Type=IPv4, Res
-        sd_payload += struct.pack(">I", 0x7F000001)    # 127.0.0.1
+        sd_payload += struct.pack(">I", struct.unpack(">I", socket.inet_aton(self.interface_ip))[0])
         sd_payload += struct.pack(">BBH", 0, 0x11, self.port)  # Res, UDP, Port
         
         payload_len = len(sd_payload) + 8
@@ -211,11 +357,12 @@ class SomeIpRuntime:
         sd_payload += struct.pack(">BBBBHHII", 0x01, 0, 0, num_opts_byte, service_id, instance_id, maj_ttl, 10)
         
         # Options Len (4 bytes)
-        sd_payload += struct.pack(">I", 9)
+        sd_payload += struct.pack(">I", 12)
         
         # Option IPv4 (9 bytes)
         # Len(2), Type(1), Res(1), IP(4), Res(1), Proto(1), Port(2)
-        sd_payload += struct.pack(">HBBI BBH", 9, 0x04, 0, 0x7F000001, 0, 0x11, port)
+        ip_int = struct.unpack(">I", socket.inet_aton(self.interface_ip))[0]
+        sd_payload += struct.pack(">HBBI BBH", 9, 0x04, 0, ip_int, 0, 0x11, port)
         
         payload_len = len(sd_payload) + 8
         someip_header = struct.pack(">HHIHH4B", 0xFFFF, 0x8100, payload_len, 0, 1, 1, 1, 2, 0)
@@ -238,7 +385,14 @@ class SomeIpRuntime:
 
             readable, _, _ = select.select([self.sock, self.sd_sock], [], [], 0.5)
             for s in readable:
-                data, addr = s.recvfrom(1500)
+                try:
+                    data, addr = s.recvfrom(1500)
+                except ConnectionResetError:
+                    # Windows UDP Quirks: Host Unreachable from previous send closes socket on recv
+                    continue
+                except Exception:
+                    continue
+
                 if s == self.sock:
                     if len(data) >= 16:
                         sid, mid, length, cid, ssid, pv, iv, mt, rc = struct.unpack(">HHIHH4B", data[:16])

@@ -28,6 +28,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Running Python Unit Tests..."
+$env:PYTHONPATH = "src/python;build"
 python -m unittest discover tests
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Python Tests Failed"

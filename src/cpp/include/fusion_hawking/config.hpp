@@ -78,6 +78,9 @@ public:
             ParseRequired(block.substr(r_start, r_end - r_start), config.required);
         }
         
+        config.ip = ExtractString(block, "ip");
+        if (config.ip.empty()) config.ip = "127.0.0.1";
+        
         config.ip_version = ExtractInt(block, "ip_version");
         if (config.ip_version == 0) config.ip_version = 4;
 

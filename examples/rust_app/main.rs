@@ -6,7 +6,7 @@ pub mod generated {
 }
 use generated::{
     MathServiceProvider, MathServiceServer,
-    StringServiceClient
+    StringServiceClient, SortServiceClient
 };
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -21,7 +21,7 @@ struct MathImpl {
 }
 impl MathServiceProvider for MathImpl {
     fn add(&self, a: i32, b: i32) -> i32 {
-        self.logger.log(LogLevel::Debug, "MathService", &format!("Math.Add({}, {})", a, b));
+        self.logger.log(LogLevel::Info, "MathService", &format!("Math.Add({}, {})", a, b));
         a + b
     }
     fn sub(&self, a: i32, b: i32) -> i32 {
@@ -59,6 +59,9 @@ fn main() {
     
     rt.get_logger().log(LogLevel::Info, "Main", "Client: Waiting to discover services...");
     
+    // Subscribe to SortService (0x3001) EventGroup 1
+    rt.subscribe_eventgroup(0x3001, 1, 1, 100);
+
     while running.load(Ordering::Relaxed) {
         // Try to get StringClient (Python) using Alias
         if let Some(client) = rt.get_client::<StringServiceClient>("string-client") {
@@ -66,6 +69,17 @@ fn main() {
              match client.reverse("Hello World".to_string()) {
                  Ok(_) => rt.get_logger().log(LogLevel::Info, "Main", "Client: Request Sent OK"),
                  Err(e) => rt.get_logger().log(LogLevel::Error, "Main", &format!("Client: Request Failed: {}", e)),
+             }
+        }
+
+        // Try to get SortClient (C++)
+        // Note: 'sort-client' alias needs to be added to config or we use default ID logic if not present (logic in get_client fallback)
+        // We'll use "sort-service" as alias if we want, or just "sort-client" and rely on fallback if config missing.
+        if let Some(sort_client) = rt.get_client::<SortServiceClient>("sort-client") {
+             rt.get_logger().log(LogLevel::Info, "Main", "Client: Found SortService! Sending SortAsc(5,4,3,2,1)...");
+             let data = vec![5, 4, 3, 2, 1];
+             if let Err(e) = sort_client.sort_asc(data) {
+                 rt.get_logger().log(LogLevel::Error, "Main", &format!("Client: Sort Request Failed: {}", e));
              }
         }
         
