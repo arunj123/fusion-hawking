@@ -46,6 +46,7 @@ class TestRuntimeDetailed(unittest.TestCase):
         self.runtime.stop()
 
     def test_handle_sd_offer_parsing(self):
+        """[PRS_SOMEIPSD_00016] Verify SD Packet Header & [PRS_SOMEIPSD_00019] Service Entry Parsing"""
         # Construct a valid SD Offer Packet manually to test _handle_sd_packet
         # Header (16 bytes) + SD Flags/Len (8 bytes) + Entry (16) + Option (12)
         

@@ -4,7 +4,9 @@ use crate::sd::options::SdOption;
 use std::io::{Result, Write, Read};
 
 #[derive(Debug, Clone)]
+/// [PRS_SOMEIPSD_00016] SD Header Format
 pub struct SdPacket {
+    /// [PRS_SOMEIPSD_00278] Reboot Flag, Unicast Flag
     pub flags: u8,
     pub entries: Vec<SdEntry>,
     pub options: Vec<SdOption>,

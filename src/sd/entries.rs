@@ -2,6 +2,8 @@ use crate::codec::{SomeIpSerialize, SomeIpDeserialize};
 use std::io::{Result, Write, Read};
 
 /// SD Entry Types as defined in AUTOSAR SOME/IP-SD Specification
+/// [PRS_SOMEIPSD_00019] Service Entry
+/// [PRS_SOMEIPSD_00020] Eventgroup Entry
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum EntryType {

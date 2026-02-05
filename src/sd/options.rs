@@ -21,36 +21,37 @@ pub mod transport_protocol {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// [PRS_SOMEIPSD_00021] Option Header Format
 pub enum SdOption {
-    /// IPv4 Endpoint Option (Type 0x04)
+    /// [PRS_SOMEIPSD_00004] IPv4 Endpoint Option (Type 0x04)
     Ipv4Endpoint {
         address: Ipv4Addr,
         transport_proto: u8, // 0x06 TCP, 0x11 UDP
         port: u16,
     },
-    /// IPv6 Endpoint Option (Type 0x06)
+    /// [PRS_SOMEIPSD_00006] IPv6 Endpoint Option (Type 0x06)
     Ipv6Endpoint {
         address: Ipv6Addr,
         transport_proto: u8,
         port: u16,
     },
-    /// IPv4 Multicast Option (Type 0x14)
+    /// [PRS_SOMEIPSD_00014] IPv4 Multicast Option (Type 0x14)
     Ipv4Multicast {
         address: Ipv4Addr,
         transport_proto: u8,
         port: u16,
     },
-    /// IPv6 Multicast Option (Type 0x16)
+    /// [PRS_SOMEIPSD_00014] IPv6 Multicast Option (Type 0x16)
     Ipv6Multicast {
         address: Ipv6Addr,
         transport_proto: u8,
         port: u16,
     },
-    /// Configuration Option (Type 0x01) - contains configuration string
+    /// [PRS_SOMEIPSD_00007] Configuration Option (Type 0x01) - contains configuration string
     Configuration {
         config_string: String,
     },
-    /// Load Balancing Option (Type 0x02)
+    /// [PRS_SOMEIPSD_00008] Load Balancing Option (Type 0x02)
     LoadBalancing {
         priority: u16,
         weight: u16,

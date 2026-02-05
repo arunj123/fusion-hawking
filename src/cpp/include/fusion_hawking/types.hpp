@@ -6,7 +6,7 @@
 
 namespace fusion_hawking {
 
-/// SOME/IP Message Types as defined in AUTOSAR spec
+/// SOME/IP Message Types as defined in AUTOSAR spec [PRS_SOMEIP_00034]
 enum class MessageType : uint8_t {
     Request = 0x00,
     RequestNoReturn = 0x01,
@@ -20,7 +20,7 @@ enum class MessageType : uint8_t {
     ErrorWithTp = 0xA1
 };
 
-/// SOME/IP Return Codes as defined in AUTOSAR spec
+/// SOME/IP Return Codes as defined in AUTOSAR spec [PRS_SOMEIP_00043]
 enum class ReturnCode : uint8_t {
     Ok = 0x00,
     NotOk = 0x01,
@@ -64,6 +64,7 @@ private:
     std::map<std::pair<uint16_t, uint16_t>, uint16_t> counters_;
 };
 
+/// [PRS_SOMEIP_00030] Header Format
 struct SomeIpHeader {
     uint16_t service_id; uint16_t method_id; uint32_t length;
     uint16_t client_id; uint16_t session_id;

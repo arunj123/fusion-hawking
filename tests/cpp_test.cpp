@@ -22,6 +22,7 @@ int main() {
     using namespace generated;
     
     // 1. Test MathServiceAddRequest - Positive integers
+    // [PRS_SOMEIP_00191] Verify Payload Serialization (Big Endian)
     {
         MathServiceAddRequest req;
         req.a = 100;

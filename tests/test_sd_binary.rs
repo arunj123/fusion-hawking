@@ -5,6 +5,7 @@ use fusion_hawking::sd::options::SdOption;
 use std::net::Ipv4Addr;
 
 #[test]
+/// [PRS_SOMEIPSD_00016] Verify SD Packet Layout
 fn test_sd_packet_binary_layout() {
     let entry = SdEntry {
         entry_type: EntryType::OfferService,

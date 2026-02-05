@@ -11,9 +11,13 @@ use std::io::ErrorKind;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ServicePhase {
+    /// [PRS_SOMEIPSD_00011] Down Phase
     Down,
+    /// [PRS_SOMEIPSD_00012] Initial Wait Phase
     InitialWait,
+    /// [PRS_SOMEIPSD_00013] Repetition Phase
     Repetition,
+    /// [PRS_SOMEIPSD_00014] Main Phase
     Main,
 }
 
@@ -63,6 +67,7 @@ impl LocalService {
         }
     }
 
+    /// [PRS_SOMEIPSD_00012] Initial Wait Phase
     pub(crate) fn transition_to_initial_wait(&mut self) {
         self.phase = ServicePhase::InitialWait;
         self.phase_start = Instant::now();
@@ -76,6 +81,7 @@ impl LocalService {
         self.next_transmission = Instant::now() + Duration::from_millis(random_millis);
     }
 
+    /// [PRS_SOMEIPSD_00013] Repetition Phase
     pub(crate) fn transition_to_repetition(&mut self) {
         self.phase = ServicePhase::Repetition;
         self.phase_start = Instant::now();
@@ -83,6 +89,7 @@ impl LocalService {
         self.next_transmission = Instant::now(); // Send immediately upon entering
     }
 
+    /// [PRS_SOMEIPSD_00014] Main Phase
     pub(crate) fn transition_to_main(&mut self) {
         self.phase = ServicePhase::Main;
         self.phase_start = Instant::now();

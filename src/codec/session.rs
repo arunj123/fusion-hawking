@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU16, Ordering};
 
 /// Manages session IDs per (service_id, method_id) pair.
-/// Session IDs are incremented for each new request and wrap around at 0xFFFF.
+/// Session IDs are incremented for each new request and wrap around at 0xFFFF. [PRS_SOMEIP_00038]
 pub struct SessionIdManager {
     // Stores the NEXT session ID to return for each (service_id, method_id) pair
     counters: HashMap<(u16, u16), AtomicU16>,

@@ -6,10 +6,47 @@ mod generated {
 }
 
 use generated::*;
-use fusion_hawking::codec::{SomeIpSerialize, SomeIpDeserialize};
+use fusion_hawking::codec::{SomeIpSerialize, SomeIpDeserialize, SomeIpHeader};
 use std::io::Cursor;
 
 #[test]
+/// [PRS_SOMEIP_00030] Verify Header Format Serialization
+/// [PRS_SOMEIP_00058] Verify Version Constants
+fn test_header_serialization() {
+    let header = SomeIpHeader::new(
+        0x1234, // Service ID
+        0x5678, // Method ID
+        0xDEAD, // Client ID
+        0xBEEF, // Session ID
+        0x00,   // Message Type (Request)
+        10,     // Payload Length (will add 8 to header length => 18)
+    );
+    
+    let serialized = header.serialize();
+    
+    // Check serialized bytes (big endian)
+    // 0..2: Service ID
+    assert_eq!(serialized[0..2], [0x12, 0x34]);
+    // 2..4: Method ID
+    assert_eq!(serialized[2..4], [0x56, 0x78]);
+    // 4..8: Length (10 + 8 = 18 = 0x00000012)
+    assert_eq!(serialized[4..8], [0x00, 0x00, 0x00, 0x12]);
+    // 8..10: Client ID
+    assert_eq!(serialized[8..10], [0xDE, 0xAD]);
+    // 10..12: Session ID
+    assert_eq!(serialized[10..12], [0xBE, 0xEF]);
+    // 12: Proto Ver (0x01)
+    assert_eq!(serialized[12], 0x01);
+    // 13: Iface Ver (0x01)
+    assert_eq!(serialized[13], 0x01);
+    // 14: Msg Type (0x00)
+    assert_eq!(serialized[14], 0x00);
+    // 15: Return Code (0x00)
+    assert_eq!(serialized[15], 0x00);
+}
+
+#[test]
+/// [PRS_SOMEIP_00191] Verify Payload Serialization
 fn test_math_request_serialization() {
     let req = MathServiceAddRequest { a: 10, b: -20 };
     let mut buf = Vec::new();

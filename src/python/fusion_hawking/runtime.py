@@ -9,7 +9,7 @@ from .logger import LogLevel, ConsoleLogger, ILogger
 
 
 class MessageType(IntEnum):
-    """SOME/IP Message Types as defined in AUTOSAR spec"""
+    """SOME/IP Message Types as defined in AUTOSAR spec [PRS_SOMEIP_00034]"""
     REQUEST = 0x00
     REQUEST_NO_RETURN = 0x01
     NOTIFICATION = 0x02
@@ -23,7 +23,7 @@ class MessageType(IntEnum):
 
 
 class ReturnCode(IntEnum):
-    """SOME/IP Return Codes as defined in AUTOSAR spec"""
+    """SOME/IP Return Codes as defined in AUTOSAR spec [PRS_SOMEIP_00043]"""
     OK = 0x00
     NOT_OK = 0x01
     UNKNOWN_SERVICE = 0x02
@@ -214,7 +214,7 @@ class SomeIpRuntime:
                 pass
 
     def _handle_sd_packet(self, data: bytes):
-        """Parse and handle an SD packet."""
+        """Parse and handle an SD packet. [PRS_SOMEIPSD_00016]"""
         if len(data) < 20: return
         
         # Header (12 bytes) + Entries Len (4 bytes) -> Start of Entries at 12?

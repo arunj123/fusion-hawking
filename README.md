@@ -132,6 +132,17 @@ We verify interoperability using `tests/test_cross_language.py`, which helps sim
 - C++ Client ↔ Rust Server
 - Event Propagation (Pub/Sub) across languages
 
+## References
+
+The implementation follows these AUTOSAR specifications:
+
+- **SOME/IP Protocol**: `AUTOSAR_PRS_SOMEIPProtocol` (Document ID: `PRS_SOMEIP_00001`)
+- **SOME/IP Service Discovery**: `AUTOSAR_PRS_SOMEIPServiceDiscoveryProtocol` (Document ID: `PRS_SOMEIPSD_00001`)
+
+> **Note**: These specifications are Copyright © AUTOSAR. You can download the latest versions by searching for the Document IDs on the [AUTOSAR Standards Search](https://www.autosar.org/search).
+
+> **Note**: These specifications are Copyright © AUTOSAR and are provided for informational purposes only. Redistribution in this repository is avoided to comply with licensing terms.
+
 ## Licensing
 
 MIT License.
