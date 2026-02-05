@@ -560,5 +560,76 @@ mod tests {
         let not_found = sd.find_service(0x9999, 1);
         assert!(not_found.is_none());
     }
+
+
+    #[test]
+    fn test_offer_timing_initial_wait() {
+        let entry = create_dummy_entry();
+        // Min 10ms, Max 100ms
+        let config = SdConfig {
+            initial_delay_min_ms: 10,
+            initial_delay_max_ms: 100,
+            ..Default::default()
+        };
+        
+        let mut service = LocalService::with_config(entry, vec![], &config);
+        service.transition_to_initial_wait();
+        
+        let now = Instant::now();
+        // Should be at least 10ms in future
+        assert!(service.next_transmission >= now + Duration::from_millis(10));
+        // Should be at most 100ms + buffer (e.g. 50ms) in future
+        assert!(service.next_transmission <= now + Duration::from_millis(150));
+    }
+
+    #[test]
+    fn test_repetition_logic() {
+        let entry = create_dummy_entry();
+        let mut service = LocalService::new(entry, vec![]);
+        
+        // Transition to repetition
+        service.transition_to_repetition();
+        assert_eq!(service.repetition_count, 0);
+        // Should send immediately (or very close to now)
+        assert!(service.next_transmission <= Instant::now() + Duration::from_millis(5));
+    }
+
+    #[test]
+    fn test_ttl_expiry_removes_service() {
+        let multicast: SocketAddr = "224.0.0.1:30490".parse().unwrap();
+        let transport = UdpTransport::new("0.0.0.0:0".parse().unwrap()).unwrap();
+        let local_ip = Ipv4Addr::new(127, 0, 0, 1);
+        let mut sd = ServiceDiscovery::new(transport, multicast, local_ip);
+        
+        // Add a remote service
+        let remote = RemoteService {
+            service_id: 0x1234,
+            instance_id: 1,
+            version_major: 1,
+            version_minor: 0,
+            endpoint: vec![],
+            last_seen: Instant::now(),
+            ttl: 10,
+        };
+        sd.remote_services.insert((0x1234, 1), remote);
+        assert!(sd.find_service(0x1234, 1).is_some());
+        
+        // Simulate receiving an offer with TTL 0 (StopOffer)
+        let entry = SdEntry {
+            entry_type: EntryType::OfferService,
+            index_1: 0, index_2: 0, number_of_opts_1: 0, number_of_opts_2: 0,
+            service_id: 0x1234, instance_id: 1, major_version: 1, ttl: 0, minor_version: 0
+        };
+        let packet = SdPacket {
+            flags: 0x00,
+            entries: vec![entry],
+            options: vec![],
+        };
+        
+        sd.handle_incoming_packet(packet);
+        
+        // Service should be removed
+        assert!(sd.find_service(0x1234, 1).is_none());
+    }
 }
 

@@ -100,4 +100,95 @@ mod tests {
              _ => panic!("Expected IPv6 option second"),
         }
     }
+
+    #[test]
+    fn test_ipv4_multicast_option() {
+        let opt = SdOption::Ipv4Multicast {
+            address: Ipv4Addr::new(224, 0, 0, 1),
+            transport_proto: 0x11, // UDP
+            port: 30490,
+        };
+
+        let mut buf = Vec::new();
+        opt.serialize(&mut buf).unwrap();
+
+        let mut reader = &buf[..];
+        let deserialized = SdOption::deserialize(&mut reader).unwrap();
+
+        match deserialized {
+            SdOption::Ipv4Multicast { address, transport_proto, port } => {
+                assert_eq!(address, Ipv4Addr::new(224, 0, 0, 1));
+                assert_eq!(transport_proto, 0x11);
+                assert_eq!(port, 30490);
+            },
+            _ => panic!("Expected Ipv4Multicast option"),
+        }
+    }
+
+    #[test]
+    fn test_ipv6_multicast_option() {
+        let opt = SdOption::Ipv6Multicast {
+            address: Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 1),
+            transport_proto: 0x11, // UDP
+            port: 30490,
+        };
+
+        let mut buf = Vec::new();
+        opt.serialize(&mut buf).unwrap();
+
+        let mut reader = &buf[..];
+        let deserialized = SdOption::deserialize(&mut reader).unwrap();
+
+        match deserialized {
+            SdOption::Ipv6Multicast { address, transport_proto, port } => {
+                assert_eq!(address, Ipv6Addr::new(0xFF02, 0, 0, 0, 0, 0, 0, 1));
+                assert_eq!(transport_proto, 0x11);
+                assert_eq!(port, 30490);
+            },
+            _ => panic!("Expected Ipv6Multicast option"),
+        }
+    }
+
+    #[test]
+    fn test_configuration_option() {
+        let config_str = "key=value";
+        let opt = SdOption::Configuration {
+            config_string: config_str.to_string(),
+        };
+
+        let mut buf = Vec::new();
+        opt.serialize(&mut buf).unwrap();
+
+        let mut reader = &buf[..];
+        let deserialized = SdOption::deserialize(&mut reader).unwrap();
+
+        match deserialized {
+            SdOption::Configuration { config_string } => {
+                assert_eq!(config_string, "key=value");
+            },
+            _ => panic!("Expected Configuration option"),
+        }
+    }
+
+    #[test]
+    fn test_load_balancing_option() {
+        let opt = SdOption::LoadBalancing {
+            priority: 10,
+            weight: 50,
+        };
+
+        let mut buf = Vec::new();
+        opt.serialize(&mut buf).unwrap();
+
+        let mut reader = &buf[..];
+        let deserialized = SdOption::deserialize(&mut reader).unwrap();
+
+        match deserialized {
+            SdOption::LoadBalancing { priority, weight } => {
+                assert_eq!(priority, 10);
+                assert_eq!(weight, 50);
+            },
+            _ => panic!("Expected LoadBalancing option"),
+        }
+    }
 }

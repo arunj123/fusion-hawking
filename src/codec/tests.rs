@@ -200,4 +200,193 @@ mod tests {
         let mut reader = Cursor::new(&buf_max);
         assert_eq!(i32::deserialize(&mut reader).unwrap(), i32::MAX);
     }
+    
+    // =====================================================================
+    // MessageType Tests - SOME/IP Protocol Compliance
+    // =====================================================================
+    
+    #[test]
+    fn test_message_type_values() {
+        use crate::codec::header::MessageType;
+        
+        // Verify all message type enum values match SOME/IP spec
+        assert_eq!(MessageType::Request as u8, 0x00);
+        assert_eq!(MessageType::RequestNoReturn as u8, 0x01);
+        assert_eq!(MessageType::Notification as u8, 0x02);
+        assert_eq!(MessageType::RequestWithTp as u8, 0x20);
+        assert_eq!(MessageType::RequestNoReturnWithTp as u8, 0x21);
+        assert_eq!(MessageType::NotificationWithTp as u8, 0x22);
+        assert_eq!(MessageType::Response as u8, 0x80);
+        assert_eq!(MessageType::Error as u8, 0x81);
+        assert_eq!(MessageType::ResponseWithTp as u8, 0xA0);
+        assert_eq!(MessageType::ErrorWithTp as u8, 0xA1);
+    }
+    
+    #[test]
+    fn test_message_type_from_u8() {
+        use crate::codec::header::MessageType;
+        
+        assert_eq!(MessageType::from_u8(0x00), Some(MessageType::Request));
+        assert_eq!(MessageType::from_u8(0x80), Some(MessageType::Response));
+        assert_eq!(MessageType::from_u8(0x81), Some(MessageType::Error));
+        assert_eq!(MessageType::from_u8(0xFF), None); // Invalid
+        assert_eq!(MessageType::from_u8(0x03), None); // Invalid gap
+    }
+    
+    #[test]
+    fn test_message_type_classification() {
+        use crate::codec::header::MessageType;
+        
+        // Request types
+        assert!(MessageType::Request.is_request());
+        assert!(MessageType::RequestNoReturn.is_request());
+        assert!(MessageType::RequestWithTp.is_request());
+        
+        // Response types
+        assert!(MessageType::Response.is_response());
+        assert!(MessageType::ResponseWithTp.is_response());
+        
+        // Error types
+        assert!(MessageType::Error.is_error());
+        assert!(MessageType::ErrorWithTp.is_error());
+        
+        // Notification types
+        assert!(MessageType::Notification.is_notification());
+        assert!(MessageType::NotificationWithTp.is_notification());
+        
+        // TP flag
+        assert!(MessageType::RequestWithTp.uses_tp());
+        assert!(!MessageType::Request.uses_tp());
+    }
+    
+    // =====================================================================
+    // ReturnCode Tests - SOME/IP Protocol Compliance
+    // =====================================================================
+    
+    #[test]
+    fn test_return_code_values() {
+        use crate::codec::header::ReturnCode;
+        
+        // Verify all return code enum values match SOME/IP spec
+        assert_eq!(ReturnCode::Ok as u8, 0x00);
+        assert_eq!(ReturnCode::NotOk as u8, 0x01);
+        assert_eq!(ReturnCode::UnknownService as u8, 0x02);
+        assert_eq!(ReturnCode::UnknownMethod as u8, 0x03);
+        assert_eq!(ReturnCode::NotReady as u8, 0x04);
+        assert_eq!(ReturnCode::NotReachable as u8, 0x05);
+        assert_eq!(ReturnCode::Timeout as u8, 0x06);
+        assert_eq!(ReturnCode::WrongProtocolVersion as u8, 0x07);
+        assert_eq!(ReturnCode::WrongInterfaceVersion as u8, 0x08);
+        assert_eq!(ReturnCode::MalformedMessage as u8, 0x09);
+        assert_eq!(ReturnCode::WrongMessageType as u8, 0x0A);
+        assert_eq!(ReturnCode::E2eRepeated as u8, 0x0B);
+        assert_eq!(ReturnCode::E2eWrongSequence as u8, 0x0C);
+        assert_eq!(ReturnCode::E2eNotAvailable as u8, 0x0D);
+        assert_eq!(ReturnCode::E2eNoNewData as u8, 0x0E);
+    }
+    
+    #[test]
+    fn test_return_code_from_u8() {
+        use crate::codec::header::ReturnCode;
+        
+        assert_eq!(ReturnCode::from_u8(0x00), Some(ReturnCode::Ok));
+        assert_eq!(ReturnCode::from_u8(0x01), Some(ReturnCode::NotOk));
+        assert_eq!(ReturnCode::from_u8(0x0E), Some(ReturnCode::E2eNoNewData));
+        assert_eq!(ReturnCode::from_u8(0x0F), None); // Invalid
+        assert_eq!(ReturnCode::from_u8(0xFF), None); // Invalid
+    }
+    
+    #[test]
+    fn test_return_code_is_error() {
+        use crate::codec::header::ReturnCode;
+        
+        assert!(!ReturnCode::Ok.is_error());
+        assert!(ReturnCode::NotOk.is_error());
+        assert!(ReturnCode::UnknownService.is_error());
+        assert!(ReturnCode::Timeout.is_error());
+    }
+    
+    // =====================================================================
+    // Header Field Tests - SOME/IP Protocol Compliance
+    // =====================================================================
+    
+    #[test]
+    fn test_header_protocol_version() {
+        // SOME/IP spec: protocol version must be 0x01
+        assert_eq!(SomeIpHeader::SOMEIP_PROTOCOL_VERSION, 0x01);
+        
+        let header = SomeIpHeader::new(0x1234, 0x5678, 0x0001, 0x0001, 0x00, 0);
+        assert_eq!(header.protocol_version, 0x01);
+    }
+    
+    #[test]
+    fn test_header_interface_version() {
+        // Default interface version
+        let header = SomeIpHeader::new(0x1234, 0x5678, 0x0001, 0x0001, 0x00, 0);
+        assert_eq!(header.interface_version, 0x01);
+        
+        // Custom interface version
+        let header2 = SomeIpHeader::with_interface_version(
+            0x1234, 0x5678, 0x0001, 0x0001, 0x00, 0, 0x05
+        );
+        assert_eq!(header2.interface_version, 0x05);
+    }
+    
+    #[test]
+    fn test_header_length_field() {
+        // Length = payload_len + 8 (includes Request ID to end)
+        let header = SomeIpHeader::new(0x1234, 0x5678, 0x0001, 0x0001, 0x00, 100);
+        assert_eq!(header.length, 108);
+        
+        // Zero payload
+        let header2 = SomeIpHeader::new(0x1234, 0x5678, 0x0001, 0x0001, 0x00, 0);
+        assert_eq!(header2.length, 8);
+    }
+    
+    #[test]
+    fn test_header_with_return_code() {
+        use crate::codec::header::ReturnCode;
+        
+        let header = SomeIpHeader::with_return_code(
+            0x1234, 0x5678, 0x0001, 0x0001, 0x80, 0, ReturnCode::UnknownMethod as u8
+        );
+        assert_eq!(header.return_code, 0x03);
+        assert_eq!(header.return_code_enum(), Some(ReturnCode::UnknownMethod));
+    }
+    
+    #[test]
+    fn test_header_message_type_enum() {
+        use crate::codec::header::MessageType;
+        
+        let header = SomeIpHeader::new(0x1234, 0x5678, 0x0001, 0x0001, 0x80, 0);
+        assert_eq!(header.message_type_enum(), Some(MessageType::Response));
+    }
+    
+    #[test]
+    fn test_header_deserialize_error() {
+        // Buffer too small
+        let small_buffer = [0u8; 10];
+        assert!(SomeIpHeader::deserialize(&small_buffer).is_err());
+    }
+    
+    #[test]
+    fn test_header_roundtrip() {
+        use crate::codec::header::MessageType;
+        
+        let original = SomeIpHeader::with_return_code(
+            0xABCD, 0x1234, 0x5678, 0x9ABC, 
+            MessageType::Response as u8, 256, 0x00
+        );
+        
+        let bytes = original.serialize();
+        let deserialized = SomeIpHeader::deserialize(&bytes).unwrap();
+        
+        assert_eq!(deserialized.service_id, 0xABCD);
+        assert_eq!(deserialized.method_id, 0x1234);
+        assert_eq!(deserialized.client_id, 0x5678);
+        assert_eq!(deserialized.session_id, 0x9ABC);
+        assert_eq!(deserialized.length, 256 + 8);
+        assert_eq!(deserialized.message_type, 0x80);
+        assert_eq!(deserialized.return_code, 0x00);
+    }
 }

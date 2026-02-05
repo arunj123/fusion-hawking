@@ -1,3 +1,29 @@
+//! # SOME/IP Runtime Module
+//!
+//! High-level runtime for SOME/IP applications with service lifecycle management.
+//!
+//! ## Key Types
+//!
+//! - [`SomeIpRuntime`] - Main runtime for service providers and consumers
+//! - [`RequestHandler`] - Trait for implementing service handlers
+//! - [`ServiceClient`] - Trait for client proxy implementations
+//! - [`ThreadPool`] - Concurrent request handling
+//!
+//! ## Lifecycle
+//!
+//! 1. Load configuration: `SomeIpRuntime::load("config.json", "my_instance")`
+//! 2. Register services: `runtime.offer_service("alias", handler)`
+//! 3. Start runtime: `runtime.run()`
+//! 4. Stop gracefully: `runtime.stop()`
+//!
+//! ## Example
+//!
+//! ```ignore
+//! let runtime = SomeIpRuntime::load("config.json", "server");
+//! runtime.offer_service("math", Box::new(MathServiceServer::new(provider)));
+//! runtime.run();
+//! ```
+
 pub mod threadpool;
 pub mod dispatcher;
 pub mod config;

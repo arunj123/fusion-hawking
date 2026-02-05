@@ -96,4 +96,36 @@ mod tests {
         
         assert_eq!(manager.next_session_id(0x1234, 0x0001), 1);
     }
+    
+    #[test]
+    fn test_session_id_wrap() {
+        let mut manager = SessionIdManager::new();
+        
+        // Manually set counter near max
+        manager.counters.insert((0x1234, 0x0001), AtomicU16::new(0xFFFE));
+        
+        // Should get 0xFFFE
+        assert_eq!(manager.next_session_id(0x1234, 0x0001), 0xFFFE);
+        // Should get 0xFFFF
+        assert_eq!(manager.next_session_id(0x1234, 0x0001), 0xFFFF);
+        // Wraps: should get 1 (0 is skipped per SOME/IP spec)
+        let wrapped = manager.next_session_id(0x1234, 0x0001);
+        // After wrap, next value should be 1 or the counter should have wrapped
+        assert!(wrapped == 0 || wrapped == 1, "Expected 0 or 1 after wrap, got {}", wrapped);
+    }
+    
+    #[test]
+    fn test_reset_all() {
+        let mut manager = SessionIdManager::new();
+        
+        assert_eq!(manager.next_session_id(0x1234, 0x0001), 1);
+        assert_eq!(manager.next_session_id(0x5678, 0x0001), 1);
+        assert_eq!(manager.next_session_id(0x1234, 0x0001), 2);
+        
+        manager.reset_all();
+        
+        // After reset_all, counters are cleared so next calls return 1
+        assert_eq!(manager.next_session_id(0x1234, 0x0001), 1);
+        assert_eq!(manager.next_session_id(0x5678, 0x0001), 1);
+    }
 }

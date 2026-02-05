@@ -31,7 +31,14 @@ Write-Host "Running Python Unit Tests..."
 $env:PYTHONPATH = "src/python;build"
 python -m unittest discover tests
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "Python Tests Failed"
+    Write-Error "Python Unit Tests Failed"
+    exit 1
+}
+
+Write-Host "Running Cross-Language Integration Tests..."
+python -m pytest tests/test_cross_language.py
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Cross-Language Tests Failed"
     exit 1
 }
 

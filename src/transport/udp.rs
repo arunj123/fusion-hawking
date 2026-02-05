@@ -78,3 +78,45 @@ impl SomeIpTransport for UdpTransport {
         self.socket.local_addr()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+
+    #[test]
+    fn test_udp_send_receive_loopback() {
+        let receiver = UdpTransport::new("127.0.0.1:0".parse().unwrap()).unwrap();
+        let receiver_addr = receiver.local_addr().unwrap();
+        
+        let sender = UdpTransport::new("127.0.0.1:0".parse().unwrap()).unwrap();
+        
+        // Send data
+        let msg = b"Hello UDP";
+        sender.send(msg, Some(receiver_addr)).unwrap();
+        
+        // Receiver might need a moment or blocking read
+        // It block by default
+        let mut buf = [0u8; 128];
+        let (len, src) = receiver.receive(&mut buf).unwrap();
+        
+        assert_eq!(len, msg.len());
+        assert_eq!(&buf[..len], msg);
+        // Src port is dynamic, but IP should match
+        if let SocketAddr::V4(src_v4) = src {
+            assert_eq!(src_v4.ip(), &Ipv4Addr::new(127, 0, 0, 1));
+        }
+    }
+
+    #[test]
+    fn test_nonblocking_mode() {
+        let transport = UdpTransport::new("127.0.0.1:0".parse().unwrap()).unwrap();
+        transport.set_nonblocking(true).unwrap();
+        
+        let mut buf = [0u8; 10];
+        let result = transport.receive(&mut buf);
+        
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::WouldBlock);
+    }
+}
