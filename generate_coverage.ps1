@@ -12,11 +12,11 @@ if (Get-Command "cargo-llvm-cov" -ErrorAction SilentlyContinue) {
     $hasRustCov = $true
 }
 else {
-    Write-Host "cargo-llvm-cov not found. Attempting install (compatibility check)..."
-    # Try install once, silence output to avoid scary console warnings
-    $null = cargo install cargo-llvm-cov --version 0.6.21 2>&1
+    Write-Host "cargo-llvm-cov not found. Attempting install (latest version)..."
+    # Install latest version to match current rustc
+    $null = cargo install cargo-llvm-cov 2>&1
     if ($LASTEXITCODE -eq 0) { $hasRustCov = $true }
-    else { Write-Host "rustc version incompatible with cargo-llvm-cov. Skipping Rust coverage (running standard tests)." -ForegroundColor Yellow }
+    else { Write-Host "Failed to install cargo-llvm-cov. Skipping Rust coverage (running standard tests)." -ForegroundColor Yellow }
 }
 
 # Create output directory
@@ -44,6 +44,15 @@ else {
 
 # 4. Run C++ Coverage
 Write-Host "Checking for OpenCppCoverage..."
+if (-not (Get-Command "OpenCppCoverage" -ErrorAction SilentlyContinue)) {
+    Write-Host "OpenCppCoverage not found. Attempting auto-install via Winget..."
+    # Attempt install (Silent)
+    winget install -e --id OpenCppCoverage.OpenCppCoverage --silent --accept-source-agreements --accept-package-agreements 2>&1 | Out-Null
+    # Refresh env? Winget updates PATH, but current shell might not see it immediately without refresh.
+    # We can try to find where it installed: usually "C:\Program Files\OpenCppCoverage\OpenCppCoverage.exe"
+    $env:Path += ";C:\Program Files\OpenCppCoverage"
+}
+
 if (Get-Command "OpenCppCoverage" -ErrorAction SilentlyContinue) {
     Write-Host "Generating C++ Coverage..."
     $cppTestExe = "build/Release/cpp_test.exe"
@@ -64,8 +73,8 @@ if (Get-Command "OpenCppCoverage" -ErrorAction SilentlyContinue) {
     }
 }
 else {
-    Write-Host "OpenCppCoverage not found. Skipping C++ coverage." -ForegroundColor Yellow
-    Write-Host "To enable, install from: https://github.com/OpenCppCoverage/OpenCppCoverage/releases"
+    Write-Host "OpenCppCoverage not found and install failed. Skipping C++ coverage." -ForegroundColor Yellow
+    Write-Host "Manual Install Link: https://github.com/OpenCppCoverage/OpenCppCoverage/releases"
 }
 
 # 5. Run Python Coverage
