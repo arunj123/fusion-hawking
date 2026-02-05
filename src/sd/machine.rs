@@ -3,6 +3,7 @@ use super::entries::{SdEntry, EntryType};
 use super::options::SdOption;
 use crate::transport::{UdpTransport, SomeIpTransport};
 use crate::codec::{SomeIpSerialize, SomeIpDeserialize, SomeIpHeader};
+use crate::runtime::config::SdConfig;
 use std::net::{SocketAddr, Ipv4Addr};
 use std::collections::HashMap;
 use std::time::{Instant, Duration, SystemTime, UNIX_EPOCH};
@@ -27,16 +28,23 @@ pub(crate) struct LocalService {
     pub next_transmission: Instant,
     pub repetition_count: u32,
 
-    // Config
+    // Config (from SdConfig)
     initial_delay_min: Duration,
     initial_delay_max: Duration,
     repetition_base_delay: Duration,
     repetition_max: u32,
     cyclic_delay: Duration,
+    pub ttl: u32,
 }
 
 impl LocalService {
+    /// Create with default configuration
     pub(crate) fn new(entry: SdEntry, options: Vec<SdOption>) -> Self {
+        Self::with_config(entry, options, &SdConfig::default())
+    }
+    
+    /// Create with custom configuration from SdConfig
+    pub(crate) fn with_config(entry: SdEntry, options: Vec<SdOption>, config: &SdConfig) -> Self {
         LocalService {
             entry,
             endpoint_options: options,
@@ -45,12 +53,13 @@ impl LocalService {
             next_transmission: Instant::now() + Duration::from_secs(3600), // Far future
             repetition_count: 0,
             
-            // Default Config (Autosar CP R20-11)
-            initial_delay_min: Duration::from_millis(10),
-            initial_delay_max: Duration::from_millis(100),
-            repetition_base_delay: Duration::from_millis(100),
-            repetition_max: 3,
-            cyclic_delay: Duration::from_secs(1),
+            // Config from SdConfig
+            initial_delay_min: Duration::from_millis(config.initial_delay_min_ms),
+            initial_delay_max: Duration::from_millis(config.initial_delay_max_ms),
+            repetition_base_delay: Duration::from_millis(config.repetition_base_delay_ms),
+            repetition_max: config.repetition_max,
+            cyclic_delay: Duration::from_millis(config.cyclic_delay_ms),
+            ttl: config.ttl,
         }
     }
 
@@ -58,8 +67,9 @@ impl LocalService {
         self.phase = ServicePhase::InitialWait;
         self.phase_start = Instant::now();
         
-        // Random delay
-        let range = (self.initial_delay_max.as_millis() - self.initial_delay_min.as_millis()) as u64;
+        // Random delay between min and max
+        let range = self.initial_delay_max.as_millis().saturating_sub(self.initial_delay_min.as_millis()) as u64;
+        let range = if range == 0 { 1 } else { range };
         let now_nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().subsec_nanos() as u64;
         let random_millis = self.initial_delay_min.as_millis() as u64 + (now_nanos % range);
         
@@ -266,10 +276,9 @@ impl ServiceDiscovery {
                 }
                 
                 if should_send {
-                     // We need to calculate TTL.
-                     // Default 0xFFFF00 (as 24bit) => 0x00FFFFFF
+                     // Use configured TTL from service
                      let mut entry = service.entry.clone();
-                     entry.ttl = 0x00FFFFFF;
+                     entry.ttl = service.ttl;
                      
                      // Update Option Referencing
                      // We are sending 1 entry with all options.

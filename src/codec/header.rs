@@ -1,5 +1,147 @@
 use std::convert::TryInto;
 
+/// SOME/IP Message Types as defined in AUTOSAR SOME/IP Protocol Specification
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum MessageType {
+    /// Request expecting a response
+    Request = 0x00,
+    /// Request not expecting a response (fire-and-forget)
+    RequestNoReturn = 0x01,
+    /// Notification/Event (cyclic or on-change)
+    Notification = 0x02,
+    /// Request with Transport Protocol segmentation
+    RequestWithTp = 0x20,
+    /// Request no return with Transport Protocol segmentation
+    RequestNoReturnWithTp = 0x21,
+    /// Notification with Transport Protocol segmentation
+    NotificationWithTp = 0x22,
+    /// Response to a Request
+    Response = 0x80,
+    /// Error response
+    Error = 0x81,
+    /// Response with Transport Protocol segmentation
+    ResponseWithTp = 0xA0,
+    /// Error with Transport Protocol segmentation
+    ErrorWithTp = 0xA1,
+}
+
+impl MessageType {
+    pub fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0x00 => Some(MessageType::Request),
+            0x01 => Some(MessageType::RequestNoReturn),
+            0x02 => Some(MessageType::Notification),
+            0x20 => Some(MessageType::RequestWithTp),
+            0x21 => Some(MessageType::RequestNoReturnWithTp),
+            0x22 => Some(MessageType::NotificationWithTp),
+            0x80 => Some(MessageType::Response),
+            0x81 => Some(MessageType::Error),
+            0xA0 => Some(MessageType::ResponseWithTp),
+            0xA1 => Some(MessageType::ErrorWithTp),
+            _ => None,
+        }
+    }
+    
+    pub fn is_request(&self) -> bool {
+        matches!(self, MessageType::Request | MessageType::RequestNoReturn | 
+                       MessageType::RequestWithTp | MessageType::RequestNoReturnWithTp)
+    }
+    
+    pub fn is_response(&self) -> bool {
+        matches!(self, MessageType::Response | MessageType::ResponseWithTp)
+    }
+    
+    pub fn is_error(&self) -> bool {
+        matches!(self, MessageType::Error | MessageType::ErrorWithTp)
+    }
+    
+    pub fn is_notification(&self) -> bool {
+        matches!(self, MessageType::Notification | MessageType::NotificationWithTp)
+    }
+    
+    pub fn uses_tp(&self) -> bool {
+        matches!(self, MessageType::RequestWithTp | MessageType::RequestNoReturnWithTp |
+                       MessageType::NotificationWithTp | MessageType::ResponseWithTp | 
+                       MessageType::ErrorWithTp)
+    }
+}
+
+impl From<MessageType> for u8 {
+    fn from(mt: MessageType) -> u8 {
+        mt as u8
+    }
+}
+
+/// SOME/IP Return Codes as defined in AUTOSAR SOME/IP Protocol Specification
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ReturnCode {
+    /// No error occurred
+    Ok = 0x00,
+    /// An unspecified error occurred
+    NotOk = 0x01,
+    /// The requested Service ID is unknown
+    UnknownService = 0x02,
+    /// The requested Method ID is unknown
+    UnknownMethod = 0x03,
+    /// Service/Method not ready
+    NotReady = 0x04,
+    /// Service/Method not reachable
+    NotReachable = 0x05,
+    /// Timeout on server side
+    Timeout = 0x06,
+    /// Protocol version mismatch
+    WrongProtocolVersion = 0x07,
+    /// Interface version mismatch
+    WrongInterfaceVersion = 0x08,
+    /// Malformed message
+    MalformedMessage = 0x09,
+    /// Wrong message type
+    WrongMessageType = 0x0A,
+    /// E2E protection check failed
+    E2eRepeated = 0x0B,
+    /// E2E protection wrong sequence
+    E2eWrongSequence = 0x0C,
+    /// E2E protection not available
+    E2eNotAvailable = 0x0D,
+    /// E2E protection no new data
+    E2eNoNewData = 0x0E,
+}
+
+impl ReturnCode {
+    pub fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0x00 => Some(ReturnCode::Ok),
+            0x01 => Some(ReturnCode::NotOk),
+            0x02 => Some(ReturnCode::UnknownService),
+            0x03 => Some(ReturnCode::UnknownMethod),
+            0x04 => Some(ReturnCode::NotReady),
+            0x05 => Some(ReturnCode::NotReachable),
+            0x06 => Some(ReturnCode::Timeout),
+            0x07 => Some(ReturnCode::WrongProtocolVersion),
+            0x08 => Some(ReturnCode::WrongInterfaceVersion),
+            0x09 => Some(ReturnCode::MalformedMessage),
+            0x0A => Some(ReturnCode::WrongMessageType),
+            0x0B => Some(ReturnCode::E2eRepeated),
+            0x0C => Some(ReturnCode::E2eWrongSequence),
+            0x0D => Some(ReturnCode::E2eNotAvailable),
+            0x0E => Some(ReturnCode::E2eNoNewData),
+            _ => None,
+        }
+    }
+    
+    pub fn is_error(&self) -> bool {
+        *self != ReturnCode::Ok
+    }
+}
+
+impl From<ReturnCode> for u8 {
+    fn from(rc: ReturnCode) -> u8 {
+        rc as u8
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SomeIpHeader {
     pub service_id: u16,
@@ -16,19 +158,43 @@ pub struct SomeIpHeader {
 impl SomeIpHeader {
     pub const HEADER_LENGTH: u32 = 16;
     pub const SOMEIP_PROTOCOL_VERSION: u8 = 0x01;
+    pub const DEFAULT_INTERFACE_VERSION: u8 = 0x01;
 
+    /// Create a new SOME/IP header with default interface version (0x01)
     pub fn new(service_id: u16, method_id: u16, client_id: u16, session_id: u16, message_type: u8, payload_len: u32) -> Self {
+        Self::with_interface_version(service_id, method_id, client_id, session_id, message_type, payload_len, Self::DEFAULT_INTERFACE_VERSION)
+    }
+    
+    /// Create a new SOME/IP header with configurable interface version
+    pub fn with_interface_version(service_id: u16, method_id: u16, client_id: u16, session_id: u16, message_type: u8, payload_len: u32, interface_version: u8) -> Self {
         SomeIpHeader {
             service_id,
             method_id,
-            length: payload_len + 8, // Length field covers Request ID to end of payload. Request ID (4) + Proto/Int Ver/MsgType/RetCode (4) = 8
+            length: payload_len + 8, // Length field covers Request ID to end of payload
             client_id,
             session_id,
             protocol_version: Self::SOMEIP_PROTOCOL_VERSION,
-            interface_version: 0x01, // Default, should be configurable
+            interface_version,
             message_type,
             return_code: 0x00,
         }
+    }
+    
+    /// Create a new SOME/IP header with a specific return code
+    pub fn with_return_code(service_id: u16, method_id: u16, client_id: u16, session_id: u16, message_type: u8, payload_len: u32, return_code: u8) -> Self {
+        let mut header = Self::new(service_id, method_id, client_id, session_id, message_type, payload_len);
+        header.return_code = return_code;
+        header
+    }
+    
+    /// Get the message type as an enum
+    pub fn message_type_enum(&self) -> Option<MessageType> {
+        MessageType::from_u8(self.message_type)
+    }
+    
+    /// Get the return code as an enum
+    pub fn return_code_enum(&self) -> Option<ReturnCode> {
+        ReturnCode::from_u8(self.return_code)
     }
 
     pub fn serialize(&self) -> [u8; 16] {

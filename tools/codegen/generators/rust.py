@@ -72,7 +72,9 @@ class RustGenerator(AbstractGenerator):
         
         # Serialize
         lines.append(f"impl SomeIpSerialize for {s.name} {{")
-        lines.append(f"    fn serialize<W: Write>(&self, writer: &mut W) -> Result<()> {{")
+        # Use _writer for empty structs to avoid unused variable warning
+        writer_param = "_writer" if len(s.fields) == 0 else "writer"
+        lines.append(f"    fn serialize<W: Write>(&self, {writer_param}: &mut W) -> Result<()> {{")
         for f in s.fields:
             lines.append(f"        self.{f.name}.serialize(writer)?;")
         lines.append("        Ok(())")
@@ -81,7 +83,9 @@ class RustGenerator(AbstractGenerator):
         
         # Deserialize
         lines.append(f"impl SomeIpDeserialize for {s.name} {{")
-        lines.append(f"    fn deserialize<R: Read>(reader: &mut R) -> Result<Self> {{")
+        # Use _reader for empty structs to avoid unused variable warning
+        reader_param = "_reader" if len(s.fields) == 0 else "reader"
+        lines.append(f"    fn deserialize<R: Read>({reader_param}: &mut R) -> Result<Self> {{")
         lines.append(f"        Ok({s.name} {{")
         for f in s.fields:
             lines.append(f"            {f.name}: <{self._rust_type(f.type)}>::deserialize(reader)?,")
@@ -107,6 +111,7 @@ class RustGenerator(AbstractGenerator):
         lines.append(f"pub struct {svc.name}Server<T> {{")
         lines.append("    provider: Arc<T>,")
         lines.append("}")
+        lines.append("#[allow(dead_code)]")
         lines.append(f"impl {svc.name}Server<()> {{")
         lines.append(f"    pub const SERVICE_ID: u16 = {svc.id};")
         for m in svc.methods:
@@ -121,12 +126,13 @@ class RustGenerator(AbstractGenerator):
         
         lines.append("")
         lines.append(f"impl<T: {svc.name}Provider> {svc.name}Server<T> {{")
+        lines.append("    #[allow(dead_code)]")
         lines.append("    pub fn new(provider: Arc<T>) -> Self { Self { provider } }")
         lines.append("}")
         
         lines.append(f"impl<T: {svc.name}Provider> fusion_hawking::runtime::RequestHandler for {svc.name}Server<T> {{")
         lines.append(f"    fn service_id(&self) -> u16 {{ {svc.name}Server::<()>::SERVICE_ID }}")
-        lines.append("    fn handle(&self, header: &SomeIpHeader, payload: &[u8]) -> Option<Vec<u8>> {")
+        lines.append("    fn handle(&self, header: &SomeIpHeader, _payload: &[u8]) -> Option<Vec<u8>> {")
         lines.append(f"        println!(\"DEBUG: Handler {svc.name} handling {{:?}}\", header);")
         lines.append(f"        if header.service_id != {svc.name}Server::<()>::SERVICE_ID {{ return None; }}")
         lines.append("        match header.method_id {")
@@ -135,15 +141,19 @@ class RustGenerator(AbstractGenerator):
             req_name = f"{svc.name}{method_pascal}Request"
             res_name = f"{svc.name}{method_pascal}Response"
             lines.append(f"            {svc.name}Server::<()>::METHOD_{m.name.upper()} => {{")
-            lines.append(f"                let mut cursor = Cursor::new(payload);")
-            lines.append(f"                if let Ok(req) = {req_name}::deserialize(&mut cursor) {{")
+            lines.append(f"                let mut cursor = Cursor::new(_payload);")
+            # Use _req when method has no arguments to avoid unused variable warning
+            req_binding = "_req" if len(m.args) == 0 else "req"
+            lines.append(f"                if let Ok({req_binding}) = {req_name}::deserialize(&mut cursor) {{")
             
             call_args = ", ".join([f"req.{a.name}" for a in m.args])
-            lines.append(f"                    let result = self.provider.{m.name}({call_args});")
             
+            # For void methods, just call without assigning; for others, assign to result
             if m.ret_type.name != "None":
+                lines.append(f"                    let result = self.provider.{m.name}({call_args});")
                 lines.append(f"                    let resp = {res_name} {{ result }};")
             else:
+                lines.append(f"                    self.provider.{m.name}({call_args});")
                 lines.append(f"                    let resp = {res_name} {{}};")
                 
             lines.append("                    let mut out = Vec::new();")

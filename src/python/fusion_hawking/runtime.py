@@ -4,7 +4,62 @@ import threading
 import time
 import select
 from typing import Dict, Tuple, Optional
+from enum import IntEnum
 from .logger import LogLevel, ConsoleLogger, ILogger
+
+
+class MessageType(IntEnum):
+    """SOME/IP Message Types as defined in AUTOSAR spec"""
+    REQUEST = 0x00
+    REQUEST_NO_RETURN = 0x01
+    NOTIFICATION = 0x02
+    REQUEST_WITH_TP = 0x20
+    REQUEST_NO_RETURN_WITH_TP = 0x21
+    NOTIFICATION_WITH_TP = 0x22
+    RESPONSE = 0x80
+    ERROR = 0x81
+    RESPONSE_WITH_TP = 0xA0
+    ERROR_WITH_TP = 0xA1
+
+
+class ReturnCode(IntEnum):
+    """SOME/IP Return Codes as defined in AUTOSAR spec"""
+    OK = 0x00
+    NOT_OK = 0x01
+    UNKNOWN_SERVICE = 0x02
+    UNKNOWN_METHOD = 0x03
+    NOT_READY = 0x04
+    NOT_REACHABLE = 0x05
+    TIMEOUT = 0x06
+    WRONG_PROTOCOL_VERSION = 0x07
+    WRONG_INTERFACE_VERSION = 0x08
+    MALFORMED_MESSAGE = 0x09
+    WRONG_MESSAGE_TYPE = 0x0A
+    E2E_REPEATED = 0x0B
+    E2E_WRONG_SEQUENCE = 0x0C
+    E2E_NOT_AVAILABLE = 0x0D
+    E2E_NO_NEW_DATA = 0x0E
+
+
+class SessionIdManager:
+    """Manages session IDs per (service_id, method_id) pair"""
+    def __init__(self):
+        self._counters: Dict[Tuple[int, int], int] = {}
+    
+    def next_session_id(self, service_id: int, method_id: int) -> int:
+        key = (service_id, method_id)
+        if key not in self._counters:
+            self._counters[key] = 1
+        current = self._counters[key]
+        self._counters[key] = (current % 0xFFFF) + 1  # Wrap at 0xFFFF, skip 0
+        return current
+    
+    def reset(self, service_id: int, method_id: int):
+        self._counters[(service_id, method_id)] = 1
+    
+    def reset_all(self):
+        self._counters.clear()
+
 
 class RequestHandler:
     def get_service_id(self) -> int:

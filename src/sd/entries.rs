@@ -1,13 +1,36 @@
 use crate::codec::{SomeIpSerialize, SomeIpDeserialize};
 use std::io::{Result, Write, Read};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// SD Entry Types as defined in AUTOSAR SOME/IP-SD Specification
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum EntryType {
+    /// Find Service Entry (Type 1)
     FindService = 0x00,
+    /// Offer Service Entry (Type 1)
     OfferService = 0x01,
+    /// Request Service Entry (Type 1) - client requesting specific service
+    RequestService = 0x02,
+    /// Subscribe Eventgroup Entry (Type 2)
     SubscribeEventgroup = 0x06,
+    /// Subscribe Eventgroup Acknowledgement Entry (Type 2)
     SubscribeEventgroupAck = 0x07,
+    /// Stop Subscribe Eventgroup Entry (Type 2) - same as SubscribeEventgroup with TTL=0
+    StopSubscribeEventgroup = 0x86,
+    /// Unknown entry type
     Unknown = 0xFF,
+}
+
+impl EntryType {
+    /// Check if this is a Type 1 (Service) entry
+    pub fn is_service_entry(&self) -> bool {
+        matches!(self, EntryType::FindService | EntryType::OfferService | EntryType::RequestService)
+    }
+    
+    /// Check if this is a Type 2 (Eventgroup) entry
+    pub fn is_eventgroup_entry(&self) -> bool {
+        matches!(self, EntryType::SubscribeEventgroup | EntryType::SubscribeEventgroupAck | EntryType::StopSubscribeEventgroup)
+    }
 }
 
 impl From<u8> for EntryType {
@@ -15,10 +38,18 @@ impl From<u8> for EntryType {
         match v {
             0x00 => EntryType::FindService,
             0x01 => EntryType::OfferService,
+            0x02 => EntryType::RequestService,
             0x06 => EntryType::SubscribeEventgroup,
             0x07 => EntryType::SubscribeEventgroupAck,
+            0x86 => EntryType::StopSubscribeEventgroup,
             _ => EntryType::Unknown,
         }
+    }
+}
+
+impl From<EntryType> for u8 {
+    fn from(et: EntryType) -> u8 {
+        et as u8
     }
 }
 
