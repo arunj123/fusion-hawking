@@ -78,6 +78,22 @@ private:
     // Server-side: Subscribers for my events
     // (service_id, eventgroup_id) -> list of subscriber addresses
     std::map<std::pair<uint16_t, uint16_t>, std::vector<sockaddr_in>> subscribers; 
+
+    // Pending requests
+    struct PendingRequest {
+        std::vector<uint8_t> payload;
+        bool completed = false;
+        std::condition_variable cv;
+        std::mutex mtx;
+    };
+    std::map<std::tuple<uint16_t, uint16_t, uint16_t>, std::shared_ptr<PendingRequest>> pending_requests;
+    std::mutex pending_requests_mutex;
+
+    // SendRequestGlue Declaration within Runtime to access privates
+    friend std::vector<uint8_t> SendRequestGlue(void* rt, uint16_t service_id, uint16_t method_id, const std::vector<uint8_t>& payload);
 };
+
+// Moving SendRequestGlue out of header or forward declaring it
+
 
 } // namespace fusion_hawking

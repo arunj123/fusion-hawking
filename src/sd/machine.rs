@@ -522,7 +522,8 @@ mod tests {
     fn test_service_discovery_find() {
         let multicast: SocketAddr = "224.0.0.1:30490".parse().unwrap();
         let transport = UdpTransport::new("0.0.0.0:0".parse().unwrap()).unwrap();
-        let mut sd = ServiceDiscovery::new(transport, multicast);
+        let local_ip = Ipv4Addr::new(127, 0, 0, 1);
+        let mut sd = ServiceDiscovery::new(transport, multicast, local_ip);
 
         let remote = RemoteService {
             service_id: 0x5678,

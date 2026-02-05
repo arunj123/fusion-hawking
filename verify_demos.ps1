@@ -1,8 +1,29 @@
 # Verify Events Script
 
+# Check for Build Directory and Binaries
+if (-not (Test-Path "build")) { 
+    Write-Host "Build directory not found. Initializing..."
+    New-Item -ItemType Directory -Force -Path "build" | Out-Null
+    
+    # Run Codegen
+    Write-Host "Running Code Generation..."
+    python -m tools.codegen.main examples/interface.py
+    if ($LASTEXITCODE -ne 0) { Write-Error "Codegen failed"; exit 1 }
+
+    # Configure CMake
+    Write-Host "Configuring CMake..."
+    cmake -S . -B build
+    if ($LASTEXITCODE -ne 0) { Write-Error "CMake Configure failed"; exit 1 }
+}
+
+$cppExe = "build/Debug/cpp_app.exe"
+if (-not (Test-Path $cppExe)) { 
+    Write-Host "C++ Binary not found. Building..."
+    cmake --build build --config Debug --target cpp_app
+    if ($LASTEXITCODE -ne 0) { Write-Error "Build failed"; exit 1 }
+}
+
 Write-Host "Starting C++ App..."
-$cppExe = "build/Release/cpp_app.exe"
-if (-not (Test-Path $cppExe)) { $cppExe = "build/Debug/cpp_app.exe" }
 $cppProcess = Start-Process -FilePath $cppExe -RedirectStandardOutput "cpp.log" -RedirectStandardError "cpp_err.log" -PassThru
 Start-Sleep -Seconds 2
 
@@ -13,7 +34,7 @@ Start-Sleep -Seconds 5
 Write-Host "Starting Python App..."
 $env:PYTHONPATH = "src/python;build;build/generated/python"
 $pythonProcess = Start-Process -FilePath "python" -ArgumentList "-u examples/python_app/main.py" -RedirectStandardOutput "python.log" -RedirectStandardError "python_err.log" -PassThru
-Start-Sleep -Seconds 5
+Start-Sleep -Seconds 10
 
 Write-Host "Stopping demo processes..."
 # Terminate processes and wait for them to exit
@@ -56,7 +77,7 @@ if ($rpc_py_math) { Write-Host "✅ RPC (Python -> Math): Verified" -ForegroundC
 else { Write-Host "❌ RPC (Python -> Math): Not found in logs" -ForegroundColor Red; $failed = $true }
 
 # C++ -> MathService -> Add
-$rpc_cpp_math = Select-String -Path cpp.log -Pattern "Sending Add" -Quiet
+$rpc_cpp_math = Select-String -Path cpp.log -Pattern "Math.Add Result:" -Quiet
 if ($rpc_cpp_math) { Write-Host "✅ RPC (C++ -> Math): Verified" -ForegroundColor Green }
 else { Write-Host "❌ RPC (C++ -> Math): Failed" -ForegroundColor Red; $failed = $true }
 

@@ -42,6 +42,6 @@ public:
 };
 
 // Glue for Clients
-void SendRequestGlue(void* rt, uint16_t sid, uint16_t mid, const std::vector<uint8_t>& payload);
+std::vector<uint8_t> SendRequestGlue(void* rt, uint16_t sid, uint16_t mid, const std::vector<uint8_t>& payload);
 
 } // namespace fusion_hawking

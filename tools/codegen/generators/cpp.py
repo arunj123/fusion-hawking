@@ -42,6 +42,20 @@ class CppGenerator(AbstractGenerator):
              lines.append("public:")
              lines.append(f"    static const uint16_t SERVICE_ID = {svc.id};")
              lines.append(f"    uint16_t get_service_id() override {{ return SERVICE_ID; }}")
+
+             # Method IDs
+             for m in svc.methods:
+                 lines.append(f"    static const uint16_t METHOD_{m.name.upper()} = {m.id};")
+             
+             # Event IDs
+             for e in svc.events:
+                 lines.append(f"    static const uint16_t EVENT_{e.name.upper()} = {e.id};")
+             
+             # Field IDs (Get/Set/Notifier)
+             for f in svc.fields:
+                 if f.get_id: lines.append(f"    static const uint16_t FIELD_GET_{f.name.upper()} = {f.get_id};")
+                 if f.set_id: lines.append(f"    static const uint16_t FIELD_SET_{f.name.upper()} = {f.set_id};")
+                 if f.notifier_id: lines.append(f"    static const uint16_t EVENT_{f.name.upper()}_NOTIFY = {f.notifier_id};")
              lines.append("")
              
              # Virtual Methods
@@ -51,19 +65,44 @@ class CppGenerator(AbstractGenerator):
                  res_type = f"{svc.name}{method_pascal}Response"
                  lines.append(f"    virtual {res_type} {method_pascal}({req_type} req) = 0;")
              
+             for f in svc.fields:
+                 field_pascal = f.name.title().replace('_', '')
+                 if f.get_id:
+                     ret_type = self._cpp_type(f.type)
+                     lines.append(f"    virtual {ret_type} Get{field_pascal}() = 0;")
+                 if f.set_id:
+                     arg_type = self._cpp_type(f.type)
+                     lines.append(f"    virtual void Set{field_pascal}({arg_type} val) = 0;")
+             
              lines.append("")
              lines.append("    std::vector<uint8_t> handle(const SomeIpHeader& header, const std::vector<uint8_t>& payload) override {")
-             lines.append("        const uint8_t* ptr = payload.data(); size_t len = payload.size();")
+             lines.append("        const uint8_t* data = payload.data(); size_t len = payload.size();")
              lines.append("        switch(header.method_id) {")
              
              for m in svc.methods:
                  method_pascal = m.name.title().replace('_', '')
                  req_type = f"{svc.name}{method_pascal}Request"
-                 lines.append(f"            case {m.id}: {{")
-                 lines.append(f"                {req_type} req = {req_type}::deserialize(ptr, len);")
+                 lines.append(f"            case METHOD_{m.name.upper()}: {{")
+                 lines.append(f"                {req_type} req = {req_type}::deserialize(data, len);")
                  lines.append(f"                auto res = {method_pascal}(req);")
                  lines.append(f"                return res.serialize();")
                  lines.append(f"            }}")
+             for f in svc.fields:
+                 field_pascal = f.name.title().replace('_', '')
+                 if f.get_id:
+                     lines.append(f"            case FIELD_GET_{f.name.upper()}: {{")
+                     lines.append(f"                auto res = Get{field_pascal}();")
+                     lines.append(f"                std::vector<uint8_t> buffer;")
+                     lines.append(self._serialize_val_cpp("res", f.type, indent="                "))
+                     lines.append(f"                return buffer;")
+                     lines.append(f"            }}")
+                 if f.set_id:
+                     lines.append(f"            case FIELD_SET_{f.name.upper()}: {{")
+                     lines.append(f"                {self._cpp_type(f.type)} val;")
+                     lines.append(self._deserialize_val_cpp("val", f.type, indent="                "))
+                     lines.append(f"                Set{field_pascal}(val);")
+                     lines.append(f"                return {{}};")
+                     lines.append(f"            }}")
              
              lines.append("        }")
              lines.append("        return {};")
@@ -87,12 +126,19 @@ class CppGenerator(AbstractGenerator):
                       args_sig.append(f"{self._cpp_type(arg.type)} {arg.name}")
                  sig_str = ", ".join(args_sig)
                  
-                 lines.append(f"    void {method_pascal}({sig_str}) {{")
+                 lines.append(f"    {svc.name}{method_pascal}Response {method_pascal}({sig_str}) {{")
                  lines.append(f"        {req_type} req;")
                  for arg in m.args:
                       lines.append(f"        req.{arg.name} = {arg.name};")
                  lines.append(f"        std::vector<uint8_t> payload = req.serialize();")
-                 lines.append(f"        fusion_hawking::SendRequestGlue(runtime, service_id, {m.id}, payload);")
+                 lines.append(f"        std::vector<uint8_t> res_payload = fusion_hawking::SendRequestGlue(runtime, service_id, {svc.name}Stub::METHOD_{m.name.upper()}, payload);")
+                 lines.append(f"        if (res_payload.empty()) {{")
+                 lines.append(f"            // Return default/empty on failure")
+                 lines.append(f"            return {svc.name}{method_pascal}Response();")
+                 lines.append(f"        }}")
+                 lines.append(f"        size_t len = res_payload.size();")
+                 lines.append(f"        const uint8_t* ptr = res_payload.data();")
+                 lines.append(f"        return {svc.name}{method_pascal}Response::deserialize(ptr, len);")
                  lines.append(f"    }}")
 
              lines.append("};")
@@ -131,44 +177,68 @@ class CppGenerator(AbstractGenerator):
         t = f.type
         name = f.name
         code = []
-        if t.is_list and t.name == 'int': # Vec<int>
-             code.append(f"        uint32_t len_{name} = static_cast<uint32_t>({name}.size() * 4);")
-             code.append(f"        buffer.push_back(static_cast<uint8_t>(len_{name} >> 24)); buffer.push_back(static_cast<uint8_t>(len_{name} >> 16)); buffer.push_back(static_cast<uint8_t>(len_{name} >> 8)); buffer.push_back(static_cast<uint8_t>(len_{name}));")
-             code.append(f"        for(int32_t val : {name}) {{")
-             code.append(f"            buffer.push_back(static_cast<uint8_t>(val >> 24)); buffer.push_back(static_cast<uint8_t>(val >> 16)); buffer.push_back(static_cast<uint8_t>(val >> 8)); buffer.push_back(static_cast<uint8_t>(val));")
+        if t.is_list:
+             code.append(f"        {{")
+             code.append(f"            size_t start_idx = buffer.size();")
+             code.append(f"            buffer.resize(start_idx + 4); // Placeholder for length")
+             code.append(f"            size_t data_start = buffer.size();")
+             code.append(f"            for(const auto& item : {name}) {{")
+             inner_type = Type(t.name, is_list=False)
+             code.append(self._serialize_val_cpp("item", inner_type, indent="                "))
+             code.append(f"            }}")
+             code.append(f"            uint32_t data_len = static_cast<uint32_t>(buffer.size() - data_start);")
+             code.append(f"            buffer[start_idx] = static_cast<uint8_t>(data_len >> 24);")
+             code.append(f"            buffer[start_idx+1] = static_cast<uint8_t>(data_len >> 16);")
+             code.append(f"            buffer[start_idx+2] = static_cast<uint8_t>(data_len >> 8);")
+             code.append(f"            buffer[start_idx+3] = static_cast<uint8_t>(data_len);")
              code.append(f"        }}")
-        elif t.name == 'int': # int32
-             code.append(f"        buffer.push_back(static_cast<uint8_t>({name} >> 24)); buffer.push_back(static_cast<uint8_t>({name} >> 16)); buffer.push_back(static_cast<uint8_t>({name} >> 8)); buffer.push_back(static_cast<uint8_t>({name}));")
-        elif t.name == 'float':
-             # Naive cast
-             code.append(f"        uint32_t val_{name} = *reinterpret_cast<const uint32_t*>(&{name});")
-             code.append(f"        buffer.push_back(static_cast<uint8_t>(val_{name} >> 24)); buffer.push_back(static_cast<uint8_t>(val_{name} >> 16)); buffer.push_back(static_cast<uint8_t>(val_{name} >> 8)); buffer.push_back(static_cast<uint8_t>(val_{name}));")
-        elif t.name == 'str':
-             code.append(f"        uint32_t len_{name} = static_cast<uint32_t>({name}.length());")
-             code.append(f"        buffer.push_back(static_cast<uint8_t>(len_{name} >> 24)); buffer.push_back(static_cast<uint8_t>(len_{name} >> 16)); buffer.push_back(static_cast<uint8_t>(len_{name} >> 8)); buffer.push_back(static_cast<uint8_t>(len_{name}));")
-             code.append(f"        for(char c : {name}) buffer.push_back(static_cast<uint8_t>(c));")
+        else:
+             code.append(self._serialize_val_cpp(name, t, indent="        "))
         return "\n".join(code)
+
+    def _serialize_val_cpp(self, expr: str, t: Type, indent: str) -> str:
+        if t.name == 'int':
+             return f"{indent}buffer.push_back(static_cast<uint8_t>({expr} >> 24)); buffer.push_back(static_cast<uint8_t>({expr} >> 16)); buffer.push_back(static_cast<uint8_t>({expr} >> 8)); buffer.push_back(static_cast<uint8_t>({expr}));"
+        elif t.name == 'float':
+             return f"{indent}{{ uint32_t val = *reinterpret_cast<const uint32_t*>(&{expr});\n{indent}  buffer.push_back(static_cast<uint8_t>(val >> 24)); buffer.push_back(static_cast<uint8_t>(val >> 16)); buffer.push_back(static_cast<uint8_t>(val >> 8)); buffer.push_back(static_cast<uint8_t>(val)); }}"
+        elif t.name == 'bool':
+             return f"{indent}buffer.push_back(static_cast<uint8_t>({expr} ? 1 : 0));"
+        elif t.name == 'str':
+             return f"{indent}{{\n{indent}    uint32_t slen = static_cast<uint32_t>({expr}.length());\n{indent}    buffer.push_back(static_cast<uint8_t>(slen >> 24)); buffer.push_back(static_cast<uint8_t>(slen >> 16)); buffer.push_back(static_cast<uint8_t>(slen >> 8)); buffer.push_back(static_cast<uint8_t>(slen));\n{indent}    for(char c : {expr}) buffer.push_back(static_cast<uint8_t>(c));\n{indent}}}"
+        else: # Struct
+             return f"{indent}{{\n{indent}    std::vector<uint8_t> s_buf = {expr}.serialize();\n{indent}    buffer.insert(buffer.end(), s_buf.begin(), s_buf.end());\n{indent}}}"
 
     def _gen_deserialization_logic(self, f: Field) -> str:
         t = f.type
         name = f.name
         code = []
-        if t.is_list and t.name == 'int':
-             code.append(f"        uint32_t byte_len_{name} = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]; data+=4; len-=4;")
-             code.append(f"        int count_{name} = byte_len_{name} / 4;")
-             code.append(f"        for(int i=0; i<count_{name}; i++) {{")
-             code.append(f"             int32_t val = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]; data+=4; len-=4;")
-             code.append(f"             obj.{name}.push_back(val);")
+        if t.is_list:
+             code.append(f"        {{")
+             code.append(f"            uint32_t byte_len_{name} = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]; data+=4; len-=4;")
+             code.append(f"            const uint8_t* end = data + byte_len_{name};")
+             code.append(f"            while(data < end) {{")
+             inner_type = Type(t.name, is_list=False)
+             code.append(f"                {self._cpp_type(inner_type)} temp_{name};")
+             code.append(self._deserialize_val_cpp(f"temp_{name}", inner_type, indent="                "))
+             code.append(f"                obj.{name}.push_back(temp_{name});")
+             code.append(f"            }}")
              code.append(f"        }}")
-        elif t.name == 'int':
-             code.append(f"        obj.{name} = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]; data+=4; len-=4;")
-        elif t.name == 'float':
-             code.append(f"        uint32_t val_{name} = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]; data+=4; len-=4;")
-             code.append(f"        obj.{name} = *reinterpret_cast<float*>(&val_{name});")
-        elif t.name == 'str':
-             code.append(f"        uint32_t byte_len_{name} = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]; data+=4; len-=4;")
-             code.append(f"        obj.{name}.assign(reinterpret_cast<const char*>(data), byte_len_{name}); data+=byte_len_{name}; len-=byte_len_{name};")
+        else:
+             code.append(self._deserialize_val_cpp(f"obj.{name}", t, indent="        "))
         return "\n".join(code)
+
+    def _deserialize_val_cpp(self, expr_target: str, t: Type, indent: str) -> str:
+        target_name = expr_target.replace('obj.','')
+        if t.name == 'int':
+             return f"{indent}{{ int32_t val = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]; data+=4; len-=4; {expr_target} = val; }}"
+        elif t.name == 'float':
+             return f"{indent}{{ uint32_t val = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]; data+=4; len-=4; {expr_target} = *reinterpret_cast<float*>(&val); }}"
+        elif t.name == 'bool':
+             return f"{indent}{expr_target} = (data[0] != 0); data+=1; len-=1;"
+        elif t.name == 'str':
+             return f"{indent}{{\n{indent}    uint32_t slen = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]; data+=4; len-=4;\n{indent}    {expr_target}.assign(reinterpret_cast<const char*>(data), slen); data+=slen; len-=slen;\n{indent}}}"
+        else: # Struct
+             return f"{indent}{expr_target} = {t.name}::deserialize(data, len);"
 
     def _cpp_type(self, t: Type) -> str:
         if t.is_list:

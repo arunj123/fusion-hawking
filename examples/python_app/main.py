@@ -1,58 +1,71 @@
 import sys
 import os
 import time
+import random
 
-# Ensure build/generated/python is in path
+# Path setup
 sys.path.insert(0, os.path.join(os.getcwd(), 'build', 'generated', 'python'))
-# Ensure src/python is in path for the core library
 sys.path.insert(0, os.path.join(os.getcwd(), 'src', 'python'))
 
-from runtime import SomeIpRuntime, StringServiceStub, StringServiceClient, MathServiceClient, LogLevel
+from runtime import SomeIpRuntime, StringServiceStub, StringServiceClient, MathServiceClient, DiagnosticServiceStub, ComplexTypeServiceClient, SortServiceClient, LogLevel
 from bindings import *
+
 
 class StringImpl(StringServiceStub):
     def __init__(self, logger):
         self.logger = logger
-    def reverse(self, s):
-        self.logger.log(LogLevel.DEBUG, "StringService", f"Reversing '{s}'")
-        return s[::-1]
+    def reverse(self, text):
+        self.logger.log(LogLevel.INFO, "StringService", f"Reversing '{text}'")
+        return text[::-1]
+    def uppercase(self, text):
+        return text.upper()
+
+class DiagImpl(DiagnosticServiceStub):
+    def get_version(self):
+        return "1.2.3-py"
+    def run_self_test(self, level):
+        return True
 
 def main():
-    # 1. Initialize Runtime
     rt = SomeIpRuntime("examples/config.json", "python_app_instance")
-    # Logger uses default level
-    rt.logger.log(LogLevel.INFO, "Main", "--- High-Level Python Runtime Demo ---")
+    rt.logger.log(LogLevel.INFO, "Main", "--- Python Runtime Expanded Demo ---")
     rt.start()
     
-    # 2. Offer Service with Alias
     rt.offer_service("string-service", StringImpl(rt.logger))
+    rt.offer_service("diagnostic-service", DiagImpl())
     
-    # 3. Client Logic
-    # 3. Client Logic
-    client = None
-    while client is None:
-        try:
-            client = rt.get_client("math-client", MathServiceClient, timeout=1.0)
-            if client is None:
-                rt.logger.log(LogLevel.INFO, "Main", "Waiting for MathService...")
-        except KeyboardInterrupt:
-            return
-
-    # Loop for logic
-    # Loop for logic
+    time.sleep(2)
+    
     try:
         while True:
-            rt.logger.log(LogLevel.INFO, "Main", "Client: Sending Add(10, 20)...")
-            client.add(10, 20)
+            # Client Calls
+            math = rt.get_client("math-client", MathServiceClient)
+            if math:
+                rt.logger.log(LogLevel.INFO, "Client", "Sending Add...")
+                math.add(random.randint(0, 50), random.randint(0, 50))
             
-            # Test calling itself
-            string_client = rt.get_client("string-client", StringServiceClient)
-            if string_client:
-                string_client.reverse("Loopback")
+            sort_svc = rt.get_client("sort-client", SortServiceClient)
+            if sort_svc:
+                rt.logger.log(LogLevel.INFO, "Client", "Sending Sort...")
+                sort_svc.sort_asc([5, 3, 1, 4, 2])
+
+            complex_svc = rt.get_client("complex-client", ComplexTypeServiceClient)
+            if complex_svc:
+                complex_svc.check_health()
+                
+                # Test complex type
+                status = SystemStatus(
+                    uptime=int(time.time()),
+                    devices=[
+                        DeviceInfo(id=101, name="PySensor", is_active=True, firmware_version="2.0")
+                    ],
+                    cpu_load=0.5
+                )
+                complex_svc.update_system_status(status)
             
             time.sleep(2)
     except KeyboardInterrupt:
-        rt.logger.log(LogLevel.INFO, "Main", "Stopping...")
+        pass
     finally:
         rt.stop()
 

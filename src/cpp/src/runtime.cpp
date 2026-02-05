@@ -242,6 +242,33 @@ void SomeIpRuntime::Run() {
                     msg.insert(msg.end(), res_payload.begin(), res_payload.end());
                     sendto(sock, (const char*)msg.data(), (int)msg.size(), 0, (struct sockaddr*)&src, sizeof(src));
                 }
+            } else if (header.msg_type == 0x80) {
+                 // Handle Response
+                 std::lock_guard<std::mutex> lock(pending_requests_mutex);
+                 auto it = pending_requests.find({header.service_id, header.method_id, header.client_id});
+                 // Client ID logic might need improvement if we use session ID matching strictly
+                 // For now, let's assume unique Service/Method/Client tuple or just Service/Method if client is us (0)
+                 // But wait, client_id is typically 0 for our client?
+                 // Let's match purely on service/method and assuming we are the unique client for now or check session id?
+                 // Simplification: Iterate pending requests to find match?
+                 // Or just trust the tuple.
+                 
+                 // Better: Match by Service/Method/SessionID? Or just Service/Method since we are simple.
+                 // Let's iterate values since we don't track session ID well yet.
+                 for (auto& pair : pending_requests) {
+                      if (std::get<0>(pair.first) == header.service_id && std::get<1>(pair.first) == header.method_id) {
+                           // Found it
+                           std::vector<uint8_t> payload(buf + 16, buf + bytes);
+                           {
+                               std::lock_guard<std::mutex> lk(pair.second->mtx);
+                               pair.second->payload = payload;
+                               pair.second->completed = true;
+                           }
+                           pair.second->cv.notify_one();
+                           // Don't break, technically could be multiple if mismatch, but for this demo one is fine.
+                           // Actually we should remove it? No, let the waiter remove it.
+                      }
+                 }
             }
         }
         bytes = recvfrom(sd_sock, buf, sizeof(buf), 0, NULL, NULL);
@@ -358,14 +385,55 @@ void SomeIpRuntime::SendNotification(uint16_t service_id, uint16_t event_id, con
     }
 }
 
-void SendRequestGlue(void* rt_ptr, uint16_t service_id, uint16_t method_id, const std::vector<uint8_t>& payload) {
+// Implementation of SendRequestGlue
+std::vector<uint8_t> SendRequestGlue(void* rt_ptr, uint16_t service_id, uint16_t method_id, const std::vector<uint8_t>& payload) {
     SomeIpRuntime* rt = (SomeIpRuntime*)rt_ptr;
+    if (!rt) return {};
+    
+    // Find target
     sockaddr_in target;
-    if (rt->get_remote_service(service_id, target)) {
-        rt->SendRequest(service_id, method_id, payload, target);
+    {
+         int retries = 0;
+         while (!rt->get_remote_service(service_id, target) && retries < 5) {
+             std::this_thread::sleep_for(std::chrono::milliseconds(100));
+             retries++;
+         }
+         if (retries >= 5) {
+              // Try one last time or just fail
+              if (!rt->get_remote_service(service_id, target)) {
+                  if(rt->logger) rt->logger->Log(LogLevel::WARN, "Glue", "Service not found 0x" + std::to_string(service_id));
+                  return {};
+              }
+         }
+    }
+
+    auto req = std::make_shared<SomeIpRuntime::PendingRequest>();
+    
+    {
+        std::lock_guard<std::mutex> lock(rt->pending_requests_mutex);
+        // Using 0 as client ID for simple matching
+        rt->pending_requests[{service_id, method_id, 0}] = req;
+    }
+
+    if(rt->logger) rt->logger->Log(LogLevel::DEBUG, "Glue", "Sending Request...");
+    rt->SendRequest(service_id, method_id, payload, target);
+
+    // Wait for response
+    std::unique_lock<std::mutex> lock(req->mtx);
+    if (req->cv.wait_for(lock, std::chrono::seconds(2), [&]{ return req->completed; })) {
+         // Completed
+         // if(rt->logger) rt->logger->Log(LogLevel::DEBUG, "Glue", "Got Response!");
+         std::lock_guard<std::mutex> map_lock(rt->pending_requests_mutex);
+         rt->pending_requests.erase({service_id, method_id, 0});
+         return req->payload;
     } else {
-        std::cerr << "[WARN] SendRequestGlue: Service 0x" << std::hex << service_id << " not found in remote_services" << std::dec << std::endl; 
+         // Timeout
+         std::lock_guard<std::mutex> map_lock(rt->pending_requests_mutex);
+         rt->pending_requests.erase({service_id, method_id, 0});
+         if (rt->logger) rt->logger->Log(LogLevel::WARN, "Glue", "Timeout waiting for response to " + std::to_string(service_id) + ":" + std::to_string(method_id));
+         return {};
     }
 }
+
 
 } // namespace fusion_hawking

@@ -104,24 +104,37 @@ class RustGenerator(AbstractGenerator):
     def _generate_server_stub(self, svc: Service) -> str:
         lines = []
         lines.append(f"#[allow(dead_code)]")
-        lines.append(f"pub struct {svc.name}Server<T: {svc.name}Provider> {{")
+        lines.append(f"pub struct {svc.name}Server<T> {{")
         lines.append("    provider: Arc<T>,")
         lines.append("}")
-        lines.append(f"#[allow(dead_code)]")
+        lines.append(f"impl {svc.name}Server<()> {{")
+        lines.append(f"    pub const SERVICE_ID: u16 = {svc.id};")
+        for m in svc.methods:
+            lines.append(f"    pub const METHOD_{m.name.upper()}: u16 = {m.id};")
+        for e in svc.events:
+            lines.append(f"    pub const EVENT_{e.name.upper()}: u16 = {e.id};")
+        for f in svc.fields:
+            if f.get_id: lines.append(f"    pub const FIELD_GET_{f.name.upper()}: u16 = {f.get_id};")
+            if f.set_id: lines.append(f"    pub const FIELD_SET_{f.name.upper()}: u16 = {f.set_id};")
+            if f.notifier_id: lines.append(f"    pub const EVENT_{f.name.upper()}_NOTIFY: u16 = {f.notifier_id};")
+        lines.append("}")
+        
+        lines.append("")
         lines.append(f"impl<T: {svc.name}Provider> {svc.name}Server<T> {{")
         lines.append("    pub fn new(provider: Arc<T>) -> Self { Self { provider } }")
         lines.append("}")
         
         lines.append(f"impl<T: {svc.name}Provider> fusion_hawking::runtime::RequestHandler for {svc.name}Server<T> {{")
-        lines.append(f"    fn service_id(&self) -> u16 {{ {svc.id} }}")
+        lines.append(f"    fn service_id(&self) -> u16 {{ {svc.name}Server::<()>::SERVICE_ID }}")
         lines.append("    fn handle(&self, header: &SomeIpHeader, payload: &[u8]) -> Option<Vec<u8>> {")
-        lines.append(f"        if header.service_id != {svc.id} {{ return None; }}")
+        lines.append(f"        println!(\"DEBUG: Handler {svc.name} handling {{:?}}\", header);")
+        lines.append(f"        if header.service_id != {svc.name}Server::<()>::SERVICE_ID {{ return None; }}")
         lines.append("        match header.method_id {")
         for m in svc.methods:
             method_pascal = m.name.title().replace('_', '')
             req_name = f"{svc.name}{method_pascal}Request"
             res_name = f"{svc.name}{method_pascal}Response"
-            lines.append(f"            {m.id} => {{")
+            lines.append(f"            {svc.name}Server::<()>::METHOD_{m.name.upper()} => {{")
             lines.append(f"                let mut cursor = Cursor::new(payload);")
             lines.append(f"                if let Ok(req) = {req_name}::deserialize(&mut cursor) {{")
             
@@ -159,6 +172,7 @@ class RustGenerator(AbstractGenerator):
         
         lines.append(f"#[allow(dead_code)]")
         lines.append(f"impl {svc.name}Client {{")
+        lines.append(f"    pub const SERVICE_ID: u16 = {svc.id};")
         
         for m in svc.methods:
             method_pascal = m.name.title().replace('_', '')
@@ -170,8 +184,9 @@ class RustGenerator(AbstractGenerator):
             field_inits = ", ".join([f"{a.name}" for a in m.args])
             lines.append(f"        let req = {req_name} {{ {field_inits} }};")
             lines.append("        let mut payload = Vec::new();")
-            lines.append("        req.serialize(&mut payload)?;")
-            lines.append(f"        let header = SomeIpHeader::new({svc.id}, {m.id}, 0x1234, 0x01, 0x00, payload.len() as u32);")
+            req_expr = "req"
+            lines.append(f"        {req_expr}.serialize(&mut payload)?;")
+            lines.append(f"        let header = SomeIpHeader::new(Self::SERVICE_ID, {svc.name}Server::<()>::METHOD_{m.name.upper()}, 0x1234, 0x01, 0x00, payload.len() as u32);")
             lines.append("        let mut msg = header.serialize().to_vec();")
             lines.append("        msg.extend(payload);")
             lines.append("        self.transport.send(&msg, Some(self.target))?;")

@@ -15,6 +15,18 @@
                         "ip": "224.0.0.1",
                         "port": 30490
                     }
+                },
+                "complex-service": {
+                    "service_id": 16385,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "minor_version": 0,
+                    "port": 30509,
+                    "protocol": "udp",
+                    "multicast": {
+                        "ip": "224.0.0.1",
+                        "port": 30490
+                    }
                 }
             },
             "required": {
@@ -25,6 +37,11 @@
                 },
                 "sort-client": {
                     "service_id": 12289,
+                    "instance_id": 1,
+                    "major_version": 1
+                },
+                "diag-client": {
+                    "service_id": 20481,
                     "instance_id": 1,
                     "major_version": 1
                 }
@@ -44,11 +61,28 @@
                         "ip": "224.0.0.1",
                         "port": 30490
                     }
+                },
+                "diagnostic-service": {
+                    "service_id": 20481,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "minor_version": 0,
+                    "port": 30510,
+                    "protocol": "udp",
+                    "multicast": {
+                        "ip": "224.0.0.1",
+                        "port": 30490
+                    }
                 }
             },
             "required": {
                 "math-client": {
                     "service_id": 4097,
+                    "instance_id": 1,
+                    "major_version": 1
+                },
+                "complex-client": {
+                    "service_id": 16385,
                     "instance_id": 1,
                     "major_version": 1
                 }
@@ -68,11 +102,28 @@
                         "ip": "224.0.0.1",
                         "port": 30490
                     }
+                },
+                "sensor-service": {
+                    "service_id": 24577,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "minor_version": 0,
+                    "port": 30503,
+                    "protocol": "udp",
+                    "multicast": {
+                        "ip": "224.0.0.1",
+                        "port": 30490
+                    }
                 }
             },
             "required": {
                 "math-client": {
                     "service_id": 4097,
+                    "instance_id": 1,
+                    "major_version": 1
+                },
+                "complex-client": {
+                    "service_id": 16385,
                     "instance_id": 1,
                     "major_version": 1
                 }

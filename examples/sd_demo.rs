@@ -36,7 +36,8 @@ fn main() {
         // Note: Sending FROM ephemeral is allowed.
         // But we won't receive multicast unless we join loopback? or specific interface.
         
-        let mut sd = ServiceDiscovery::new(transport, multicast_group);
+        let local_ip = Ipv4Addr::new(127, 0, 0, 1);
+        let mut sd = ServiceDiscovery::new(transport, multicast_group, local_ip);
         
         println!("Provider offering Service 0x1234");
         sd.offer_service(0x1234, 1, 1, 0, 30501, 0x11); // TCP/UDP? 0x11 UDP
@@ -86,7 +87,8 @@ fn main() {
             transport.join_multicast_v4(maddr, &interface).expect("Failed to join multicast");
         }
         
-        let mut sd = ServiceDiscovery::new(transport, multicast_group);
+        let local_ip = Ipv4Addr::new(127, 0, 0, 1);
+        let mut sd = ServiceDiscovery::new(transport, multicast_group, local_ip);
         
         loop {
             sd.poll();
