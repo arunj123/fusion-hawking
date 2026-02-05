@@ -12,9 +12,17 @@ include_directories(${CMAKE_BINARY_DIR}/generated/cpp)
 add_library(fusion_hawking_cpp STATIC
     src/cpp/src/runtime.cpp
 )
-# 2. C++ App (Demo)
-add_executable(cpp_app examples/cpp_app/main.cpp)
+# 2. C++ App (Integrated Demo)
+add_executable(cpp_app examples/integrated_apps/cpp_app/main.cpp)
 target_link_libraries(cpp_app fusion_hawking_cpp)
+
+# 3. Simple No-SD Demos
+add_executable(simple_server_cpp examples/simple_no_sd/cpp/server.cpp)
+add_executable(simple_client_cpp examples/simple_no_sd/cpp/client.cpp)
+if(WIN32)
+    target_link_libraries(simple_server_cpp ws2_32)
+    target_link_libraries(simple_client_cpp ws2_32)
+endif()
 
 # 3. C++ Unit Test
 add_executable(cpp_test tests/cpp_test.cpp)

@@ -27,7 +27,7 @@ class DiagImpl(DiagnosticServiceStub):
         return True
 
 def main():
-    rt = SomeIpRuntime("examples/config.json", "python_app_instance")
+    rt = SomeIpRuntime("examples/integrated_apps/config.json", "python_app_instance")
     rt.logger.log(LogLevel.INFO, "Main", "--- Python Runtime Expanded Demo ---")
     rt.start()
     

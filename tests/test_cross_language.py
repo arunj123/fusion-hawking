@@ -53,7 +53,7 @@ def processes(build_cpp):
     
     python_log = open("python_integration.log", "w")
     python_proc = subprocess.Popen(
-        [sys.executable, "-u", "examples/python_app/main.py"],
+        [sys.executable, "-u", "examples/integrated_apps/python_app/main.py"],
         stdout=python_log,
         stderr=subprocess.STDOUT,
         cwd=PROJECT_ROOT,

@@ -14,7 +14,7 @@ Write-Host "Installing requirements..."
 pip install -r requirements.txt
 
 Write-Host "Generating bindings..."
-python -m tools.codegen.main examples/interface.py
+python -m tools.codegen.main examples/integrated_apps/interface.py
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Code Generation Failed"
     exit 1
@@ -56,25 +56,30 @@ if (Get-Command "cmake" -ErrorAction SilentlyContinue) {
     if ($LASTEXITCODE -eq 0) {
         if (Test-Path "Release/cpp_test.exe") {
             ./Release/cpp_test.exe
-        } elseif (Test-Path "Debug/cpp_test.exe") {
-             ./Debug/cpp_test.exe
-        } elseif (Test-Path "cpp_test.exe") {
-             ./cpp_test.exe
-        } else {
-             Write-Error "Could not find compiled cpp_test executable."
-             exit 1
+        }
+        elseif (Test-Path "Debug/cpp_test.exe") {
+            ./Debug/cpp_test.exe
+        }
+        elseif (Test-Path "cpp_test.exe") {
+            ./cpp_test.exe
+        }
+        else {
+            Write-Error "Could not find compiled cpp_test executable."
+            exit 1
         }
         
         if ($LASTEXITCODE -ne 0) {
             Write-Error "C++ Tests Failed"
             exit 1
         }
-    } else {
+    }
+    else {
         Write-Error "CMake Build Failed"
         exit 1
     }
     cd ..
-} else {
+}
+else {
     Write-Warning "CMake not found. Skipping C++ tests."
 }
 

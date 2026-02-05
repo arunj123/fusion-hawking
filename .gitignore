@@ -24,3 +24,6 @@ coverage/
 .pytest_cache/
 htmlcov/
 *.xml
+AUTOSAR_PRS_SOMEIPProtocol.pdf
+AUTOSAR_PRS_SOMEIPServiceDiscoveryProtocol.pdf
+coverage_final.txt

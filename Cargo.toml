@@ -11,5 +11,19 @@ env_logger = "0.10"
 ctrlc = "3.4"
 socket2 = "0.5"
 
-# Removed [[bin]] target to treat rust_demo as proper example
+[[example]]
+name = "sd_demo"
+path = "examples/sd_demos/sd_demo.rs"
+
+[[example]]
+name = "rust_app"
+path = "examples/integrated_apps/rust_app/main.rs"
+
+[[bin]]
+name = "simple_server"
+path = "examples/simple_no_sd/rust/server.rs"
+
+[[bin]]
+name = "simple_client"
+path = "examples/simple_no_sd/rust/client.rs"
 
