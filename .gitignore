@@ -18,3 +18,9 @@ rust_test_out.txt
 demo_output.txt
 build_error.txt
 cargo_err.txt
+# Coverage artifacts
+.coverage
+coverage/
+.pytest_cache/
+htmlcov/
+*.xml

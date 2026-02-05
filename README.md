@@ -102,6 +102,36 @@ The project now uses a modular code generator package.
 - **`src/runtime`**: Execution handling (ThreadPool).
 - **`tools/`**: Code generation tools.
 
+## Testing & Verification
+
+The project maintains high standards for correctness through a multi-layered testing strategy.
+
+### 1. Run All Tests
+Execute the master test script to run Rust Unit Tests, Python Unit Tests, C++ Tests, and Cross-Language Integration Tests:
+
+```powershell
+.\run_tests.ps1
+```
+
+### 2. Generate Coverage Reports
+Analyze code coverage across all supported languages:
+
+```powershell
+.\generate_coverage.ps1
+```
+
+This generates HTML reports in `coverage/`:
+- **Python**: `coverage/python/index.html` (80%+ coverage)
+- **Rust**: `coverage/rust/index.html` (Requires `cargo-llvm-cov`)
+- **C++**: `coverage/cpp/index.html` (Requires `OpenCppCoverage`)
+
+### 3. Cross-Language Integration
+We verify interoperability using `tests/test_cross_language.py`, which helps simulate:
+- Rust Client ↔ Python Server
+- Python Client ↔ Rust Server
+- C++ Client ↔ Rust Server
+- Event Propagation (Pub/Sub) across languages
+
 ## Licensing
 
 MIT License.

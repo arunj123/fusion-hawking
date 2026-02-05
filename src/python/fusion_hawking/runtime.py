@@ -77,6 +77,7 @@ class SomeIpRuntime:
         self.offered_services = [] # list of (sid, iid, port)
         self.remote_services: Dict[int, Tuple[str, int]] = {}
         self.running = False
+        self.thread = None
         self.last_offer_time = 0
         
         self.config = self._load_config(config_path, instance_name)
