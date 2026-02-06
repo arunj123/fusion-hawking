@@ -14,6 +14,11 @@ class Builder:
                 proc = subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT, cwd=cwd, check=True)
                 return True
             except subprocess.CalledProcessError:
+                f.flush()
+                with open(log_path, "r") as log_file:
+                    print(f"--- FAILURE LOG: {log_name} ---")
+                    print(log_file.read())
+                    print(f"--- END LOG ---")
                 return False
 
     def generate_bindings(self):
