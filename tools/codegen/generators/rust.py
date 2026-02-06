@@ -163,8 +163,9 @@ class RustGenerator(AbstractGenerator):
             lines.append("            },")
         lines.append("            _ => None")
         lines.append("        }")
-    }
-}
+        lines.append("    }")
+        lines.append("}")
+        return "\n".join(lines)
 
     def _generate_client_proxy(self, svc: Service) -> str:
         lines = []
