@@ -7,7 +7,7 @@ A lightweight, dependency-free SOME/IP library implemented in Rust, adhering to 
 - **Core Protocol**: SOME/IP Header parsing and serialization.
 - **Service Discovery**: Full SOME/IP-SD support with dynamic discovery, Offering, Subscribe/EventGroup, and TTL management.
 - **Events & Fields**: Support for Publish/Subscribe pattern and Field notifications.
-- **Transport**: UDP Support with Multicast capabilities (`224.0.0.1`).
+- **Transport**: UDP Support with Multicast capabilities.
 - **Concurrency**: ThreadPool for handling concurrent requests.
 - **Cross-Language Support**:
     - **Rust**: Native implementation with fully async-compatible SD machine.
@@ -17,131 +17,81 @@ A lightweight, dependency-free SOME/IP library implemented in Rust, adhering to 
 
 ## Prerequisites
 
+The `fusion` tool will verify these for you, but you need:
 - **Rust**: Latest Stable (install via `rustup`).
-- **Python**: Python 3.8+ (with `pytest` for tests).
+- **Python**: Python 3.8+.
 - **C++ Compiler**: CMake 3.10+ and MSVC/GCC.
-- **PowerShell**: For running automation scripts (Windows).
+
+**Note**: The tool automatically attempts to install missing components like `cargo-llvm-cov` and `llvm-tools-preview`.
 
 ## Quick Start
 
 ### 1. Build & Run All Demos (Windows)
 
-The easiest way to see everything in action is the automation script:
+The easiest way to see everything in action is the new automation dashboard:
 
 ```powershell
-.\run_demos.ps1
+.\fusion.bat
 ```
 
 This will:
-1. Generate code from `examples/interface.py`.
-2. Build Rust, Python, and C++ runtimes.
-3. Launch 3 processes:
-   - **Rust App**: Provides `MathService` (0x1001), Consumes `SortService` events.
-   - **C++ App**: Provides `SortService` (0x3001), Consumes `MathService`.
-   - **Python App**: Provides `StringService` (0x2001), Consumes `MathService` & `StringService`.
+1.  **Check Toolchain**: Verifies Rust, Python, CMake, and Coverage tools.
+2.  **Dashboard**: Starts a local web server (http://localhost:8000) to show live progress.
+3.  **Build**: Compiles Rust, Python bindings, and C++.
+4.  **Test**: Runs unit tests for all languages.
+5.  **Simulate**: Runs the integrated multi-process demo (Rust/Python/C++ interacting).
+6.  **Report**: Generates a comprehensive HTML report with coverage data.
 
-### 2. Manual Run
+### 2. Linux / WSL
 
-**Step 1: Generate Code**
 ```bash
-python -m tools.codegen.main examples/interface.py
+./fusion.sh
 ```
-
-**Step 2: Start Rust App**
-```bash
-cargo run --example rust_app
-```
-
-**Step 3: Start Python App**
-```bash
-# Make sure to set PYTHONPATH
-$env:PYTHONPATH="src/python;build"
-python examples/python_app/main.py
-```
-
-**Step 4: Start C++ App**
-```bash
-mkdir build
-cd build
-cmake ..
-cmake --build . --config Release
-.\Release\cpp_app.exe
-```
-
-### 3. Generator Usage
-
-The project now uses a modular code generator package.
-
-1.  **Define Interface**: Create a Python file defining data structures and services using decorators.
-    ```python
-    # examples/interface.py
-    from dataclasses import dataclass
-    # Import mock decorators ...
-    
-    @service(id=0x1001)
-    class MathService:
-        @method(id=1)
-        def add(self, a: int, b: int) -> int: ...
-    ```
-
-2.  **Generate Code**:
-    ```bash
-    python -m tools.codegen.main examples/interface.py
-    ```
-
-3.  **Use generated code**:
-    - Rust: `src/generated/mod.rs` (use `SomeIpRuntime`)
-    - Python: `src/generated/bindings.py` & `src/generated/runtime.py`
-    - C++: `src/generated/bindings.h`
 
 ## Architecture
 
-- **`src/codec`**: Serialization/Deserialization of SOME/IP headers and payloads.
-- **`src/sd`**: Service Discovery state machine and packet handling.
-- **`src/transport`**: UDP/TCP abstractions.
-- **`src/runtime`**: Execution handling (ThreadPool).
-- **`tools/`**: Code generation tools.
+- **`src/`**: Core source code (Rust, Python, C++).
+- **`tools/fusion/`**: Automation infrastructure (Python).
+- **`examples/`**: Demo applications.
 
 ## Testing & Verification
 
-The project maintains high standards for correctness through a multi-layered testing strategy.
+The `fusion` tool unifies all testing steps.
 
-### 1. Run All Tests
-Execute the master test script to run Rust Unit Tests, Python Unit Tests, C++ Tests, and Cross-Language Integration Tests:
+### Dashboard Features
+The dashboard (http://localhost:8000) provides a real-time view of the build and test process:
+- **Live Status**: Watch steps complete in real-time.
+- **File Explorer**: Browse logs, source code, and generated configs directly in the UI.
+- **Inline Viewer**: View logs and code with **Syntax Highlighting** (no downloads required).
+- **Run Controls**: Re-run specific tests directly from the dashboard.
+- **Coverage Links**: Click "PASS" on coverage steps to view detailed HTML reports.
 
-```powershell
-.\run_tests.ps1
+### Reports & Artifacts
+After a run, artifacts are organized in `logs/latest/`:
+- **Dashboard**: `index.html` (entry point).
+- **Coverage**: 
+    - `coverage/rust/index.html`
+    - `coverage/python/index.html`
+    - `coverage/cpp/index.html`
+- **Raw Logs**: Categorized into:
+    - `raw_logs/build/` (Compilation logs)
+    - `raw_logs/test/` (Unit test logs)
+    - `raw_logs/demo/` (Integration logs with command headers)
+- **Configs**: `configs/` (Snapshot of generated bindings and build configurations)
+
+### Manual Run
+You can still run individual steps if preferred, but `fusion.bat` is recommended.
+
+```bash
+# Run only unit tests
+cargo test
+python -m unittest discover tests
 ```
-
-### 2. Generate Coverage Reports
-Analyze code coverage across all supported languages:
-
-```powershell
-.\generate_coverage.ps1
-```
-
-This generates HTML reports in `coverage/`:
-- **Python**: `coverage/python/index.html` (80%+ coverage)
-- **Rust**: `coverage/rust/index.html` (Requires `cargo-llvm-cov`)
-- **C++**: `coverage/cpp/index.html` (Requires `OpenCppCoverage`)
-
-### 3. Cross-Language Integration
-We verify interoperability using `tests/test_cross_language.py`, which helps simulate:
-- Rust Client ↔ Python Server
-- Python Client ↔ Rust Server
-- C++ Client ↔ Rust Server
-- Event Propagation (Pub/Sub) across languages
 
 ## References
 
-The implementation follows these AUTOSAR specifications:
-
-- **SOME/IP Protocol**: `AUTOSAR_PRS_SOMEIPProtocol` (Document ID: `PRS_SOMEIP_00001`)
-- **SOME/IP Service Discovery**: `AUTOSAR_PRS_SOMEIPServiceDiscoveryProtocol` (Document ID: `PRS_SOMEIPSD_00001`)
-
-> **Note**: These specifications are Copyright © AUTOSAR. You can download the latest versions by searching for the Document IDs on the [AUTOSAR Standards Search](https://www.autosar.org/search).
-
-> **Note**: These specifications are Copyright © AUTOSAR and are provided for informational purposes only. Redistribution in this repository is avoided to comply with licensing terms.
+- **SOME/IP Protocol**: `AUTOSAR_PRS_SOMEIPProtocol`
+- **SOME/IP Service Discovery**: `AUTOSAR_PRS_SOMEIPServiceDiscoveryProtocol`
 
 ## Licensing
 

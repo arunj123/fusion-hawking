@@ -39,10 +39,21 @@ class TestRuntimeDetailed(unittest.TestCase):
         self.runtime = SomeIpRuntime(None, "test_instance")
         self.runtime.logger = MagicMock()
         # Mock sockets to prevent network activity
+        # Close actual sockets created by init before mocking to avoid ResourceWarning
+        if hasattr(self.runtime, 'sock') and self.runtime.sock:
+            self.runtime.sock.close()
         self.runtime.sock = MagicMock()
+        
+        if hasattr(self.runtime, 'sd_sock') and self.runtime.sd_sock:
+            self.runtime.sd_sock.close()
         self.runtime.sd_sock = MagicMock()
         
     def tearDown(self):
+        # Close mocked sockets to avoid ResourceWarning
+        if hasattr(self.runtime, 'sock') and self.runtime.sock:
+             self.runtime.sock.close()
+        if hasattr(self.runtime, 'sd_sock') and self.runtime.sd_sock:
+             self.runtime.sd_sock.close()
         self.runtime.stop()
 
     def test_handle_sd_offer_parsing(self):

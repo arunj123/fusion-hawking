@@ -11,6 +11,12 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUILD_DIR = os.path.join(PROJECT_ROOT, "build")
 CPP_EXE = os.path.join(BUILD_DIR, "Debug", "cpp_app.exe") if os.name == 'nt' else os.path.join(BUILD_DIR, "cpp_app")
 
+# Log Directory setup
+LOG_DIR = os.environ.get("FUSION_LOG_DIR", os.getcwd())
+
+def get_log_path(name):
+    return os.path.join(LOG_DIR, name)
+
 @pytest.fixture(scope="module")
 def build_cpp():
     """Ensure C++ app is built"""
@@ -28,7 +34,8 @@ def processes(build_cpp):
     """Start all three demo apps and yield them, then cleanup"""
     
     # 1. Start C++ App
-    cpp_log = open("cpp_integration.log", "w")
+    cpp_log_path = get_log_path("cpp_integration.log")
+    cpp_log = open(cpp_log_path, "w")
     cpp_proc = subprocess.Popen(
         [CPP_EXE], 
         stdout=cpp_log, 
@@ -38,7 +45,8 @@ def processes(build_cpp):
     time.sleep(1) # Let it start
 
     # 2. Start Rust App
-    rust_log = open("rust_integration.log", "w")
+    rust_log_path = get_log_path("rust_integration.log")
+    rust_log = open(rust_log_path, "w")
     rust_proc = subprocess.Popen(
         ["cargo", "run", "--example", "rust_app"],
         stdout=rust_log,
@@ -51,7 +59,8 @@ def processes(build_cpp):
     env = os.environ.copy()
     env["PYTHONPATH"] = f"src/python;build;build/generated/python"
     
-    python_log = open("python_integration.log", "w")
+    python_log_path = get_log_path("python_integration.log")
+    python_log = open(python_log_path, "w")
     python_proc = subprocess.Popen(
         [sys.executable, "-u", "examples/integrated_apps/python_app/main.py"],
         stdout=python_log,
@@ -100,30 +109,30 @@ def test_rust_rpc_to_python(processes):
     """Verify Rust client calls Python StringService"""
     # Rust sends "Hello Python" to StringService.Reverse
     # Python logs "Reversing: Hello Python"
-    assert wait_for_log_pattern("python_integration.log", "Reversing"), "Rust->Python RPC failed: StringService did not receive request"
+    assert wait_for_log_pattern(get_log_path("python_integration.log"), "Reversing"), "Rust->Python RPC failed: StringService did not receive request"
 
 def test_python_rpc_to_rust(processes):
     """Verify Python client calls Rust MathService"""
     # Python sends Add(10, 20) -> Rust
     # Rust logs "[MathService] Math.Add(10, 20)"
     # Python logs "Sending Add..."
-    assert wait_for_log_pattern("python_integration.log", "Sending Add"), "Python->Rust RPC failed: Client didn't send - Log pattern 'Sending Add' not found"
+    assert wait_for_log_pattern(get_log_path("python_integration.log"), "Sending Add"), "Python->Rust RPC failed: Client didn't send - Log pattern 'Sending Add' not found"
     
     # Check Rust log for the request
     # Pattern update: Log format is "[MathService] Math.Add"
-    assert wait_for_log_pattern("rust_integration.log", "[MathService] Math.Add"), "Python->Rust RPC failed: Rust service didn't log request"
+    assert wait_for_log_pattern(get_log_path("rust_integration.log"), "[MathService] Math.Add"), "Python->Rust RPC failed: Rust service didn't log request"
 
 def test_cpp_rpc_to_math(processes):
     """Verify C++ client calls MathService (Rust or Python)"""
     # C++ logs: "Math.Add Result: 30"
-    assert wait_for_log_pattern("cpp_integration.log", "Math.Add Result:"), "C++->Math RPC failed"
+    assert wait_for_log_pattern(get_log_path("cpp_integration.log"), "Math.Add Result:"), "C++->Math RPC failed"
 
 def test_cpp_event_updates(processes):
     """Verify C++ SortService updates trigger events"""
     # C++ logs: "Field 'status' changed"
-    assert wait_for_log_pattern("cpp_integration.log", "Field 'status' changed"), "C++ did not trigger event/field update"
+    assert wait_for_log_pattern(get_log_path("cpp_integration.log"), "Field 'status' changed"), "C++ did not trigger event/field update"
 
 def test_rust_consumes_event(processes):
     """Verify Rust client receives notification"""
     # Rust logs: "Received Notification"
-    assert wait_for_log_pattern("rust_integration.log", "Received Notification"), "Rust did not receive event notification"
+    assert wait_for_log_pattern(get_log_path("rust_integration.log"), "Received Notification"), "Rust did not receive event notification"

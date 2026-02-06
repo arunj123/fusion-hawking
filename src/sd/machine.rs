@@ -582,11 +582,10 @@ mod tests {
         let mut service = LocalService::with_config(entry, vec![], &config);
         service.transition_to_initial_wait();
         
-        let now = Instant::now();
-        // Should be at least 10ms in future
-        assert!(service.next_transmission >= now + Duration::from_millis(10));
-        // Should be at most 100ms + buffer (e.g. 50ms) in future
-        assert!(service.next_transmission <= now + Duration::from_millis(150));
+        // Should be at least 10ms after phase start
+        assert!(service.next_transmission >= service.phase_start + Duration::from_millis(10));
+        // Should be at most 100ms after phase start
+        assert!(service.next_transmission <= service.phase_start + Duration::from_millis(150));
     }
 
     #[test]

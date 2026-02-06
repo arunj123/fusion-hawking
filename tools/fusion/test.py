@@ -1,0 +1,228 @@
+import subprocess
+import os
+import time
+import threading
+
+class Tester:
+    def __init__(self, reporter, builder):
+        self.reporter = reporter
+        self.builder = builder
+
+    def run_unit_tests(self):
+        print("\n--- Running Unit Tests ---")
+        results = {}
+        results["rust"] = self._run_rust_tests()
+        results.update(self._run_python_tests())
+        results["cpp"] = self._run_cpp_tests()
+        return results
+
+    def _run_rust_tests(self):
+        # Rust
+        if self.builder.run_command(["cargo", "test"], "test_rust"):
+            return "PASS"
+        else:
+            return "FAIL"
+
+    def _run_python_tests(self):
+        results = {}
+        # Python
+        env = os.environ.copy()
+        env["PYTHONPATH"] = "src/python;build;build/generated/python"
+        env["FUSION_LOG_DIR"] = self.reporter.raw_logs_dir
+        
+        # 1. Unittest
+        with open(self.reporter.get_log_path("test_python_unittest"), "w") as f:
+             py_cmd = ["python", "-m", "unittest", "discover", "tests"]
+             f.write(f"=== FUSION UNIT TEST ===\nCommand: {' '.join(py_cmd)}\nPWD: {os.getcwd()}\nEnvironment [PYTHONPATH]: {env['PYTHONPATH']}\n========================\n\n")
+             f.flush()
+             if subprocess.call(py_cmd, stdout=f, stderr=subprocess.STDOUT, env=env) == 0:
+                 results["python_unittest"] = "PASS"
+             else:
+                 results["python_unittest"] = "FAIL"
+
+        # 2. Pytest (Cross Language)
+        with open(self.reporter.get_log_path("test_python_pytest"), "w") as f:
+             # Check if pytest is installed
+             try:
+                 pytest_cmd = ["python", "-m", "pytest", "tests/test_cross_language.py"]
+                 f.write(f"=== FUSION PYTEST ===\nCommand: {' '.join(pytest_cmd)}\nPWD: {os.getcwd()}\nEnvironment [PYTHONPATH]: {env['PYTHONPATH']}\n=====================\n\n")
+                 f.flush()
+                 if subprocess.call(pytest_cmd, stdout=f, stderr=subprocess.STDOUT, env=env) == 0:
+                     results["python_integration"] = "PASS"
+                 else:
+                     results["python_integration"] = "FAIL"
+             except:
+                 results["python_integration"] = "SKIPPED (pytest missing)"
+        return results
+
+    def _run_cpp_tests(self):
+        # C++
+        cpp_exe = "build/Release/cpp_test.exe"
+        if os.path.exists(cpp_exe):
+            cpp_cmd = [cpp_exe]
+            with open(self.reporter.get_log_path("test_cpp"), "w") as f:
+                 f.write(f"=== FUSION C++ TEST ===\nCommand: {cpp_exe}\nPWD: {os.getcwd()}\n=======================\n\n")
+                 f.flush()
+                 if subprocess.call(cpp_cmd, stdout=f, stderr=subprocess.STDOUT) == 0:
+                     return "PASS"
+                 else:
+                     return "FAIL"
+        else:
+             return "SKIPPED"
+
+    def run_demos(self):
+        print("\n--- Running Integration Demos ---")
+        
+        results = {}
+        
+        # 1. Simple Demos (No SD) - mimicking legacy run_demos.ps1
+        print("Running Simple Demos (No SD)...")
+        simple_res = self._run_simple_demos()
+        results.update(simple_res)
+        
+        # 2. Integrated Apps
+        # Logic from run_demos.ps1
+        # 1. Start Rust (runs, waits for events)
+        # 2. Start Python
+        # 3. Start C++
+        
+        # We need to capture outputs to separate logs to verify logic patterns
+        
+        rust_log = self.reporter.get_log_path("demo_rust")
+        py_log = self.reporter.get_log_path("demo_python")
+        cpp_log = self.reporter.get_log_path("demo_cpp")
+        
+        procs = []
+        
+        try:
+            # Rust
+            f_rust = open(rust_log, "w")
+            rust_cmd = ["cargo", "run", "--example", "rust_app"]
+            f_rust.write(f"=== FUSION TEST RUNNER ===\nCommand: {' '.join(rust_cmd)}\nPWD: {os.getcwd()}\n==========================\n\n")
+            f_rust.flush()
+            p_rust = subprocess.Popen(rust_cmd, stdout=f_rust, stderr=subprocess.STDOUT)
+            procs.append(p_rust)
+            time.sleep(2)
+            
+            # Python
+            env = os.environ.copy()
+            env["PYTHONPATH"] = "src/python;build;build/generated/python"
+            f_py = open(py_log, "w")
+            py_cmd = ["python", "-u", "examples/integrated_apps/python_app/main.py"]
+            f_py.write(f"=== FUSION TEST RUNNER ===\nCommand: {' '.join(py_cmd)}\nPWD: {os.getcwd()}\nEnvironment [PYTHONPATH]: {env['PYTHONPATH']}\n==========================\n\n")
+            f_py.flush()
+            p_py = subprocess.Popen(py_cmd, stdout=f_py, stderr=subprocess.STDOUT, env=env)
+            procs.append(p_py)
+            
+            # C++
+            cpp_exe = "build/Release/cpp_app.exe"
+            if os.path.exists(cpp_exe):
+                f_cpp = open(cpp_log, "w")
+                cpp_cmd = [cpp_exe]
+                f_cpp.write(f"=== FUSION TEST RUNNER ===\nCommand: {cpp_exe}\nPWD: {os.getcwd()}\n==========================\n\n")
+                f_cpp.flush()
+                p_cpp = subprocess.Popen(cpp_cmd, stdout=f_cpp, stderr=subprocess.STDOUT)
+                procs.append(p_cpp)
+            
+            # Run for 10s
+            time.sleep(10)
+            
+        finally:
+            for p in procs:
+                p.kill() # Force kill
+            
+            # Close files
+            # (Python files closed by GC provided we don't hold refs, but better explicit? 
+            # In script it's fine, exiting soon.
+            
+        return self._verify_demos(rust_log, py_log, cpp_log, results)
+
+    def _run_simple_demos(self):
+        # Runs basic client/server without Service Discovery
+        server_bin = "target/debug/simple_server.exe"
+        client_bin = "target/debug/simple_client.exe"
+        
+        # Windows extension check
+        if os.name != 'nt':
+            server_bin = server_bin.replace(".exe", "")
+            client_bin = client_bin.replace(".exe", "")
+
+        if not os.path.exists(server_bin) or not os.path.exists(client_bin):
+            print(f"⚠️ Simple demos not found at {server_bin}")
+            return {"simple_demo": "SKIPPED"}
+            
+        print(f"Starting {server_bin}...")
+        log_path = self.reporter.get_log_path("demo_simple")
+        
+        with open(log_path, "w") as log:
+            # Start Server
+            server_cmd = [server_bin]
+            log.write(f"=== FUSION SIMPLE DEMO RUNNER ===\nServer Command: {' '.join(server_cmd)}\n")
+            server_proc = subprocess.Popen(server_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(0.5)
+            
+            try:
+                # Run Client
+                print(f"Running {client_bin}...")
+                client_cmd = [client_bin]
+                log.write(f"Client Command: {' '.join(client_cmd)}\nPWD: {os.getcwd()}\n=================================\n\n")
+                log.flush()
+                
+                result = subprocess.run(client_cmd, capture_output=True, text=True)
+                output = result.stdout + result.stderr
+                log.write(output)
+                
+                # Verify
+                if "Success" in output:
+                    print("✅ Simple Demo PASS")
+                    return {"simple_demo": "PASS", "steps": [{"name": "Simple UDP Demo", "status": "PASS", "details": "Client received 'Success'"}]}
+                else:
+                    print(f"❌ Simple Demo FAIL: {output}")
+                    return {"simple_demo": "FAIL", "steps": [{"name": "Simple UDP Demo", "status": "FAIL", "details": "Client did not output 'Success'"}]}
+                    
+            finally:
+                server_proc.terminate()
+                server_proc.wait()
+
+    def _verify_demos(self, rust, py, cpp, initial_results):
+        results = initial_results
+        steps = results.get('steps', [])
+        
+        # Helper logging
+        def check(log_name, path, pattern, description):
+            found = False
+            if os.path.exists(path):
+                with open(path, "r", errors="ignore") as f:
+                    content = f.read()
+                    found = pattern in content
+            
+            status = "PASS" if found else "FAIL"
+            # Add to steps list for UI
+            steps.append({
+                "name": description,
+                "status": status,
+                "log": log_name,
+                "details": f"Checked '{log_name}' for '{pattern}'"
+            })
+            return found
+
+        # Rust Checks
+        check("demo_rust", rust, "Math.Add", "RPC: Rust Provider (Math.Add)")
+        check("demo_rust", rust, "Received Notification", "Event: Rust Listener")
+        
+        # Python Checks
+        check("demo_python", py, "Sending Add", "RPC: Python Client (Sending Add)")
+        check("demo_python", py, "Reversing", "RPC: Python String Service")
+        
+        # C++ Checks
+        check("demo_cpp", cpp, "Math.Add Result:", "RPC: C++ Client -> Rust Math")
+        check("demo_cpp", cpp, "Sorting 5 items", "RPC: Python -> C++ Sort")
+        check("demo_cpp", cpp, "Sorting 3 items", "RPC: Rust -> C++ Sort")
+        check("demo_cpp", cpp, "Field 'status' changed", "Field: C++ Service Update")
+        
+        # Aggregate logic
+        pass_count = sum(1 for s in steps if s['status'] == 'PASS')
+        results['demo_status'] = "PASS" if pass_count == len(steps) else "FAIL"
+        results['steps'] = steps # Return list for detailed reporting
+        
+        return results

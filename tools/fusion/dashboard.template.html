@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fusion Dashboard</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --bg: #f3f4f6;
+            --text: #1f2937;
+            --success: #10b981;
+            --fail: #ef4444;
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 300px;
+            background: white;
+            border-right: 1px solid #e5e7eb;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 16px;
+            border-bottom: 1px solid #e5e7eb;
+            font-weight: bold;
+            font-size: 1.1rem;
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .file-tree {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            font-size: 0.9rem;
+        }
+
+        .tree-item {
+            cursor: pointer;
+            padding: 4px 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: flex;
+            align-items: center;
+        }
+
+        .tree-item:hover>.item-content {
+            background: #f3f4f6;
+        }
+
+        .tree-item.active>.item-content {
+            background: #eff6ff;
+            color: var(--primary);
+        }
+
+        .item-content {
+            padding: 4px 8px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+        }
+
+        .tree-children {
+            padding-left: 20px;
+            border-left: 1px solid #e5e7eb;
+            margin-left: 10px;
+            display: none;
+        }
+
+        .tree-children.open {
+            display: block;
+        }
+
+        .arrow {
+            width: 16px;
+            height: 16px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            transition: transform 0.2s;
+            color: #9ca3af;
+        }
+
+        .arrow.expanded {
+            transform: rotate(90deg);
+        }
+
+        .arrow.hidden {
+            visibility: hidden;
+        }
+
+        /* Main Content */
+        .main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Top Bar */
+        .top-bar {
+            background: white;
+            padding: 10px 20px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 50px;
+        }
+
+        .status-pill {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+        }
+
+        .status-RUNNING {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .status-SUCCESS {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-FAILED {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        /* Content Area */
+        .content-area {
+            flex: 1;
+            display: flex;
+            gap: 20px;
+            padding: 20px;
+            overflow: hidden;
+            background: #f9fafb;
+        }
+
+        /* Panels */
+        .panel {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border: 1px solid #e5e7eb;
+        }
+
+        .panel-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid #e5e7eb;
+            font-weight: 600;
+            background: #fff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        #activity-panel {
+            flex: 1;
+            min-width: 300px;
+        }
+
+        #viewer-panel {
+            flex: 2;
+            display: none;
+        }
+
+        /* Hidden by default */
+
+        .activity-log {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            font-family: 'Consolas', monospace;
+            font-size: 0.9rem;
+        }
+
+        .steps-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+
+        .steps-table th {
+            text-align: left;
+            color: #6b7280;
+            font-weight: 500;
+            border-bottom: 1px solid #e5e7eb;
+            padding-bottom: 8px;
+        }
+
+        .steps-table td {
+            padding: 8px 0;
+            border-bottom: 1px solid #f3f4f6;
+        }
+
+        .step-pass {
+            color: var(--success);
+            font-weight: 600;
+        }
+
+        .step-fail {
+            color: var(--fail);
+            font-weight: 600;
+        }
+
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: #fff;
+        }
+
+        /* Controls */
+        .controls {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn {
+            padding: 6px 12px;
+            border: 1px solid #e5e7eb;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            background: #f3f4f6;
+            border-color: #d1d5db;
+        }
+
+        .btn:active {
+            background: #e5e7eb;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+    <!-- Syntax Highlighting -->
+    <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/rust.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/cmake.min.js"></script>
+</head>
+
+<body>
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <span>Explorer</span>
+            <button class="btn" onclick="updateFiles()" title="Refresh Files">↻</button>
+        </div>
+        <div class="file-tree" id="file-tree">
+            <!-- Tree injected here -->
+            <div style="padding:20px; color:#9ca3af; text-align:center;">Loading...</div>
+        </div>
+    </div>
+
+    <div class="main">
+        <div class="top-bar">
+            <div style="display:flex; align-items:center; gap: 15px;">
+                <h3 style="margin:0; font-size:1.1rem;">Fusion Dashboard</h3>
+                <span id="current-step" style="color:#6b7280; font-size:0.9rem;">Initializing...</span>
+            </div>
+
+            <div class="controls">
+                <!-- Actions -->
+                <button class="btn" onclick="triggerAction('test_rust')">▶ Test Rust</button>
+                <button class="btn" onclick="triggerAction('test_python')">▶ Test Py</button>
+                <button class="btn" onclick="triggerAction('test_cpp')">▶ Test C++</button>
+                <div style="width:1px; background:#e5e7eb; margin:0 4px;"></div>
+                <div id="overall-status" class="status-pill status-RUNNING">RUNNING</div>
+            </div>
+        </div>
+
+        <div class="content-area">
+            <!-- Activity / Status Panel -->
+            <div id="activity-panel" class="panel">
+                <div class="panel-header">
+                    <span>Activity & Status</span>
+                    <span id="timestamp"
+                        style="font-weight:normal; color:#9ca3af; font-size:0.8rem;">{{TIMESTAMP}}</span>
+                </div>
+                <div class="activity-log" id="activity-content">
+
+                    <div id="toolchain-section" style="margin-bottom:20px;">
+                        <div style="font-weight:600; margin-bottom:8px;">Toolchains</div>
+                        <div id="toolchain-list" style="display:flex; gap:10px; flex-wrap:wrap;"></div>
+                    </div>
+
+                    <div id="checks-section">
+                        <div style="font-weight:600; margin-bottom:8px;">Validation Steps</div>
+                        <table class="steps-table">
+                            <thead>
+                                <tr>
+                                    <th>Validations</th>
+                                    <th style="width:60px;">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="steps-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- File Viewer Panel (Iframe) -->
+            <div id="viewer-panel" class="panel">
+                <div class="panel-header">
+                    <span id="viewer-title" style="font-family:monospace;">File Viewer</span>
+                    <div class="controls">
+                        <button class="btn" onclick="toggleViewer(false)">Close</button>
+                    </div>
+                </div>
+                <iframe id="viewer-frame" src="about:blank"></iframe>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Check if we are serving from root or a subdir
+        // If serving from logs/latest/, API is at ../api/ or ./api/? 
+        // Our server now serves logs/ root.
+        // If URL is http://localhost:8000/latest/index.html
+        // Then we check /latest/api/status
+
+        const BASE_PATH = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
+        // Example: /20260206_120000 or /latest
+
+        const API_STATUS = `${BASE_PATH}/api/status`;
+        const API_FILES = `${BASE_PATH}/api/files`;
+        const API_RUN = `/api/run`; // Run is global, at root? No, server dispatch.
+        // If server handles specific run, it might be tricky.
+        // User wants new runs.
+        // The server serves the ROOT logs folder.
+        // So /api/run should be at root /api/run.
+        // Let's assume server mounts /api/run at root.
+
+        const initialStatus = null; // __INITIAL_STATUS_JSON__
+
+        // --- Tree View Logic ---
+        function buildTree(paths) {
+            const root = { name: "root", children: {} };
+            paths.forEach(p => {
+                if (p.path.endsWith("index.html") && !p.path.includes("raw_logs")) return; // Filter root index
+
+                const parts = p.path.split('/');
+                let current = root;
+                parts.forEach((part, i) => {
+                    if (!current.children[part]) {
+                        current.children[part] = {
+                            name: part,
+                            path: parts.slice(0, i + 1).join('/'),
+                            type: (i === parts.length - 1) ? 'file' : 'dir',
+                            children: {}
+                        };
+                    }
+                    current = current.children[part];
+                });
+            });
+            return root;
+        }
+
+        function renderTreeHtml(node, level = 0) {
+            const children = Object.values(node.children).sort((a, b) => {
+                // Directories first
+                if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
+
+                // If we are at root level (level 0), sort descending (Latest timestamp first)
+                if (level === 0) return b.name.localeCompare(a.name);
+
+                // Otherwise sort ascending (A-Z)
+                return a.name.localeCompare(b.name);
+            });
+
+            if (children.length === 0) return '';
+
+            return children.map(child => {
+                const isDir = child.type === 'dir';
+                const icon = isDir ? '📁' : (child.name.endsWith('.html') ? '🌐' : '📄');
+                const indent = level * 10;
+
+                if (isDir) {
+                    return `
+                        <div class="tree-item-container">
+                            <div class="tree-item" onclick="toggleDir(this)">
+                                <span class="arrow">▶</span>
+                                <div class="item-content">
+                                    <span>${icon}</span> ${child.name}
+                                </div>
+                            </div>
+                            <div class="tree-children">
+                                ${renderTreeHtml(child, level + 1)}
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    return `
+                        <div class="tree-item file" onclick="viewFile('${child.path}', this)">
+                            <span class="arrow hidden"></span>
+                            <div class="item-content">
+                                <span>${icon}</span> ${child.name}
+                            </div>
+                        </div>
+                    `;
+                }
+            }).join('');
+        }
+
+        window.toggleDir = function (el) {
+            const children = el.nextElementSibling;
+            const arrow = el.querySelector('.arrow');
+            if (children.classList.contains('open')) {
+                children.classList.remove('open');
+                arrow.classList.remove('expanded');
+            } else {
+                children.classList.add('open');
+                arrow.classList.add('expanded');
+            }
+        }
+
+        // --- Main Logic ---
+
+        async function updateStatus() {
+            try {
+                const res = await fetch(API_STATUS);
+                if (res.ok) {
+                    const data = await res.json();
+                    renderStatus(data);
+                } else if (initialStatus) renderStatus(initialStatus);
+            } catch (e) {
+                if (initialStatus) renderStatus(initialStatus);
+            }
+        }
+
+        let existingFiles = "";
+        async function updateFiles() {
+            try {
+                const res = await fetch(API_FILES);
+                const files = await res.json();
+                const json = JSON.stringify(files);
+                if (json !== existingFiles) {
+                    existingFiles = json;
+                    // Sort files to put latest timestamp first (descending)
+                    files.sort((a, b) => b.path.localeCompare(a.path));
+
+                    const root = buildTree(files);
+                    document.getElementById('file-tree').innerHTML = renderTreeHtml(root);
+
+                    // Auto-open the first folder (latest timestamp)
+                    const firstFolder = document.querySelector('.tree-item-container > .tree-children');
+                    if (firstFolder) {
+                        firstFolder.classList.add('open');
+                        firstFolder.previousElementSibling.querySelector('.arrow').classList.add('expanded');
+                    }
+                }
+            } catch (e) {
+                console.error("File error", e);
+                const tree = document.getElementById('file-tree');
+                if (tree && tree.innerHTML.includes('Loading...')) {
+                    tree.innerHTML = '<div style="padding:20px; color:#9ca3af; text-align:center; font-size:0.8rem;">Explorer requires live server<br><br>View at http://localhost:8000</div>';
+                }
+            }
+        }
+
+        function renderStatus(data) {
+            document.getElementById('current-step').innerText = data.current_step || "Ready";
+            const statusEl = document.getElementById('overall-status');
+            statusEl.innerText = data.overall_status || "UNKNOWN";
+            statusEl.className = 'status-pill status-' + (data.overall_status || 'RUNNING');
+
+            // Toolchains
+            if (data.tools) {
+                document.getElementById('toolchain-list').innerHTML = Object.entries(data.tools).map(([k, v]) =>
+                    `<div style="font-size:0.85rem; padding:4px 8px; background:#fff; border:1px solid #e5e7eb; border-radius:4px;">${v ? '✅' : '❌'} ${k}</div>`
+                ).join('');
+            }
+
+            // Steps
+            if (data.tests) {
+                const tbody = document.getElementById('steps-body');
+                let rows = "";
+                // Unit Test Summary
+                const mappings = {
+                    'rust': 'Unit Tests: RUST',
+                    'cpp': 'Unit Tests: CPP',
+                    'python': 'Unit Tests: Python (Setup)',
+                    'python_unittest': 'Unit Tests: Python (Unittest)',
+                    'python_integration': 'Unit Tests: Python (Pytest)',
+                    'simple_demo': 'Simple Demos (No-SD)',
+                    'coverage_rust': 'Coverage: Rust (LLVM-Cov)',
+                    'coverage_python': 'Coverage: Python (Pytest-Cov)',
+                    'coverage_cpp': 'Coverage: C++ (OpenCppCov)'
+                };
+
+                Object.keys(mappings).forEach(key => {
+                    if (data.tests[key]) {
+                        const s = data.tests[key];
+                        let valHtml = s;
+                        // Linkify coverage if PASS
+                        if (key.startsWith('coverage_') && s.startsWith('PASS')) {
+                            const lang = key.split('_')[1]; // rust, python, cpp
+
+                            // Use absolute path to ensure it works from root or subdirs
+                            // We need the timestamp of THIS run.
+                            const ts = document.getElementById('timestamp').innerText.trim();
+
+                            let link = `/${ts}/coverage/${lang}/index.html`;
+                            if (lang === 'rust') link = `/${ts}/coverage/${lang}/html/index.html`;
+
+                            valHtml = `<a href="#" onclick="viewFile('${link}', null); return false;">${s}</a>`;
+                        }
+                        rows += `<tr><td>${mappings[key]}</td><td class="${s.startsWith('PASS') ? 'step-pass' : 'step-fail'}">${valHtml}</td></tr>`;
+                    }
+                });
+                if (data.tests.steps) {
+                    data.tests.steps.forEach(step => {
+                        const s = step.status;
+                        rows += `<tr><td>${step.name}</td><td class="${s == 'PASS' ? 'step-pass' : 'step-fail'}">${s}</td></tr>`;
+                    });
+                }
+                tbody.innerHTML = rows;
+            }
+        }
+
+        window.viewFile = async function (path, el) {
+            // Highlight active item
+            document.querySelectorAll('.tree-item').forEach(i => i.classList.remove('active'));
+            if (el) el.classList.add('active');
+
+            console.log("Viewing file:", path);
+            toggleViewer(true);
+            document.getElementById('viewer-title').innerText = path;
+
+            const frame = document.getElementById('viewer-frame');
+
+            // For HTML reports, use iframe src
+            if (path.endsWith('.html')) {
+                frame.style.display = 'block';
+                if (document.getElementById('code-container')) document.getElementById('code-container').style.display = 'none';
+                // Link is relative, so it should work
+                frame.src = encodeURI(path);
+                return;
+            }
+
+            // For code/logs, fetch text and highlight
+            try {
+                const res = await fetch(encodeURI(path));
+                const text = await res.text();
+
+                let container = document.getElementById('code-container');
+                if (!container) {
+                    container = document.createElement('pre');
+                    container.id = 'code-container';
+                    // Added pre-wrap to fix horizontal scrollbar issue
+                    container.style.cssText = 'flex:1; overflow:auto; margin:0; padding:10px; background:#282c34; color:#abb2bf; font-family:Consolas,monospace; font-size:0.9rem; white-space: pre-wrap; word-wrap: break-word;';
+                    frame.parentNode.appendChild(container); // Add to panel, sibling to iframe
+                }
+
+                frame.style.display = 'none';
+                container.style.display = 'block';
+                container.innerHTML = `<code class="hljs" style="background:transparent; padding:0;">${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code>`;
+
+                // Highlight
+                hljs.highlightElement(container.querySelector('code'));
+
+            } catch (e) {
+                console.error("Failed to load file", e);
+                frame.style.display = 'block';
+                frame.src = encodeURI(path); // Fallback
+            }
+        }
+
+        window.toggleViewer = function (show) {
+            const v = document.getElementById('viewer-panel');
+            const a = document.getElementById('activity-panel');
+            if (show) {
+                v.style.display = 'flex';
+                a.style.display = 'none'; // Mobile-ish feel or split? User said "nested something". 
+                // Let's do split view for Desktop
+                if (window.innerWidth > 800) {
+                    a.style.display = 'flex';
+                    a.style.flex = '1';
+                    v.style.flex = '2';
+                }
+            } else {
+                v.style.display = 'none';
+                a.style.display = 'flex';
+                a.style.flex = '1';
+            }
+        }
+
+        window.triggerAction = async function (action) {
+            if (!confirm("Start New Run for " + action + "?")) return;
+            try {
+                // Use global API to trigger new run
+                await fetch('/api/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: action })
+                });
+                alert("New run started! Redirecting to latest...");
+                // Wait a bit and redirect to latest
+                setTimeout(() => {
+                    window.location.href = "/latest/index.html";
+                }, 2000);
+            } catch (e) { alert("Error: " + e); }
+        }
+
+        setInterval(updateStatus, 1500);
+        updateStatus();
+        updateFiles();
+    </script>
+</body>
+
+</html>

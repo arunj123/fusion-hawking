@@ -24,6 +24,12 @@ coverage/
 .pytest_cache/
 htmlcov/
 *.xml
+coverage_final.txt
+
+# Automation artifacts
+logs/
+__pycache__/
+
+# Reference documents
 AUTOSAR_PRS_SOMEIPProtocol.pdf
 AUTOSAR_PRS_SOMEIPServiceDiscoveryProtocol.pdf
-coverage_final.txt
