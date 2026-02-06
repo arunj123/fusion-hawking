@@ -9,6 +9,7 @@ from tools.fusion.build import Builder
 from tools.fusion.test import Tester
 from tools.fusion.coverage import CoverageManager
 from tools.fusion.server import ProgressServer
+from tools.fusion.utils import get_local_ip, patch_configs
 
 def main():
     parser = argparse.ArgumentParser(description="Fusion Hawking Automation Tool")
@@ -38,6 +39,11 @@ def main():
     
     tools = ToolchainManager()
     tool_status = tools.check_all()
+    
+    # Patch configs with local IP
+    local_ip = get_local_ip()
+    patch_configs(local_ip, root_dir)
+    
     if server: server.update({"tools": tool_status})
     tools.print_status()
     reporter.generate_index({"current_step": "Toolchains Checked", "overall_status": "RUNNING", "tools": tool_status})

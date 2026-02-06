@@ -108,7 +108,12 @@ class SomeIpRuntime:
         # Join Multicast on configured interface
         self.interface_ip = interface_ip
         mreq = struct.pack("4s4s", socket.inet_aton("224.0.0.1"), socket.inet_aton(self.interface_ip))
-        self.sd_sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+        try:
+            self.sd_sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+        except OSError:
+            self.logger.log(LogLevel.WARN, "Runtime", f"Failed to join multicast on {self.interface_ip}, retrying on INADDR_ANY")
+            mreq = struct.pack("4s4s", socket.inet_aton("224.0.0.1"), socket.inet_aton("0.0.0.0"))
+            self.sd_sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
         # Ensure outgoing multicast uses configured interface
         self.sd_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(self.interface_ip))
         # Enable Multicast Loopback
