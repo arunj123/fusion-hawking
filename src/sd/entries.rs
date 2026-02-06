@@ -112,3 +112,116 @@ impl SomeIpDeserialize for SdEntry {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+    
+    #[test]
+    fn test_entry_type_values() {
+        assert_eq!(EntryType::FindService as u8, 0x00);
+        assert_eq!(EntryType::OfferService as u8, 0x01);
+        assert_eq!(EntryType::RequestService as u8, 0x02);
+        assert_eq!(EntryType::SubscribeEventgroup as u8, 0x06);
+        assert_eq!(EntryType::SubscribeEventgroupAck as u8, 0x07);
+        assert_eq!(EntryType::StopSubscribeEventgroup as u8, 0x86);
+    }
+    
+    #[test]
+    fn test_entry_type_from_u8() {
+        assert_eq!(EntryType::from(0x00), EntryType::FindService);
+        assert_eq!(EntryType::from(0x01), EntryType::OfferService);
+        assert_eq!(EntryType::from(0x02), EntryType::RequestService);
+        assert_eq!(EntryType::from(0x06), EntryType::SubscribeEventgroup);
+        assert_eq!(EntryType::from(0x07), EntryType::SubscribeEventgroupAck);
+        assert_eq!(EntryType::from(0x86), EntryType::StopSubscribeEventgroup);
+        assert_eq!(EntryType::from(0xFF), EntryType::Unknown);
+        assert_eq!(EntryType::from(0x99), EntryType::Unknown);
+    }
+    
+    #[test]
+    fn test_is_service_entry() {
+        assert!(EntryType::FindService.is_service_entry());
+        assert!(EntryType::OfferService.is_service_entry());
+        assert!(EntryType::RequestService.is_service_entry());
+        
+        assert!(!EntryType::SubscribeEventgroup.is_service_entry());
+        assert!(!EntryType::SubscribeEventgroupAck.is_service_entry());
+    }
+    
+    #[test]
+    fn test_is_eventgroup_entry() {
+        assert!(EntryType::SubscribeEventgroup.is_eventgroup_entry());
+        assert!(EntryType::SubscribeEventgroupAck.is_eventgroup_entry());
+        assert!(EntryType::StopSubscribeEventgroup.is_eventgroup_entry());
+        
+        assert!(!EntryType::FindService.is_eventgroup_entry());
+        assert!(!EntryType::OfferService.is_eventgroup_entry());
+    }
+    
+    #[test]
+    fn test_sd_entry_serialization_roundtrip() {
+        let entry = SdEntry {
+            entry_type: EntryType::OfferService,
+            index_1: 0x00,
+            index_2: 0x00,
+            number_of_opts_1: 0x01,
+            number_of_opts_2: 0x02,
+            service_id: 0x1234,
+            instance_id: 0x0001,
+            major_version: 0x01,
+            ttl: 0x00FFFFFF, // Max TTL (3 bytes)
+            minor_version: 0x00000001,
+        };
+        
+        let mut buf = Vec::new();
+        entry.serialize(&mut buf).unwrap();
+        assert_eq!(buf.len(), 16);
+        
+        let mut cursor = Cursor::new(buf);
+        let decoded = SdEntry::deserialize(&mut cursor).unwrap();
+        
+        assert_eq!(decoded.entry_type, EntryType::OfferService);
+        assert_eq!(decoded.service_id, 0x1234);
+        assert_eq!(decoded.instance_id, 0x0001);
+        assert_eq!(decoded.major_version, 0x01);
+        assert_eq!(decoded.ttl, 0x00FFFFFF);
+        assert_eq!(decoded.minor_version, 0x00000001);
+        assert_eq!(decoded.number_of_opts_1, 0x01);
+        assert_eq!(decoded.number_of_opts_2, 0x02);
+    }
+    
+    #[test]
+    fn test_sd_entry_subscription() {
+        let entry = SdEntry {
+            entry_type: EntryType::SubscribeEventgroup,
+            index_1: 0x00,
+            index_2: 0x00,
+            number_of_opts_1: 0x00,
+            number_of_opts_2: 0x00,
+            service_id: 0x5678,
+            instance_id: 0x0002,
+            major_version: 0x02,
+            ttl: 0x001234,
+            minor_version: 0xABCD1234,
+        };
+        
+        let mut buf = Vec::new();
+        entry.serialize(&mut buf).unwrap();
+        
+        let mut cursor = Cursor::new(buf);
+        let decoded = SdEntry::deserialize(&mut cursor).unwrap();
+        
+        assert_eq!(decoded.entry_type, EntryType::SubscribeEventgroup);
+        assert_eq!(decoded.service_id, 0x5678);
+        assert_eq!(decoded.ttl, 0x001234);
+    }
+    
+    #[test]
+    fn test_entry_type_conversion_to_u8() {
+        let et = EntryType::OfferService;
+        let val: u8 = et.into();
+        assert_eq!(val, 0x01);
+    }
+}

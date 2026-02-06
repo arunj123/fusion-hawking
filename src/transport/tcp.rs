@@ -131,3 +131,123 @@ impl TcpServer {
         self.connections.len()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::thread;
+    use std::time::Duration;
+    
+    #[test]
+    fn test_tcp_server_creation() {
+        let server = TcpServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+        let addr = server.local_addr().unwrap();
+        assert!(addr.port() > 0);
+    }
+    
+    #[test]
+    fn test_tcp_server_initial_state() {
+        let server = TcpServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+        assert_eq!(server.connection_count(), 0);
+        assert!(server.connected_clients().is_empty());
+    }
+    
+    #[test]
+    fn test_tcp_server_nonblocking() {
+        let server = TcpServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+        server.set_nonblocking(true).unwrap();
+        // In nonblocking mode, accept should return None instead of blocking
+    }
+    
+    #[test]
+    fn test_tcp_client_server_communication() {
+        // Start server
+        let mut server = TcpServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+        let server_addr = server.local_addr().unwrap();
+        
+        // Connect client in background thread
+        let client_thread = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(50));
+            let client = TcpTransport::connect(server_addr).unwrap();
+            
+            // Send data
+            client.send(b"Hello Server", None).unwrap();
+            
+            // Receive response
+            let mut buf = [0u8; 128];
+            let (len, _) = client.receive(&mut buf).unwrap();
+            String::from_utf8_lossy(&buf[..len]).to_string()
+        });
+        
+        // Accept connection
+        loop {
+            match server.accept() {
+                Ok(Some(addr)) => {
+                    // Receive from client
+                    let mut buf = [0u8; 128];
+                    let len = server.receive_from(&mut buf, &addr).unwrap();
+                    assert_eq!(&buf[..len], b"Hello Server");
+                    
+                    // Send response
+                    server.send_to(b"Hello Client", &addr).unwrap();
+                    break;
+                }
+                Ok(None) => thread::sleep(Duration::from_millis(10)),
+                Err(_) => break,
+            }
+        }
+        
+        let response = client_thread.join().unwrap();
+        assert_eq!(response, "Hello Client");
+    }
+    
+    #[test]
+    fn test_tcp_transport_local_addr() {
+        let server = TcpServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+        let server_addr = server.local_addr().unwrap();
+        
+        // Connect client
+        let client = TcpTransport::connect(server_addr).unwrap();
+        let local = client.local_addr().unwrap();
+        assert!(local.port() > 0);
+    }
+    
+    #[test]
+    fn test_tcp_transport_peer_addr() {
+        let server = TcpServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+        let server_addr = server.local_addr().unwrap();
+        
+        // Connect client
+        let client = TcpTransport::connect(server_addr).unwrap();
+        let peer = client.peer_addr().unwrap();
+        assert_eq!(peer, server_addr);
+    }
+    
+    #[test]
+    fn test_server_disconnect() {
+        let mut server = TcpServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+        let server_addr = server.local_addr().unwrap();
+        
+        // Connect client
+        let _client = TcpTransport::connect(server_addr).unwrap();
+        
+        // Accept
+        thread::sleep(Duration::from_millis(50));
+        if let Ok(Some(addr)) = server.accept() {
+            assert_eq!(server.connection_count(), 1);
+            
+            server.disconnect(&addr);
+            assert_eq!(server.connection_count(), 0);
+        }
+    }
+    
+    #[test]
+    fn test_send_to_missing_client() {
+        let mut server = TcpServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+        let fake_addr: SocketAddr = "192.168.1.1:12345".parse().unwrap();
+        
+        let result = server.send_to(b"data", &fake_addr);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), ErrorKind::NotConnected);
+    }
+}

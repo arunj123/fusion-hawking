@@ -40,7 +40,17 @@ class Tester:
              else:
                  results["python_unittest"] = "FAIL"
 
-        # 2. Pytest (Cross Language)
+        # 2. Codegen Tests
+        with open(self.reporter.get_log_path("test_codegen"), "w") as f:
+             codegen_cmd = ["python", "-m", "unittest", "tools.codegen.tests.test_codegen", "-v"]
+             f.write(f"=== FUSION CODEGEN UNIT TEST ===\nCommand: {' '.join(codegen_cmd)}\nPWD: {os.getcwd()}\n================================\n\n")
+             f.flush()
+             if subprocess.call(codegen_cmd, stdout=f, stderr=subprocess.STDOUT, env=env) == 0:
+                 results["python_codegen"] = "PASS"
+             else:
+                 results["python_codegen"] = "FAIL"
+
+        # 3. Pytest (Cross Language)
         with open(self.reporter.get_log_path("test_python_pytest"), "w") as f:
              # Check if pytest is installed
              try:

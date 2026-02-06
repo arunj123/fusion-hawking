@@ -9,6 +9,121 @@ sys.path.insert(0, os.path.join(os.getcwd(), 'build', 'generated', 'python'))
 sys.path.insert(0, os.path.join(os.getcwd(), 'src', 'python'))
 
 from runtime import SomeIpRuntime, MathServiceStub, MathServiceClient
+from fusion_hawking.runtime import MessageType, ReturnCode, SessionIdManager
+
+
+class TestMessageType(unittest.TestCase):
+    """Tests for SOME/IP MessageType enum."""
+    
+    def test_request_value(self):
+        self.assertEqual(MessageType.REQUEST, 0x00)
+        
+    def test_request_no_return_value(self):
+        self.assertEqual(MessageType.REQUEST_NO_RETURN, 0x01)
+        
+    def test_notification_value(self):
+        self.assertEqual(MessageType.NOTIFICATION, 0x02)
+        
+    def test_response_value(self):
+        self.assertEqual(MessageType.RESPONSE, 0x80)
+        
+    def test_error_value(self):
+        self.assertEqual(MessageType.ERROR, 0x81)
+        
+    def test_tp_variants(self):
+        self.assertEqual(MessageType.REQUEST_WITH_TP, 0x20)
+        self.assertEqual(MessageType.REQUEST_NO_RETURN_WITH_TP, 0x21)
+        self.assertEqual(MessageType.NOTIFICATION_WITH_TP, 0x22)
+        self.assertEqual(MessageType.RESPONSE_WITH_TP, 0xA0)
+        self.assertEqual(MessageType.ERROR_WITH_TP, 0xA1)
+
+
+class TestReturnCode(unittest.TestCase):
+    """Tests for SOME/IP ReturnCode enum."""
+    
+    def test_ok_value(self):
+        self.assertEqual(ReturnCode.OK, 0x00)
+        
+    def test_not_ok_value(self):
+        self.assertEqual(ReturnCode.NOT_OK, 0x01)
+        
+    def test_unknown_service_value(self):
+        self.assertEqual(ReturnCode.UNKNOWN_SERVICE, 0x02)
+        
+    def test_unknown_method_value(self):
+        self.assertEqual(ReturnCode.UNKNOWN_METHOD, 0x03)
+        
+    def test_timeout_value(self):
+        self.assertEqual(ReturnCode.TIMEOUT, 0x06)
+        
+    def test_malformed_message_value(self):
+        self.assertEqual(ReturnCode.MALFORMED_MESSAGE, 0x09)
+        
+    def test_e2e_values(self):
+        self.assertEqual(ReturnCode.E2E_REPEATED, 0x0B)
+        self.assertEqual(ReturnCode.E2E_WRONG_SEQUENCE, 0x0C)
+        self.assertEqual(ReturnCode.E2E_NOT_AVAILABLE, 0x0D)
+        self.assertEqual(ReturnCode.E2E_NO_NEW_DATA, 0x0E)
+
+
+class TestSessionIdManager(unittest.TestCase):
+    """Tests for SessionIdManager class."""
+    
+    def setUp(self):
+        self.manager = SessionIdManager()
+        
+    def test_initial_session_id_is_one(self):
+        sid = self.manager.next_session_id(0x1000, 0x0001)
+        self.assertEqual(sid, 1)
+        
+    def test_session_id_increments(self):
+        sid1 = self.manager.next_session_id(0x1000, 0x0001)
+        sid2 = self.manager.next_session_id(0x1000, 0x0001)
+        sid3 = self.manager.next_session_id(0x1000, 0x0001)
+        self.assertEqual(sid1, 1)
+        self.assertEqual(sid2, 2)
+        self.assertEqual(sid3, 3)
+        
+    def test_different_services_have_independent_ids(self):
+        sid1 = self.manager.next_session_id(0x1000, 0x0001)
+        sid2 = self.manager.next_session_id(0x2000, 0x0001)
+        sid3 = self.manager.next_session_id(0x1000, 0x0001)
+        self.assertEqual(sid1, 1)
+        self.assertEqual(sid2, 1)  # Different service, starts at 1
+        self.assertEqual(sid3, 2)
+        
+    def test_different_methods_have_independent_ids(self):
+        sid1 = self.manager.next_session_id(0x1000, 0x0001)
+        sid2 = self.manager.next_session_id(0x1000, 0x0002)
+        self.assertEqual(sid1, 1)
+        self.assertEqual(sid2, 1)  # Different method, starts at 1
+        
+    def test_reset_single_counter(self):
+        self.manager.next_session_id(0x1000, 0x0001)
+        self.manager.next_session_id(0x1000, 0x0001)
+        self.manager.reset(0x1000, 0x0001)
+        sid = self.manager.next_session_id(0x1000, 0x0001)
+        self.assertEqual(sid, 1)  # Reset back to 1
+        
+    def test_reset_all_counters(self):
+        self.manager.next_session_id(0x1000, 0x0001)
+        self.manager.next_session_id(0x2000, 0x0001)
+        self.manager.reset_all()
+        sid1 = self.manager.next_session_id(0x1000, 0x0001)
+        sid2 = self.manager.next_session_id(0x2000, 0x0001)
+        self.assertEqual(sid1, 1)
+        self.assertEqual(sid2, 1)
+        
+    def test_session_id_wraps_at_65535(self):
+        # Directly set counter to near wrap point
+        # After returning 0xFFFF, next value = (0xFFFF % 0xFFFF) + 1 = 1
+        self.manager._counters[(0x1000, 0x0001)] = 0xFFFF
+        sid1 = self.manager.next_session_id(0x1000, 0x0001)
+        sid2 = self.manager.next_session_id(0x1000, 0x0001)
+        self.assertEqual(sid1, 0xFFFF)
+        # Wraps to 1 (not 0, as 0 is invalid per SOME/IP)
+        self.assertEqual(sid2, 1)
+
 
 class MockSocket:
     def __init__(self):
@@ -27,16 +142,9 @@ class MockSocket:
     def setsockopt(self, *args): pass
     def setblocking(self, *args): pass
 
+
 class TestPythonRuntime(unittest.TestCase):
     def setUp(self):
-        # We need to monkeypath socket to avoid real networking in unit tests
-        self.original_socket = socket.socket
-        # socket.socket = lambda *args, **kwargs: MockSocket() 
-        # Doing this globally is risky if other tests run. 
-        # But SomeIpRuntime creates sockets in __init__.
-        # For simplicity in this environment, let's just instantiate runtime.
-        # It binds to port 0 (random), so it shouldn't conflict.
-        
         # Use relative path to test config
         config_path = os.path.join(os.getcwd(), 'tests', 'test_config.json')
         self.runtime = SomeIpRuntime(config_path, "test_instance")
@@ -56,6 +164,19 @@ class TestPythonRuntime(unittest.TestCase):
         client = self.runtime.get_client("math-client", MathServiceClient)
         self.assertIsInstance(client, MathServiceClient)
         self.assertEqual(client.runtime, self.runtime)
+        
+    def test_runtime_has_logger(self):
+        self.assertIsNotNone(self.runtime.logger)
+        
+    def test_runtime_has_socket(self):
+        self.assertIsNotNone(self.runtime.sock)
+        
+    def test_runtime_has_services_dict(self):
+        self.assertIsInstance(self.runtime.services, dict)
+        
+    def test_runtime_has_remote_services_dict(self):
+        self.assertIsInstance(self.runtime.remote_services, dict)
+
 
 if __name__ == '__main__':
     unittest.main()

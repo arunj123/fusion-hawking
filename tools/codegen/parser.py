@@ -42,11 +42,19 @@ class PythonASTParser(AbstractParser):
 
     def _parse_type(self, annotation) -> Type:
         if isinstance(annotation, ast.Name):
-            return Type(annotation.id)
+            name = annotation.id
+            # Map common IDL aliases if needed
+            mapping = {
+                'int': 'int',
+                'float': 'float32',
+                'str': 'string',
+                'bool': 'bool'
+            }
+            return Type(mapping.get(name, name))
         elif isinstance(annotation, ast.Subscript):
              if isinstance(annotation.value, ast.Name) and annotation.value.id == 'List':
                  inner = self._parse_type(annotation.slice)
-                 return Type(inner.name, is_list=True)
+                 return Type("list", inner=inner)
         elif isinstance(annotation, ast.Constant) and annotation.value is None:
              return Type("None")
         return Type("Unknown")

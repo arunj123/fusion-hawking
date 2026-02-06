@@ -116,6 +116,9 @@ class SomeIpRuntime:
         
         self.sock.setblocking(False)
         self.sd_sock.setblocking(False)
+        self.pending_requests: Dict[Tuple[int, int, int], threading.Event] = {} # (sid, meth, sess) -> event
+        self.request_results: Dict[Tuple[int, int, int], bytes] = {}
+        self.session_manager = SessionIdManager()
 
     def start(self):
         self.running = True
@@ -425,10 +428,28 @@ class SomeIpRuntime:
         self.sd_sock.sendto(someip_header + sd_payload, ("224.0.0.1", 30490))
         self.logger.log(LogLevel.DEBUG, "SD", f"Sent Offer for 0x{service_id:04x}")
 
-    def send_request(self, service_id, method_id, payload, target_addr, msg_type=0):
+    def send_request(self, service_id, method_id, payload, target_addr, msg_type=0, wait_for_response=False, timeout=2.0):
+        # Generate Session ID
+        session_id = self.session_manager.next_session_id(service_id, method_id)
+        
         # SOME/IP Header: [SvcId:2][MethId:2][Len:4][ClientId:2][SessionId:2][Proto:1][Iface:1][MsgType:1][Ret:1]
-        header = struct.pack(">HHIHH4B", service_id, method_id, len(payload)+8, 0, 1, 1, 1, msg_type, 0)
+        header = struct.pack(">HHIHH4B", service_id, method_id, len(payload)+8, 0, session_id, 1, 1, msg_type, 0)
+        
+        event = None
+        if wait_for_response:
+            event = threading.Event()
+            self.pending_requests[(service_id, method_id, session_id)] = event
+            
         self.sock.sendto(header + payload, target_addr)
+        
+        if wait_for_response and event:
+            if event.wait(timeout):
+                return self.request_results.pop((service_id, method_id, session_id), None)
+            else:
+                self.pending_requests.pop((service_id, method_id, session_id), None)
+                self.logger.log(LogLevel.WARN, "Runtime", f"Timeout waiting for response to 0x{service_id:04x}:0x{method_id:04x}")
+                return None
+        return None
 
     def _run(self):
         while self.running:
@@ -458,6 +479,11 @@ class SomeIpRuntime:
                             if res_payload:
                                 res_header = struct.pack(">HHIHH4B", sid, mid, len(res_payload)+8, cid, ssid, pv, iv, 0x80, 0)
                                 self.sock.sendto(res_header + res_payload, addr)
+                        elif mt == 0x80: # RESPONSE
+                            key = (sid, mid, ssid)
+                            if key in self.pending_requests:
+                                self.request_results[key] = data[16:]
+                                self.pending_requests.pop(key).set()
                 elif s == self.sd_sock:
                     # Parse SD
                     if len(data) >= 56:

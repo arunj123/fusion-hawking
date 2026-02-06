@@ -13,7 +13,7 @@ A lightweight, dependency-free SOME/IP library implemented in Rust, adhering to 
     - **Rust**: Native implementation with fully async-compatible SD machine.
     - **Python**: generated bindings and runtime with Event support.
     - **C++**: High-performance runtime with modern C++14 support.
-- **IDL Compiler**: Python-based tool (`tools/codegen`) to generate code from simple Python dataclasses.
+- **IDL Compiler**: Python-based tool (`tools/codegen`) to generate code from simple Python dataclasses. Supports recursive types and synchronous RPC. See [IDL Documentation](docs/IDL.md).
 
 ## Prerequisites
 

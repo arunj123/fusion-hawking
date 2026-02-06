@@ -196,13 +196,17 @@ class RustGenerator(AbstractGenerator):
             lines.append("        let mut payload = Vec::new();")
             req_expr = "req"
             lines.append(f"        {req_expr}.serialize(&mut payload)?;")
-            lines.append(f"        let header = SomeIpHeader::new(Self::SERVICE_ID, {svc.name}Server::<()>::METHOD_{m.name.upper()}, 0x1234, 0x01, 0x00, payload.len() as u32);")
+            
+            lines.append(f"        let header = SomeIpHeader::new(Self::SERVICE_ID, {svc.name}Server::<()>::METHOD_{m.name.upper()}, 0x1234, 0x01, 0x01, payload.len() as u32);")
             lines.append("        let mut msg = header.serialize().to_vec();")
             lines.append("        msg.extend(payload);")
             lines.append("        self.transport.send(&msg, Some(self.target))?;")
             
             if m.ret_type.name != "None":
-                lines.append(f"        Ok(Default::default())")
+                # For now, sync RPC is not implemented in client - return error
+                # TODO: Implement proper request-response with runtime integration
+                lines.append(f"        // TODO: Sync RPC requires runtime integration")
+                lines.append(f"        Err(std::io::Error::new(std::io::ErrorKind::Other, \"Sync RPC not yet implemented in client\"))")
             else:
                 lines.append("        Ok(())")
             lines.append("    }")
@@ -210,9 +214,14 @@ class RustGenerator(AbstractGenerator):
         return "\n".join(lines)
 
     def _rust_type(self, t: Type) -> str:
-        if t.is_list:
-            return f"Vec<{self._rust_type(Type(t.name))}>"
+        if t.inner:
+            return f"Vec<{self._rust_type(t.inner)}>"
             
-        mapping = { 'int': 'i32', 'float': 'f32', 'str': 'String', 'bool': 'bool', 'None': '()' }
+        mapping = { 
+            'int': 'i32', 'int32': 'i32', 'int8': 'i8', 'int16': 'i16', 'int64': 'i64',
+            'uint8': 'u8', 'uint16': 'u16', 'uint32': 'u32', 'uint64': 'u64',
+            'float': 'f32', 'float32': 'f32', 'float64': 'f64', 'double': 'f64',
+            'string': 'String', 'str': 'String', 'bool': 'bool', 'None': '()' 
+        }
         if t.name in mapping: return mapping[t.name]
         return t.name

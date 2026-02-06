@@ -10,6 +10,7 @@ log = "0.4"
 env_logger = "0.10"
 ctrlc = "3.4"
 socket2 = "0.5"
+tokio = { version = "1", features = ["sync", "time", "rt"] }
 
 [[example]]
 name = "sd_demo"

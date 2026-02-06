@@ -174,76 +174,107 @@ class CppGenerator(AbstractGenerator):
         return "\n".join(lines)
 
     def _gen_serialization_logic(self, f: Field) -> str:
-        t = f.type
-        name = f.name
-        code = []
-        if t.is_list:
-             code.append(f"        {{")
-             code.append(f"            size_t start_idx = buffer.size();")
-             code.append(f"            buffer.resize(start_idx + 4); // Placeholder for length")
-             code.append(f"            size_t data_start = buffer.size();")
-             code.append(f"            for(const auto& item : {name}) {{")
-             inner_type = Type(t.name, is_list=False)
-             code.append(self._serialize_val_cpp("item", inner_type, indent="                "))
-             code.append(f"            }}")
-             code.append(f"            uint32_t data_len = static_cast<uint32_t>(buffer.size() - data_start);")
-             code.append(f"            buffer[start_idx] = static_cast<uint8_t>(data_len >> 24);")
-             code.append(f"            buffer[start_idx+1] = static_cast<uint8_t>(data_len >> 16);")
-             code.append(f"            buffer[start_idx+2] = static_cast<uint8_t>(data_len >> 8);")
-             code.append(f"            buffer[start_idx+3] = static_cast<uint8_t>(data_len);")
-             code.append(f"        }}")
-        else:
-             code.append(self._serialize_val_cpp(name, t, indent="        "))
-        return "\n".join(code)
+        return self._serialize_val_cpp(f"this->{f.name}", f.type, indent="        ")
 
     def _serialize_val_cpp(self, expr: str, t: Type, indent: str) -> str:
-        if t.name == 'int':
-             return f"{indent}buffer.push_back(static_cast<uint8_t>({expr} >> 24)); buffer.push_back(static_cast<uint8_t>({expr} >> 16)); buffer.push_back(static_cast<uint8_t>({expr} >> 8)); buffer.push_back(static_cast<uint8_t>({expr}));"
-        elif t.name == 'float':
-             return f"{indent}{{ uint32_t val = *reinterpret_cast<const uint32_t*>(&{expr});\n{indent}  buffer.push_back(static_cast<uint8_t>(val >> 24)); buffer.push_back(static_cast<uint8_t>(val >> 16)); buffer.push_back(static_cast<uint8_t>(val >> 8)); buffer.push_back(static_cast<uint8_t>(val)); }}"
-        elif t.name == 'bool':
-             return f"{indent}buffer.push_back(static_cast<uint8_t>({expr} ? 1 : 0));"
-        elif t.name == 'str':
-             return f"{indent}{{\n{indent}    uint32_t slen = static_cast<uint32_t>({expr}.length());\n{indent}    buffer.push_back(static_cast<uint8_t>(slen >> 24)); buffer.push_back(static_cast<uint8_t>(slen >> 16)); buffer.push_back(static_cast<uint8_t>(slen >> 8)); buffer.push_back(static_cast<uint8_t>(slen));\n{indent}    for(char c : {expr}) buffer.push_back(static_cast<uint8_t>(c));\n{indent}}}"
-        else: # Struct
-             return f"{indent}{{\n{indent}    std::vector<uint8_t> s_buf = {expr}.serialize();\n{indent}    buffer.insert(buffer.end(), s_buf.begin(), s_buf.end());\n{indent}}}"
-
-    def _gen_deserialization_logic(self, f: Field) -> str:
-        t = f.type
-        name = f.name
         code = []
-        if t.is_list:
-             code.append(f"        {{")
-             code.append(f"            uint32_t byte_len_{name} = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]; data+=4; len-=4;")
-             code.append(f"            const uint8_t* end = data + byte_len_{name};")
-             code.append(f"            while(data < end) {{")
-             inner_type = Type(t.name, is_list=False)
-             code.append(f"                {self._cpp_type(inner_type)} temp_{name};")
-             code.append(self._deserialize_val_cpp(f"temp_{name}", inner_type, indent="                "))
-             code.append(f"                obj.{name}.push_back(temp_{name});")
-             code.append(f"            }}")
-             code.append(f"        }}")
-        else:
-             code.append(self._deserialize_val_cpp(f"obj.{name}", t, indent="        "))
+        if t.inner:
+            code.append(f"{indent}{{")
+            code.append(f"{indent}    size_t start_idx = buffer.size();")
+            code.append(f"{indent}    buffer.resize(start_idx + 4);")
+            code.append(f"{indent}    size_t data_start = buffer.size();")
+            code.append(f"{indent}    for(const auto& item : {expr}) {{")
+            code.append(self._serialize_val_cpp("item", t.inner, indent + "        "))
+            code.append(f"{indent}    }}")
+            code.append(f"{indent}    uint32_t data_len = static_cast<uint32_t>(buffer.size() - data_start);")
+            code.append(f"{indent}    buffer[start_idx] = static_cast<uint8_t>(data_len >> 24);")
+            code.append(f"{indent}    buffer[start_idx+1] = static_cast<uint8_t>(data_len >> 16);")
+            code.append(f"{indent}    buffer[start_idx+2] = static_cast<uint8_t>(data_len >> 8);")
+            code.append(f"{indent}    buffer[start_idx+3] = static_cast<uint8_t>(data_len);")
+            code.append(f"{indent}}}")
+        elif t.name in ('int', 'int32'):
+            code.append(f"{indent}buffer.push_back({expr} >> 24); buffer.push_back({expr} >> 16); buffer.push_back({expr} >> 8); buffer.push_back({expr});")
+        elif t.name == 'int8':
+            code.append(f"{indent}buffer.push_back({expr});")
+        elif t.name == 'int16':
+            code.append(f"{indent}buffer.push_back({expr} >> 8); buffer.push_back({expr});")
+        elif t.name == 'int64':
+            code.append(f"{indent}for(int i=7; i>=0; --i) buffer.push_back(({expr} >> (i*8)) & 0xFF);")
+        elif t.name == 'uint8':
+            code.append(f"{indent}buffer.push_back({expr});")
+        elif t.name == 'uint16':
+            code.append(f"{indent}buffer.push_back({expr} >> 8); buffer.push_back({expr});")
+        elif t.name == 'uint32':
+            code.append(f"{indent}buffer.push_back({expr} >> 24); buffer.push_back({expr} >> 16); buffer.push_back({expr} >> 8); buffer.push_back({expr});")
+        elif t.name == 'uint64':
+            code.append(f"{indent}for(int i=7; i>=0; --i) buffer.push_back(({expr} >> (i*8)) & 0xFF);")
+        elif t.name in ('float', 'float32'):
+            code.append(f"{indent}{{ uint32_t v; std::memcpy(&v, &{expr}, 4); buffer.push_back(v >> 24); buffer.push_back(v >> 16); buffer.push_back(v >> 8); buffer.push_back(v); }}")
+        elif t.name in ('double', 'float64'):
+            code.append(f"{indent}{{ uint64_t v; std::memcpy(&v, &{expr}, 8); for(int i=7; i>=0; --i) buffer.push_back((v >> (i*8)) & 0xFF); }}")
+        elif t.name == 'bool':
+            code.append(f"{indent}buffer.push_back({expr} ? 1 : 0);")
+        elif t.name in ('str', 'string'):
+            code.append(f"{indent}{{ uint32_t slen = static_cast<uint32_t>({expr}.length());")
+            code.append(f"{indent}  buffer.push_back(slen >> 24); buffer.push_back(slen >> 16); buffer.push_back(slen >> 8); buffer.push_back(slen);")
+            code.append(f"{indent}  for(char c : {expr}) buffer.push_back(static_cast<uint8_t>(c)); }}")
+        else: # Struct
+            code.append(f"{indent}{{ std::vector<uint8_t> s_buf = {expr}.serialize(); buffer.insert(buffer.end(), s_buf.begin(), s_buf.end()); }}")
         return "\n".join(code)
 
+    def _gen_deserialization_logic(self, f: Field) -> str:
+        return self._deserialize_val_cpp(f"obj.{f.name}", f.type, indent="        ")
+
     def _deserialize_val_cpp(self, expr_target: str, t: Type, indent: str) -> str:
-        target_name = expr_target.replace('obj.','')
-        if t.name == 'int':
-             return f"{indent}{{ int32_t val = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]; data+=4; len-=4; {expr_target} = val; }}"
-        elif t.name == 'float':
-             return f"{indent}{{ uint32_t val = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]; data+=4; len-=4; {expr_target} = *reinterpret_cast<float*>(&val); }}"
+        code = []
+        if t.inner:
+            code.append(f"{indent}{{")
+            code.append(f"{indent}    uint32_t blen = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]; data+=4; len-=4;")
+            code.append(f"{indent}    const uint8_t* end = data + blen;")
+            code.append(f"{indent}    while(data < end) {{")
+            code.append(f"{indent}        {self._cpp_type(t.inner)} item;")
+            code.append(self._deserialize_val_cpp("item", t.inner, indent + "        "))
+            code.append(f"{indent}        {expr_target}.push_back(item);")
+            code.append(f"{indent}    }}")
+            code.append(f"{indent}}}")
+        elif t.name in ('int', 'int32'):
+            code.append(f"{indent}{{ {expr_target} = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]; data+=4; len-=4; }}")
+        elif t.name == 'int8':
+            code.append(f"{indent}{{ {expr_target} = static_cast<int8_t>(*data); data+=1; len-=1; }}")
+        elif t.name == 'int16':
+            code.append(f"{indent}{{ {expr_target} = static_cast<int16_t>((data[0] << 8) | data[1]); data+=2; len-=2; }}")
+        elif t.name == 'int64':
+            code.append(f"{indent}{{ uint64_t v = 0; for(int i=0; i<8; ++i) v = (v << 8) | data[i]; data+=8; len-=8; {expr_target} = static_cast<int64_t>(v); }}")
+        elif t.name == 'uint8':
+            code.append(f"{indent}{{ {expr_target} = *data; data+=1; len-=1; }}")
+        elif t.name == 'uint16':
+            code.append(f"{indent}{{ {expr_target} = (data[0] << 8) | data[1]; data+=2; len-=2; }}")
+        elif t.name == 'uint32':
+            code.append(f"{indent}{{ {expr_target} = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]; data+=4; len-=4; }}")
+        elif t.name == 'uint64':
+            code.append(f"{indent}{{ {expr_target} = 0; for(int i=0; i<8; ++i) {expr_target} = ({expr_target} << 8) | data[i]; data+=8; len-=8; }}")
+        elif t.name in ('float', 'float32'):
+            code.append(f"{indent}{{ uint32_t v = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]; data+=4; len-=4; std::memcpy(&{expr_target}, &v, 4); }}")
+        elif t.name in ('double', 'float64'):
+            code.append(f"{indent}{{ uint64_t v = 0; for(int i=0; i<8; ++i) v = (v << 8) | data[i]; data+=8; len-=8; std::memcpy(&{expr_target}, &v, 8); }}")
         elif t.name == 'bool':
-             return f"{indent}{expr_target} = (data[0] != 0); data+=1; len-=1;"
-        elif t.name == 'str':
-             return f"{indent}{{\n{indent}    uint32_t slen = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]; data+=4; len-=4;\n{indent}    {expr_target}.assign(reinterpret_cast<const char*>(data), slen); data+=slen; len-=slen;\n{indent}}}"
+            code.append(f"{indent}{{ {expr_target} = (*data != 0); data+=1; len-=1; }}")
+        elif t.name in ('str', 'string'):
+            code.append(f"{indent}{{ uint32_t slen = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]; data+=4; len-=4;")
+            code.append(f"{indent}  {expr_target}.assign(reinterpret_cast<const char*>(data), slen); data+=slen; len-=slen; }}")
         else: # Struct
-             return f"{indent}{expr_target} = {t.name}::deserialize(data, len);"
+            code.append(f"{indent}{expr_target} = {t.name}::deserialize(data, len);")
+        return "\n".join(code)
 
     def _cpp_type(self, t: Type) -> str:
-        if t.is_list:
-            return f"std::vector<{self._cpp_type(Type(t.name))}>"
+        if t.inner:
+            return f"std::vector<{self._cpp_type(t.inner)}>"
             
-        mapping = { 'int': 'int32_t', 'float': 'float', 'str': 'std::string', 'bool': 'bool', 'None': 'void' }
+        mapping = { 
+            'int': 'int32_t', 'int32': 'int32_t', 'int8': 'int8_t', 'int16': 'int16_t', 'int64': 'int64_t',
+            'uint8': 'uint8_t', 'uint16': 'uint16_t', 'uint32': 'uint32_t', 'uint64': 'uint64_t',
+            'float': 'float', 'float32': 'float', 'float64': 'double', 'double': 'double',
+            'string': 'std::string', 'str': 'std::string', 'bool': 'bool', 'None': 'void' 
+        }
         if t.name in mapping: return mapping[t.name]
         return t.name

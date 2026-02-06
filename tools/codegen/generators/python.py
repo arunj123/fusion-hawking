@@ -131,8 +131,15 @@ class PythonGenerator(AbstractGenerator):
                 runtime_lines.append(f"            cfg = self.runtime.config['required'].get(self.alias)")
                 runtime_lines.append(f"            if cfg and 'static_ip' in cfg:")
                 runtime_lines.append(f"                target = (cfg['static_ip'], cfg.get('static_port', 0))")
+                wait_for_res = m.ret_type.name != "None"
                 runtime_lines.append("        if target:")
-                runtime_lines.append(f"            self.runtime.send_request(self.SERVICE_ID, {m.id}, req.serialize(), target)")
+                runtime_lines.append(f"            res_payload = self.runtime.send_request(self.SERVICE_ID, {m.id}, req.serialize(), target, wait_for_response={wait_for_res})")
+                if wait_for_res:
+                    res_name = f"{svc.name}{method_pascal}Response"
+                    runtime_lines.append(f"            if res_payload:")
+                    runtime_lines.append(f"                res_obj = {res_name}.deserialize(res_payload)")
+                    runtime_lines.append(f"                return res_obj.result")
+                    runtime_lines.append(f"            return None")
             runtime_lines.append("")
 
         return {
@@ -153,30 +160,7 @@ class PythonGenerator(AbstractGenerator):
         lines.append("    def serialize(self) -> bytes:")
         lines.append("        buffer = bytearray()")
         for f in s.fields:
-            if f.type.is_list:
-                lines.append(f"        if self.{f.name} is None: self.{f.name} = []")
-                lines.append(f"        temp = bytearray()")
-                lines.append(f"        for item in self.{f.name}:")
-                if f.type.name == 'int': lines.append(f"            temp.extend(struct.pack('>i', item))")
-                elif f.type.name == 'float': lines.append(f"            temp.extend(struct.pack('>f', item))")
-                elif f.type.name == 'bool': lines.append(f"            temp.extend(struct.pack('>?', item))")
-                elif f.type.name == 'str': 
-                    lines.append(f"            b = item.encode('utf-8')")
-                    lines.append(f"            temp.extend(struct.pack('>I', len(b)) + b)")
-                else: lines.append(f"            temp.extend(item.serialize())")
-                lines.append(f"        buffer.extend(struct.pack('>I', len(temp)))")
-                lines.append(f"        buffer.extend(temp)")
-            elif f.type.name == 'int':
-                lines.append(f"        buffer.extend(struct.pack('>i', self.{f.name} or 0))")
-            elif f.type.name == 'float':
-                lines.append(f"        buffer.extend(struct.pack('>f', self.{f.name} or 0.0))")
-            elif f.type.name == 'bool':
-                lines.append(f"        buffer.extend(struct.pack('>?', self.{f.name} or False))")
-            elif f.type.name == 'str':
-                lines.append(f"        b = (self.{f.name} or '').encode('utf-8')")
-                lines.append(f"        buffer.extend(struct.pack('>I', len(b)) + b)")
-            else:
-                lines.append(f"        if self.{f.name}: buffer.extend(self.{f.name}.serialize())")
+            lines.append(self._ser_val_py(f"self.{f.name}", f.type, indent="        "))
         lines.append("        return bytes(buffer)")
 
         lines.append("    @staticmethod")
@@ -188,35 +172,67 @@ class PythonGenerator(AbstractGenerator):
         lines.append("        obj = " + s.name + "()")
         lines.append("        start_off = off")
         for f in s.fields:
-            if f.type.is_list:
-                lines.append(f"        len_field = struct.unpack_from('>I', data, off)[0]; off += 4")
-                lines.append(f"        end = off + len_field")
-                lines.append(f"        items = []")
-                lines.append(f"        while off < end:")
-                if f.type.name == 'int':
-                    lines.append(f"            items.append(struct.unpack_from('>i', data, off)[0]); off += 4")
-                elif f.type.name == 'float':
-                    lines.append(f"            items.append(struct.unpack_from('>f', data, off)[0]); off += 4")
-                elif f.type.name == 'bool':
-                    lines.append(f"            items.append(struct.unpack_from('>?', data, off)[0]); off += 1")
-                elif f.type.name == 'str':
-                    lines.append(f"            slen = struct.unpack_from('>I', data, off)[0]; off += 4")
-                    lines.append(f"            items.append(data[off:off+slen].decode('utf-8')); off += slen")
-                else:
-                    lines.append(f"            res, consumed = {f.type.name}.deserialize_from(data, off)")
-                    lines.append(f"            items.append(res); off += consumed")
-                lines.append(f"        obj.{f.name} = items")
-            elif f.type.name == 'int':
-                lines.append(f"        obj.{f.name} = struct.unpack_from('>i', data, off)[0]; off += 4")
-            elif f.type.name == 'float':
-                lines.append(f"        obj.{f.name} = struct.unpack_from('>f', data, off)[0]; off += 4")
-            elif f.type.name == 'bool':
-                lines.append(f"        obj.{f.name} = struct.unpack_from('>?', data, off)[0]; off += 1")
-            elif f.type.name == 'str':
-                lines.append(f"        slen = struct.unpack_from('>I', data, off)[0]; off += 4")
-                lines.append(f"        obj.{f.name} = data[off:off+slen].decode('utf-8'); off += slen")
-            else:
-                lines.append(f"        obj.{f.name}, consumed = {f.type.name}.deserialize_from(data, off)")
-                lines.append(f"        off += consumed")
+            lines.append(self._deser_val_py(f"obj.{f.name}", f.type, indent="        "))
         lines.append("        return obj, off - start_off")
+        return "\n".join(lines)
+
+    def _ser_val_py(self, expr: str, t: Type, indent: str) -> str:
+        lines = []
+        if t.inner: # List
+             lines.append(f"{indent}if {expr} is None: {expr} = []")
+             lines.append(f"{indent}_t_buf = bytearray()")
+             lines.append(f"{indent}for _item in {expr}:")
+             lines.append(f"{indent}    # Recursively append to _t_buf")
+             lines.append(f"{indent}    _orig_buf = buffer")
+             lines.append(f"{indent}    buffer = _t_buf")
+             lines.append(self._ser_val_py("_item", t.inner, indent + "    "))
+             lines.append(f"{indent}    buffer = _orig_buf")
+             lines.append(f"{indent}buffer.extend(struct.pack('>I', len(_t_buf)))")
+             lines.append(f"{indent}buffer.extend(_t_buf)")
+        elif t.name in ('int', 'int32'): lines.append(f"{indent}buffer.extend(struct.pack('>i', {expr} or 0))")
+        elif t.name == 'int8': lines.append(f"{indent}buffer.extend(struct.pack('>b', {expr} or 0))")
+        elif t.name == 'int16': lines.append(f"{indent}buffer.extend(struct.pack('>h', {expr} or 0))")
+        elif t.name == 'int64': lines.append(f"{indent}buffer.extend(struct.pack('>q', {expr} or 0))")
+        elif t.name == 'uint8': lines.append(f"{indent}buffer.extend(struct.pack('>B', {expr} or 0))")
+        elif t.name == 'uint16': lines.append(f"{indent}buffer.extend(struct.pack('>H', {expr} or 0))")
+        elif t.name == 'uint32': lines.append(f"{indent}buffer.extend(struct.pack('>I', {expr} or 0))")
+        elif t.name == 'uint64': lines.append(f"{indent}buffer.extend(struct.pack('>Q', {expr} or 0))")
+        elif t.name in ('float', 'float32'): lines.append(f"{indent}buffer.extend(struct.pack('>f', {expr} or 0.0))")
+        elif t.name in ('double', 'float64'): lines.append(f"{indent}buffer.extend(struct.pack('>d', {expr} or 0.0))")
+        elif t.name == 'bool': lines.append(f"{indent}buffer.extend(struct.pack('>?', {expr} or False))")
+        elif t.name in ('str', 'string'):
+             lines.append(f"{indent}_b = ({expr} or '').encode('utf-8')")
+             lines.append(f"{indent}buffer.extend(struct.pack('>I', len(_b)) + _b)")
+        else: # Struct
+             lines.append(f"{indent}if {expr}: buffer.extend({expr}.serialize())")
+        return "\n".join(lines)
+
+    def _deser_val_py(self, expr_target: str, t: Type, indent: str) -> str:
+        lines = []
+        if t.inner:
+             lines.append(f"{indent}_l = struct.unpack_from('>I', data, off)[0]; off += 4")
+             lines.append(f"{indent}_e = off + _l")
+             lines.append(f"{indent}_items = []")
+             lines.append(f"{indent}while off < _e:")
+             # Recurse
+             lines.append(self._deser_val_py("_sub", t.inner, indent + "    "))
+             lines.append(f"{indent}    _items.append(_sub)")
+             lines.append(f"{indent}{expr_target} = _items")
+        elif t.name in ('int', 'int32'): lines.append(f"{indent}{expr_target} = struct.unpack_from('>i', data, off)[0]; off += 4")
+        elif t.name == 'int8': lines.append(f"{indent}{expr_target} = struct.unpack_from('>b', data, off)[0]; off += 1")
+        elif t.name == 'int16': lines.append(f"{indent}{expr_target} = struct.unpack_from('>h', data, off)[0]; off += 2")
+        elif t.name == 'int64': lines.append(f"{indent}{expr_target} = struct.unpack_from('>q', data, off)[0]; off += 8")
+        elif t.name == 'uint8': lines.append(f"{indent}{expr_target} = struct.unpack_from('>B', data, off)[0]; off += 1")
+        elif t.name == 'uint16': lines.append(f"{indent}{expr_target} = struct.unpack_from('>H', data, off)[0]; off += 2")
+        elif t.name == 'uint32': lines.append(f"{indent}{expr_target} = struct.unpack_from('>I', data, off)[0]; off += 4")
+        elif t.name == 'uint64': lines.append(f"{indent}{expr_target} = struct.unpack_from('>Q', data, off)[0]; off += 8")
+        elif t.name in ('float', 'float32'): lines.append(f"{indent}{expr_target} = struct.unpack_from('>f', data, off)[0]; off += 4")
+        elif t.name in ('double', 'float64'): lines.append(f"{indent}{expr_target} = struct.unpack_from('>d', data, off)[0]; off += 8")
+        elif t.name == 'bool': lines.append(f"{indent}{expr_target} = struct.unpack_from('>?', data, off)[0]; off += 1")
+        elif t.name in ('str', 'string'):
+             lines.append(f"{indent}_slen = struct.unpack_from('>I', data, off)[0]; off += 4")
+             lines.append(f"{indent}{expr_target} = data[off:off+_slen].decode('utf-8'); off += _slen")
+        else: # Struct
+             lines.append(f"{indent}{expr_target}, _c = {t.name}.deserialize_from(data, off)")
+             lines.append(f"{indent}off += _c")
         return "\n".join(lines)

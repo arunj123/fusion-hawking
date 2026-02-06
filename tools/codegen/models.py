@@ -4,12 +4,16 @@ from typing import List, Optional, Tuple
 @dataclass
 class Type:
     name: str
-    is_list: bool = False
+    inner: Optional['Type'] = None  # For List[T], inner is T
     
     def __str__(self):
-        if self.is_list:
-            return f"Vec<{self.name}>"
+        if self.inner:
+            return f"Vec<{self.inner}>"
         return self.name
+
+    @property
+    def is_list(self) -> bool:
+        return self.inner is not None
 
 @dataclass
 class Field:

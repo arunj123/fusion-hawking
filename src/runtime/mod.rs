@@ -61,6 +61,8 @@ pub struct SomeIpRuntime {
     services: Arc<RwLock<HashMap<u16, Box<dyn RequestHandler>>>>,
     running: Arc<AtomicBool>,
     config: Option<InstanceConfig>,
+    pending_requests: Arc<Mutex<HashMap<(u16, u16, u16), tokio::sync::oneshot::Sender<Vec<u8>>>>>,
+    session_manager: Arc<Mutex<HashMap<(u16, u16), u16>>>,
     logger: Arc<dyn FusionLogger>,
 }
 
@@ -112,6 +114,8 @@ impl SomeIpRuntime {
             services: Arc::new(RwLock::new(HashMap::new())),
             running: Arc::new(AtomicBool::new(true)),
             config: Some(instance_config),
+            pending_requests: Arc::new(Mutex::new(HashMap::new())),
+            session_manager: Arc::new(Mutex::new(HashMap::new())),
             logger,
         })
     }
@@ -136,6 +140,8 @@ impl SomeIpRuntime {
             services: Arc::new(RwLock::new(HashMap::new())),
             running: Arc::new(AtomicBool::new(true)),
             config: None,
+            pending_requests: Arc::new(Mutex::new(HashMap::new())),
+            session_manager: Arc::new(Mutex::new(HashMap::new())),
             logger,
         })
     }
@@ -224,6 +230,41 @@ impl SomeIpRuntime {
         self.logger.log(LogLevel::Info, "Runtime", &format!("Offered Service '{}' (0x{:04x}) on port {}", alias, service_id, final_port));
     }
     
+    pub async fn send_request_and_wait(&self, service_id: u16, method_id: u16, payload: &[u8], target: SocketAddr) -> Option<Vec<u8>> {
+        let session_id = {
+            let mut mgr = self.session_manager.lock().unwrap();
+            let counter = mgr.entry((service_id, method_id)).or_insert(1);
+            let val = *counter;
+            *counter = if val == 0xFFFF { 1 } else { val + 1 };
+            val
+        };
+
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        {
+            let mut pending = self.pending_requests.lock().unwrap();
+            pending.insert((service_id, method_id, session_id), tx);
+        }
+
+        let header = SomeIpHeader::new(service_id, method_id, 0, session_id, 0x00, payload.len() as u32);
+        let mut msg = header.serialize().to_vec();
+        msg.extend_from_slice(payload);
+        
+        if let Err(_) = self.transport.send(&msg, Some(target)) {
+            let mut pending = self.pending_requests.lock().unwrap();
+            pending.remove(&(service_id, method_id, session_id));
+            return None;
+        }
+
+        match tokio::time::timeout(Duration::from_secs(2), rx).await {
+            Ok(Ok(res)) => Some(res),
+            _ => {
+                let mut pending = self.pending_requests.lock().unwrap();
+                pending.remove(&(service_id, method_id, session_id));
+                None
+            }
+        }
+    }
+
     pub fn run(&self) {
         self.logger.log(LogLevel::Info, "Runtime", "Event Loop Started");
         let mut buf = [0u8; 1500];
@@ -240,6 +281,15 @@ impl SomeIpRuntime {
                 Ok((size, src)) => {
                     if size < 16 { continue; }
                      if let Ok(header) = SomeIpHeader::deserialize(&buf[..16]) {
+                         // Handle RESPONSE (0x80)
+                         if header.message_type == 0x80 {
+                             let mut pending = self.pending_requests.lock().unwrap();
+                             if let Some(tx) = pending.remove(&(header.service_id, header.method_id, header.session_id)) {
+                                 let _ = tx.send(buf[16..size].to_vec());
+                             }
+                             continue;
+                         }
+
                          // Dispatch
                          let services = self.services.read().unwrap();
                          
