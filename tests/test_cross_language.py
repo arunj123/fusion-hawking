@@ -57,7 +57,7 @@ def processes(build_cpp):
 
     # 3. Start Python App
     env = os.environ.copy()
-    env["PYTHONPATH"] = f"src/python;build;build/generated/python"
+    env["PYTHONPATH"] = os.pathsep.join(["src/python", "build", "build/generated/python"])
     
     python_log_path = get_log_path("python_integration.log")
     python_log = open(python_log_path, "w")

@@ -50,7 +50,7 @@ class Tester:
         results = {}
         # Python
         env = os.environ.copy()
-        env["PYTHONPATH"] = "src/python;build;build/generated/python"
+        env["PYTHONPATH"] = os.pathsep.join(["src/python", "build", "build/generated/python"])
         env["FUSION_LOG_DIR"] = self.reporter.raw_logs_dir
         
         # 1. Unittest
@@ -139,7 +139,7 @@ class Tester:
             
             # Python
             env = os.environ.copy()
-            env["PYTHONPATH"] = "src/python;build;build/generated/python"
+            env["PYTHONPATH"] = os.pathsep.join(["src/python", "build", "build/generated/python"])
             f_py = open(py_log, "w")
             py_cmd = ["python", "-u", "examples/integrated_apps/python_app/main.py"]
             f_py.write(f"=== FUSION TEST RUNNER ===\nCommand: {' '.join(py_cmd)}\nPWD: {os.getcwd()}\nEnvironment [PYTHONPATH]: {env['PYTHONPATH']}\n==========================\n\n")
@@ -192,7 +192,7 @@ class Tester:
         log_path = self.reporter.get_log_path("demo_automotive_pubsub")
         
         env = os.environ.copy()
-        env["PYTHONPATH"] = "src/python;build;build/generated/python"
+        env["PYTHONPATH"] = os.pathsep.join(["src/python", "build", "build/generated/python"])
         
         try:
             with open(log_path, "w") as log:

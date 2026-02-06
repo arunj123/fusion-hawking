@@ -32,7 +32,7 @@ class CoverageManager:
     def _run_python_coverage(self):
         print("Generating Python Coverage...")
         env = os.environ.copy()
-        env["PYTHONPATH"] = "src/python;build;build/generated/python"
+        env["PYTHONPATH"] = os.pathsep.join(["src/python", "build", "build/generated/python"])
         
         cmd = ["pytest", "--cov=src/python", 
                f"--cov-report=html:{os.path.join(self.reporter.coverage_dir, 'python')}",
