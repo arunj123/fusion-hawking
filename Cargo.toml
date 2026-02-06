@@ -16,10 +16,6 @@ tokio = { version = "1", features = ["sync", "time", "rt"] }
 name = "sd_demo"
 path = "examples/sd_demos/sd_demo.rs"
 
-[[example]]
-name = "rust_app"
-path = "examples/integrated_apps/rust_app/main.rs"
-
 [[bin]]
 name = "simple_server"
 path = "examples/simple_no_sd/rust/server.rs"

@@ -85,7 +85,8 @@ int main() {
     auto logger = std::make_shared<ConsoleLogger>();
     logger->Log(LogLevel::INFO, "Main", "Starting C++ Demo (Core Library)");
     
-    SomeIpRuntime rt("examples/integrated_apps/config.json", "cpp_app_instance", logger);
+    // Load config from parent directory in the integrated_apps bundle
+    SomeIpRuntime rt("../config.json", "cpp_app_instance", logger);
     
     SortServiceImpl sort_svc(logger, &rt);
     rt.offer_service("sort-service", &sort_svc);

@@ -8,8 +8,9 @@ import shutil
 
 # Path setup
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BUILD_DIR = os.path.join(PROJECT_ROOT, "build")
-CPP_EXE = os.path.join(BUILD_DIR, "Debug", "cpp_app.exe") if os.name == 'nt' else os.path.join(BUILD_DIR, "cpp_app")
+# C++ Demo is now in its own sub-build
+CPP_DEMO_DIR = os.path.join(PROJECT_ROOT, "examples", "integrated_apps", "cpp_app")
+CPP_EXE = os.path.join(CPP_DEMO_DIR, "build", "Release", "cpp_app.exe") if os.name == 'nt' else os.path.join(CPP_DEMO_DIR, "build", "cpp_app")
 
 # Log Directory setup
 LOG_DIR = os.environ.get("FUSION_LOG_DIR", os.getcwd())
@@ -21,13 +22,14 @@ def get_log_path(name):
 def build_cpp():
     """Ensure C++ app is built"""
     if not os.path.exists(CPP_EXE):
-        if not os.path.exists(BUILD_DIR):
-            os.makedirs(BUILD_DIR)
+        build_dir = os.path.join(CPP_DEMO_DIR, "build")
+        if not os.path.exists(build_dir):
+            os.makedirs(build_dir)
         
         # Configure
-        subprocess.check_call(["cmake", "-S", ".", "-B", "build"], cwd=PROJECT_ROOT)
+        subprocess.check_call(["cmake", ".."], cwd=build_dir)
         # Build
-        subprocess.check_call(["cmake", "--build", "build", "--config", "Debug", "--target", "cpp_app"], cwd=PROJECT_ROOT)
+        subprocess.check_call(["cmake", "--build", ".", "--config", "Release"], cwd=build_dir)
 
 @pytest.fixture(scope="module")
 def processes(build_cpp):
@@ -37,21 +39,22 @@ def processes(build_cpp):
     cpp_log_path = get_log_path("cpp_integration.log")
     cpp_log = open(cpp_log_path, "w")
     cpp_proc = subprocess.Popen(
-        [CPP_EXE], 
+        [os.path.abspath(CPP_EXE)], 
         stdout=cpp_log, 
         stderr=subprocess.STDOUT,
-        cwd=PROJECT_ROOT
+        cwd=CPP_DEMO_DIR
     )
     time.sleep(1) # Let it start
 
     # 2. Start Rust App
     rust_log_path = get_log_path("rust_integration.log")
     rust_log = open(rust_log_path, "w")
+    rust_demo_dir = os.path.join(PROJECT_ROOT, "examples", "integrated_apps", "rust_app")
     rust_proc = subprocess.Popen(
-        ["cargo", "run", "--example", "rust_app"],
+        ["cargo", "run"],
         stdout=rust_log,
         stderr=subprocess.STDOUT,
-        cwd=PROJECT_ROOT
+        cwd=rust_demo_dir
     )
     time.sleep(2) # Let it start
 
@@ -61,11 +64,12 @@ def processes(build_cpp):
     
     python_log_path = get_log_path("python_integration.log")
     python_log = open(python_log_path, "w")
+    python_demo_dir = os.path.join(PROJECT_ROOT, "examples", "integrated_apps", "python_app")
     python_proc = subprocess.Popen(
-        [sys.executable, "-u", "examples/integrated_apps/python_app/main.py"],
+        [sys.executable, "-u", "main.py"],
         stdout=python_log,
         stderr=subprocess.STDOUT,
-        cwd=PROJECT_ROOT,
+        cwd=python_demo_dir,
         env=env
     )
     time.sleep(5) # Allow interaction time

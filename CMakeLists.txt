@@ -3,20 +3,18 @@ project(FusionHawking)
 
 set(CMAKE_CXX_STANDARD 17)
 
-# Core Library Includes
-include_directories(src/cpp/include)
-# Bindings Header location
-include_directories(${PROJECT_SOURCE_DIR}/build/generated/cpp)
+# 1. C++ Core Library (Headers will be exported to consumers)
 
 # 1. C++ Core Library
 add_library(fusion_hawking_cpp STATIC
     src/cpp/src/runtime.cpp
 )
-# 2. C++ App (Integrated Demo)
-add_executable(cpp_app examples/integrated_apps/cpp_app/main.cpp)
-target_link_libraries(cpp_app fusion_hawking_cpp)
+target_include_directories(fusion_hawking_cpp PUBLIC 
+    src/cpp/include
+    ${PROJECT_SOURCE_DIR}/build/generated/cpp
+)
 
-# 3. Simple No-SD Demos
+# 2. Simple No-SD Demos
 add_executable(simple_server_cpp examples/simple_no_sd/cpp/server.cpp)
 add_executable(simple_client_cpp examples/simple_no_sd/cpp/client.cpp)
 if(WIN32)
@@ -31,7 +29,6 @@ target_link_libraries(cpp_test fusion_hawking_cpp)
 if(WIN32)
     target_link_libraries(fusion_hawking_cpp ws2_32)
     target_compile_definitions(fusion_hawking_cpp PRIVATE _WINSOCK_DEPRECATED_NO_WARNINGS)
-    target_compile_definitions(cpp_app PRIVATE _WINSOCK_DEPRECATED_NO_WARNINGS)
     target_compile_definitions(cpp_test PRIVATE _WINSOCK_DEPRECATED_NO_WARNINGS)
 
     # Enable PDB generation for Release builds (Required for OpenCppCoverage)

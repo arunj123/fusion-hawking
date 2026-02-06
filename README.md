@@ -88,6 +88,40 @@ cargo test
 python -m unittest discover tests
 ```
 
+## Integrating with Your Project
+
+Fusion Hawking is designed to be easily integrated into larger projects.
+
+### 1. Rust
+Add it as a git dependency in your `Cargo.toml`:
+```toml
+[dependencies]
+fusion-hawking = { git = "https://github.com/arunj123/fusion-hawking.git" }
+```
+
+### 2. Python
+You can install the Python package directly from the repo:
+```bash
+pip install "git+https://github.com/arunj123/fusion-hawking.git#egg=fusion-hawking&subdirectory=src/python"
+```
+Or simply add `src/python` to your `PYTHONPATH`.
+
+### 3. C++
+Use CMake's `FetchContent` or `add_subdirectory`:
+```cmake
+add_subdirectory(path/to/fusion-hawking)
+target_link_libraries(your_app PRIVATE fusion_hawking_cpp)
+```
+
+### 4. Custom Code Generation (IDL)
+To generate your own service bindings:
+1. Define your interface in a Python file using dataclasses (see `examples/integrated_apps/interface.py`).
+2. Run the generator:
+```bash
+python -m tools.codegen.main your_interface.py
+```
+Bindings will be generated for all three languages.
+
 ## References
 
 - **SOME/IP Protocol**: `AUTOSAR_PRS_SOMEIPProtocol`

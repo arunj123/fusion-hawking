@@ -3,9 +3,10 @@ import os
 import time
 import random
 
-# Path setup
-sys.path.insert(0, os.path.join(os.getcwd(), 'build', 'generated', 'python'))
-sys.path.insert(0, os.path.join(os.getcwd(), 'src', 'python'))
+# Path setup (points to root library and generated code)
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+sys.path.insert(0, os.path.join(ROOT, 'build', 'generated', 'python'))
+sys.path.insert(0, os.path.join(ROOT, 'src', 'python'))
 
 from runtime import SomeIpRuntime, StringServiceStub, StringServiceClient, MathServiceClient, DiagnosticServiceStub, ComplexTypeServiceClient, SortServiceClient, LogLevel
 from bindings import *
@@ -27,7 +28,9 @@ class DiagImpl(DiagnosticServiceStub):
         return True
 
 def main():
-    rt = SomeIpRuntime("examples/integrated_apps/config.json", "python_app_instance")
+    # Load config from parent directory (as this is a sub-project demo)
+    config_path = os.path.join(os.path.dirname(__file__), "..", "config.json")
+    rt = SomeIpRuntime(config_path, "python_app_instance")
     rt.logger.log(LogLevel.INFO, "Main", "--- Python Runtime Expanded Demo ---")
     rt.start()
     

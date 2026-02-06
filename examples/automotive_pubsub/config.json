@@ -1,7 +1,7 @@
 {
     "instances": {
         "radar_cpp_instance": {
-            "ip": "127.0.0.1",
+            "ip": "192.168.0.113",
             "ip_version": 4,
             "providing": {
                 "radar-service": {
@@ -27,7 +27,7 @@
             }
         },
         "fusion_rust_instance": {
-            "ip": "127.0.0.1",
+            "ip": "192.168.0.113",
             "ip_version": 4,
             "providing": {
                 "fusion-service": {
@@ -60,7 +60,7 @@
             }
         },
         "adas_python_instance": {
-            "ip": "127.0.0.1",
+            "ip": "192.168.0.113",
             "ip_version": 4,
             "required": {
                 "fusion-client": {

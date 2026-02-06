@@ -10,19 +10,22 @@ class Tester:
 
     def _get_cpp_binary_path(self, name):
         """Helper to find C++ binary path based on platform."""
+        search_paths = []
         if os.name == 'nt':
-            # Windows: Check build/Release/name.exe
-            path = os.path.join("build", "Release", f"{name}.exe")
-            if os.path.exists(path): return path
-            # Also check build/name.exe (if built without Release subdir)
-            path = os.path.join("build", f"{name}.exe")
-            if os.path.exists(path): return path
+            # Demo build (prioritize specific demo builds)
+            search_paths.append(os.path.join("examples", "integrated_apps", "cpp_app", "build", "Release", f"{name}.exe"))
+            search_paths.append(os.path.join("examples", "integrated_apps", "cpp_app", "build", f"{name}.exe"))
+            # Root build
+            search_paths.append(os.path.join("build", "Release", f"{name}.exe"))
+            search_paths.append(os.path.join("build", f"{name}.exe"))
         else:
-            # Linux/macOS: Check build/name
-            path = os.path.join("build", name)
-            if os.path.exists(path): return path
-            # Also check build_linux (used in manual WSL tests)
-            path = os.path.join("build_linux", name)
+            # Demo build (prioritize specific demo builds)
+            search_paths.append(os.path.join("examples", "integrated_apps", "cpp_app", "build", name))
+            # Root build
+            search_paths.append(os.path.join("build", name))
+            search_paths.append(os.path.join("build_linux", name))
+            
+        for path in search_paths:
             if os.path.exists(path): return path
             
         return None
@@ -128,33 +131,40 @@ class Tester:
         procs = []
         
         try:
-            # Rust
+            # Rust Standalone Demo
             f_rust = open(rust_log, "w")
-            rust_cmd = ["cargo", "run", "--example", "rust_app"]
-            f_rust.write(f"=== FUSION TEST RUNNER ===\nCommand: {' '.join(rust_cmd)}\nPWD: {os.getcwd()}\n==========================\n\n")
+            rust_cmd = ["cargo", "run"]
+            f_rust.write(f"=== FUSION TEST RUNNER ===\nCommand: {' '.join(rust_cmd)}\nPWD: {os.path.join(os.getcwd(), 'examples/integrated_apps/rust_app')}\n==========================\n\n")
             f_rust.flush()
-            p_rust = subprocess.Popen(rust_cmd, stdout=f_rust, stderr=subprocess.STDOUT)
+            p_rust = subprocess.Popen(rust_cmd, stdout=f_rust, stderr=subprocess.STDOUT, cwd="examples/integrated_apps/rust_app")
             procs.append(p_rust)
             time.sleep(2)
             
-            # Python
+            # Python Standalone Demo
             env = os.environ.copy()
-            env["PYTHONPATH"] = os.pathsep.join(["src/python", "build", "build/generated/python"])
+            # Note: PYTHONPATH is still needed to find the core runtime if not installed via pip
+            env["PYTHONPATH"] = os.pathsep.join([
+                os.path.join(os.getcwd(), "src/python"),
+                os.path.join(os.getcwd(), "build/generated/python")
+            ])
             f_py = open(py_log, "w")
-            py_cmd = ["python", "-u", "examples/integrated_apps/python_app/main.py"]
-            f_py.write(f"=== FUSION TEST RUNNER ===\nCommand: {' '.join(py_cmd)}\nPWD: {os.getcwd()}\nEnvironment [PYTHONPATH]: {env['PYTHONPATH']}\n==========================\n\n")
+            # Run the script within its directory
+            py_cmd = ["python", "-u", "main.py"]
+            f_py.write(f"=== FUSION TEST RUNNER ===\nCommand: {' '.join(py_cmd)}\nPWD: {os.path.join(os.getcwd(), 'examples/integrated_apps/python_app')}\n==========================\n\n")
             f_py.flush()
-            p_py = subprocess.Popen(py_cmd, stdout=f_py, stderr=subprocess.STDOUT, env=env)
+            p_py = subprocess.Popen(py_cmd, stdout=f_py, stderr=subprocess.STDOUT, env=env, cwd="examples/integrated_apps/python_app")
             procs.append(p_py)
             
-            # C++
+            # C++ Standalone Demo
             cpp_exe = self._get_cpp_binary_path("cpp_app")
             if cpp_exe:
+                # Convert to absolute path since we change CWD
+                abs_cpp_exe = os.path.abspath(cpp_exe)
                 f_cpp = open(cpp_log, "w")
-                cpp_cmd = [cpp_exe]
-                f_cpp.write(f"=== FUSION TEST RUNNER ===\nCommand: {cpp_exe}\nPWD: {os.getcwd()}\n==========================\n\n")
+                cpp_cmd = [abs_cpp_exe]
+                f_cpp.write(f"=== FUSION TEST RUNNER ===\nCommand: {abs_cpp_exe}\nPWD: {os.path.join(os.getcwd(), 'examples/integrated_apps/cpp_app')}\n==========================\n\n")
                 f_cpp.flush()
-                p_cpp = subprocess.Popen(cpp_cmd, stdout=f_cpp, stderr=subprocess.STDOUT)
+                p_cpp = subprocess.Popen(cpp_cmd, stdout=f_cpp, stderr=subprocess.STDOUT, cwd="examples/integrated_apps/cpp_app")
                 procs.append(p_cpp)
             
             # Run for 10s

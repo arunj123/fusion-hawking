@@ -1,6 +1,6 @@
 use fusion_hawking::runtime::SomeIpRuntime;
 pub mod generated {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/build/generated/rust/mod.rs"));
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../build/generated/rust/mod.rs"));
 }
 use generated::{
     MathServiceProvider, MathServiceServer,
@@ -55,7 +55,7 @@ impl ComplexTypeServiceProvider for ComplexImpl {
 }
 
 fn main() {
-    let rt = SomeIpRuntime::load("examples/integrated_apps/config.json", "rust_app_instance");
+    let rt = SomeIpRuntime::load("../config.json", "rust_app_instance");
     let logger = rt.get_logger();
     logger.log(LogLevel::Info, "Main", "--- Rust Runtime Expanded Demo ---");
     

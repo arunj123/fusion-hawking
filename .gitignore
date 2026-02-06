@@ -1,34 +1,40 @@
-/target
-*.pyc
-*.obj
+# Build artifacts
+**/target/
+**/build/
+**/build_linux/
+**/bin/
+**/obj/
 *.exe
-*.log
+*.obj
 *.bin
-*.pyc
-compilation_error.txt
-build
-build_linux
-.venv
-build_err.txt
-test_output.txt
-cargo_warnings.txt
-build_warnings.txt
-build_cpp_err.txt
+*.pdb
+
+# Logs and temp files
+*.log
+logs/
+build_*.txt
+test_*.txt
+cargo_*.txt
 rust_test_out.txt
 demo_output.txt
-build_error.txt
-cargo_err.txt
-# Coverage artifacts
+compilation_error.txt
+
+# Python
+*.pyc
+__pycache__/
+.venv/
+.pytest_cache/
 .coverage
 coverage/
-.pytest_cache/
 htmlcov/
 *.xml
-coverage_final.txt
 
-# Automation artifacts
-logs/
-__pycache__/
+# Generated code
+# build/generated/ is covered by **/build/
+
+# IDEs
+.vscode/
+.idea/
 
 # Reference documents
 AUTOSAR_PRS_SOMEIPProtocol.pdf
