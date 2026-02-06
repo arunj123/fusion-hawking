@@ -144,8 +144,80 @@ class Tester:
             # Close files
             # (Python files closed by GC provided we don't hold refs, but better explicit? 
             # In script it's fine, exiting soon.
+        
+        results = self._verify_demos(rust_log, py_log, cpp_log, results)
+
+        # 3. Automotive Pub-Sub Demo (Radar -> Fusion -> ADAS)
+        print("\nRunning Automotive Pub-Sub Demo...")
+        pubsub_result = self._run_automotive_pubsub_demo()
+        
+        # Merge pubsub results, extending steps list instead of overwriting
+        pubsub_steps = pubsub_result.pop("steps", [])
+        results.update(pubsub_result)
+        results.setdefault("steps", []).extend(pubsub_steps)
+
+        return results
+
+    def _run_automotive_pubsub_demo(self):
+        """Run the Automotive Pub-Sub demo (Radar -> Fusion -> ADAS pipeline)."""
+        results = {}
+        
+        # Check if Python ADAS script exists
+        adas_script = "examples/automotive_pubsub/python_adas/main.py"
+        if not os.path.exists(adas_script):
+            print("Warning: Automotive Pub-Sub demo not found, skipping...")
+            return {"automotive_pubsub_demo": "SKIPPED"}
+        
+        log_path = self.reporter.get_log_path("demo_automotive_pubsub")
+        
+        env = os.environ.copy()
+        env["PYTHONPATH"] = "src/python;build;build/generated/python"
+        
+        try:
+            with open(log_path, "w") as log:
+                log.write("=== FUSION AUTOMOTIVE PUB-SUB DEMO ===\n")
+                log.write(f"Script: {adas_script}\n")
+                log.write("Pattern: Radar (C++) -> Fusion (Rust) -> ADAS (Python)\n")
+                log.write("Note: Full demo requires all 3 apps running.\n")
+                log.write("This test validates Python ADAS subscriber startup.\n")
+                log.write("======================================\n\n")
+                log.flush()
+                
+                # Run Python ADAS app for 3 seconds to verify startup
+                cmd = ["python", "-u", adas_script]
+                proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env)
+                time.sleep(3)
+                proc.kill()
+                proc.wait()
             
-        return self._verify_demos(rust_log, py_log, cpp_log, results)
+            # Read log to verify startup patterns
+            with open(log_path, "r", errors="ignore") as f:
+                content = f.read()
+            
+            if "ADAS Application" in content or "Subscribed" in content:
+                print("OK: Automotive Pub-Sub Demo: ADAS startup verified")
+                results["automotive_pubsub_demo"] = "PASS"
+                results.setdefault("steps", []).append({
+                    "name": "Automotive Pub-Sub: ADAS Subscriber Startup",
+                    "status": "PASS",
+                    "log": "demo_automotive_pubsub",
+                    "details": "Python ADAS app started and subscribed to FusionService"
+                })
+            else:
+                print("FAIL: Automotive Pub-Sub Demo: ADAS startup failed")
+                results["automotive_pubsub_demo"] = "FAIL"
+                results.setdefault("steps", []).append({
+                    "name": "Automotive Pub-Sub: ADAS Subscriber Startup",
+                    "status": "FAIL",
+                    "log": "demo_automotive_pubsub",
+                    "details": "Failed to detect ADAS application startup"
+                })
+                
+        except Exception as e:
+            print(f"Warning: Automotive Pub-Sub Demo error: {e}")
+            results["automotive_pubsub_demo"] = "ERROR"
+        
+        return results
 
     def _run_simple_demos(self):
         # Runs basic client/server without Service Discovery

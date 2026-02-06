@@ -1,6 +1,6 @@
 # Fusion Hawking Examples
 
-This directory contains examples demonstrating how to use the `fusion-hawking` SOME/IP stack. The examples are categorized into three levels of complexity.
+This directory contains examples demonstrating how to use the `fusion-hawking` SOME/IP stack. The examples are categorized into four levels of complexity.
 
 ## Directory Structure
 
@@ -11,10 +11,14 @@ examples/
 │   ├── rust/
 │   ├── python/
 │   └── cpp/
-└── integrated_apps/    # 3. Full Runtime Integration
-    ├── rust_app/
-    ├── python_app/
-    └── cpp_app/
+├── integrated_apps/    # 3. Full Runtime Integration (RPC)
+│   ├── rust_app/
+│   ├── python_app/
+│   └── cpp_app/
+└── automotive_pubsub/         # 4. Automotive Pub-Sub Pattern
+    ├── cpp_radar/      # Publisher (C++)
+    ├── rust_fusion/    # Subscriber + Publisher (Rust)
+    └── python_adas/    # Subscriber (Python)
 ```
 
 ---
@@ -120,6 +124,25 @@ R -> P : Response
 R -> Cpp : Notification (Event)
 @enduml
 ```
+
+---
+
+## 4. Automotive Pub-Sub (`automotive_pubsub/`)
+**Purpose**: To demonstrate the **publish-subscribe** pattern using SOME/IP events, inspired by automotive middleware patterns.
+
+This example shows a realistic automotive data flow:
+- **RadarService** (C++): Publishes radar object detections at 10Hz
+- **FusionService** (Rust): Subscribes to radar, publishes fused tracks
+- **ADAS App** (Python): Subscribes to fusion events, logs warnings
+
+**Key APIs**:
+- `@event` decorator for defining events in IDL
+- `subscribe_eventgroup()` to subscribe to events
+- `SendNotification()` to publish events
+
+See [automotive_pubsub/README.md](automotive_pubsub/README.md) for detailed instructions.
+
+---
 
 ## Previewing Diagrams
 To view the PlantUML diagrams in VS Code:

@@ -9,7 +9,6 @@ compilation_error.txt
 build
 .venv
 build_err.txt
-.gitignore
 test_output.txt
 cargo_warnings.txt
 build_warnings.txt

@@ -1,0 +1,45 @@
+name: Fusion Automation CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  automation:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Set up Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: llvm-tools-preview
+
+    - name: Install cargo-llvm-cov
+      run: cargo install cargo-llvm-cov
+
+    - name: Run Fusion Automation
+      run: |
+        chmod +x fusion.sh
+        ./fusion.sh --no-dashboard --skip-coverage
+      # Note: We skip coverage in CI for now to avoid dependency complexities with OpenCppCoverage or heavy llvm-cov runs, 
+      # but the core build and tests will run.
+
+    - name: Upload Logs
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: fusion-logs
+        path: logs/

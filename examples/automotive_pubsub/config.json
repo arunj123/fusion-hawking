@@ -1,0 +1,74 @@
+{
+    "instances": {
+        "radar_cpp_instance": {
+            "ip": "127.0.0.1",
+            "ip_version": 4,
+            "providing": {
+                "radar-service": {
+                    "service_id": 28673,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "minor_version": 0,
+                    "port": 30601,
+                    "protocol": "udp",
+                    "multicast": {
+                        "ip": "224.0.0.1",
+                        "port": 30490
+                    },
+                    "eventgroups": {
+                        "radar-events": {
+                            "eventgroup_id": 1,
+                            "events": [
+                                32769
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "fusion_rust_instance": {
+            "ip": "127.0.0.1",
+            "ip_version": 4,
+            "providing": {
+                "fusion-service": {
+                    "service_id": 28674,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "minor_version": 0,
+                    "port": 30602,
+                    "protocol": "udp",
+                    "multicast": {
+                        "ip": "224.0.0.1",
+                        "port": 30490
+                    },
+                    "eventgroups": {
+                        "fusion-events": {
+                            "eventgroup_id": 1,
+                            "events": [
+                                32769
+                            ]
+                        }
+                    }
+                }
+            },
+            "required": {
+                "radar-client": {
+                    "service_id": 28673,
+                    "instance_id": 1,
+                    "major_version": 1
+                }
+            }
+        },
+        "adas_python_instance": {
+            "ip": "127.0.0.1",
+            "ip_version": 4,
+            "required": {
+                "fusion-client": {
+                    "service_id": 28674,
+                    "instance_id": 1,
+                    "major_version": 1
+                }
+            }
+        }
+    }
+}
