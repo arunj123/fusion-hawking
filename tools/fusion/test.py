@@ -8,6 +8,25 @@ class Tester:
         self.reporter = reporter
         self.builder = builder
 
+    def _get_cpp_binary_path(self, name):
+        """Helper to find C++ binary path based on platform."""
+        if os.name == 'nt':
+            # Windows: Check build/Release/name.exe
+            path = os.path.join("build", "Release", f"{name}.exe")
+            if os.path.exists(path): return path
+            # Also check build/name.exe (if built without Release subdir)
+            path = os.path.join("build", f"{name}.exe")
+            if os.path.exists(path): return path
+        else:
+            # Linux/macOS: Check build/name
+            path = os.path.join("build", name)
+            if os.path.exists(path): return path
+            # Also check build_linux (used in manual WSL tests)
+            path = os.path.join("build_linux", name)
+            if os.path.exists(path): return path
+            
+        return None
+
     def run_unit_tests(self):
         print("\n--- Running Unit Tests ---")
         results = {}
@@ -67,8 +86,8 @@ class Tester:
 
     def _run_cpp_tests(self):
         # C++
-        cpp_exe = "build/Release/cpp_test.exe"
-        if os.path.exists(cpp_exe):
+        cpp_exe = self._get_cpp_binary_path("cpp_test")
+        if cpp_exe:
             cpp_cmd = [cpp_exe]
             with open(self.reporter.get_log_path("test_cpp"), "w") as f:
                  f.write(f"=== FUSION C++ TEST ===\nCommand: {cpp_exe}\nPWD: {os.getcwd()}\n=======================\n\n")
@@ -125,8 +144,8 @@ class Tester:
             procs.append(p_py)
             
             # C++
-            cpp_exe = "build/Release/cpp_app.exe"
-            if os.path.exists(cpp_exe):
+            cpp_exe = self._get_cpp_binary_path("cpp_app")
+            if cpp_exe:
                 f_cpp = open(cpp_log, "w")
                 cpp_cmd = [cpp_exe]
                 f_cpp.write(f"=== FUSION TEST RUNNER ===\nCommand: {cpp_exe}\nPWD: {os.getcwd()}\n==========================\n\n")
