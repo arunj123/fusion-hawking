@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 17)
 # Core Library Includes
 include_directories(src/cpp/include)
 # Bindings Header location
-include_directories(${CMAKE_BINARY_DIR}/generated/cpp)
+include_directories(${PROJECT_SOURCE_DIR}/build/generated/cpp)
 
 # 1. C++ Core Library
 add_library(fusion_hawking_cpp STATIC

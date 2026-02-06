@@ -5,10 +5,12 @@
 #ifdef _WIN32
 #include <winsock2.h>
 #pragma comment(lib, "ws2_32.lib")
+#define SOCKLEN_T int
 #else
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#define SOCKLEN_T socklen_t
 #endif
 
 int main() {
@@ -44,7 +46,7 @@ int main() {
 
     char buf[1500];
     sockaddr_in src;
-    int len = sizeof(src);
+    SOCKLEN_T len = sizeof(src);
     
     // Simple receive with timeout logic omitted for brevity (blocking)
     int bytes = recvfrom(sock, buf, sizeof(buf), 0, (struct sockaddr*)&src, &len);

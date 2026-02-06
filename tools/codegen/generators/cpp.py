@@ -8,6 +8,7 @@ class CppGenerator(AbstractGenerator):
         lines.append("#include <vector>")
         lines.append("#include <string>")
         lines.append("#include <cstdint>")
+        lines.append("#include <cstring>")
         lines.append("#include <fusion_hawking/types.hpp>")
         lines.append("")
         lines.append("namespace generated {")

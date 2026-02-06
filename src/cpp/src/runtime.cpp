@@ -1,5 +1,6 @@
 #include "fusion_hawking/runtime.hpp"
 #include <iostream>
+#include <cstring>
 
 #ifdef _WIN32
 #include <ws2tcpip.h>
