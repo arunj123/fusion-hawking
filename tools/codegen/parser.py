@@ -1,4 +1,5 @@
 import ast
+from typing import Optional
 from .models import Service, Method, Struct, Field, Type, Event, FieldSpec
 
 class AbstractParser:
@@ -32,7 +33,7 @@ class PythonASTParser(AbstractParser):
                 return True
         return False
 
-    def _get_decorator_id(self, node, name: str) -> int | None:
+    def _get_decorator_id(self, node, name: str) -> Optional[int]:
         for d in node.decorator_list:
             if isinstance(d, ast.Call) and isinstance(d.func, ast.Name) and d.func.id == name:
                 for kw in d.keywords:
@@ -142,7 +143,7 @@ class PythonASTParser(AbstractParser):
         
         return FieldSpec(name, field_id, field_type, get_id, set_id, notifier_id)
 
-    def _get_decorator_data(self, node, decorator_name: str, key: str):
+    def _get_decorator_data(self, node, decorator_name: str, key: str) -> Optional[int]:
         if not hasattr(node, 'decorator_list'): return None
         for d in node.decorator_list:
             if isinstance(d, ast.Call) and isinstance(d.func, ast.Name) and d.func.id == decorator_name:
