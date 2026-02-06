@@ -27,7 +27,7 @@ impl UdpTransport {
         socket.set_reuse_address(true)?;
         
         // On some platforms, also need SO_REUSEPORT
-        #[cfg(not(windows))]
+        #[cfg(all(unix, not(target_os = "solaris"), not(target_os = "illumos")))]
         socket.set_reuse_port(true)?;
         
         socket.bind(&bind_addr.into())?;
