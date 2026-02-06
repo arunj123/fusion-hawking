@@ -30,9 +30,13 @@ class Tester:
     def run_unit_tests(self):
         print("\n--- Running Unit Tests ---")
         results = {}
+        print("  Running Rust tests...")
         results["rust"] = self._run_rust_tests()
+        print("  Running Python tests...")
         results.update(self._run_python_tests())
+        print("  Running C++ tests...")
         results["cpp"] = self._run_cpp_tests()
+        print(f"  Unit test results: {results}")
         return results
 
     def _run_rust_tests(self):
@@ -154,16 +158,14 @@ class Tester:
                 procs.append(p_cpp)
             
             # Run for 10s
+            print("  Integrated Apps started, waiting 10s...")
             time.sleep(10)
             
         finally:
             for p in procs:
                 p.kill() # Force kill
             
-            # Close files
-            # (Python files closed by GC provided we don't hold refs, but better explicit? 
-            # In script it's fine, exiting soon.
-        
+        print("  Verifying Integrated Apps logs...")
         results = self._verify_demos(rust_log, py_log, cpp_log, results)
 
         # 3. Automotive Pub-Sub Demo (Radar -> Fusion -> ADAS)

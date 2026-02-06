@@ -118,10 +118,12 @@ def main():
 
         # Finalize
         overall = "SUCCESS"
+        failures = []
         for k, v in test_results.items():
+            if k == "steps": continue # List of detailed steps
             if v == "FAIL" or v is False: 
                 overall = "FAILED"
-                break
+                failures.append(k)
         
         final_data = {
             "current_step": "Done", 
@@ -132,6 +134,17 @@ def main():
         reporter.generate_index(final_data)
         
         print(f"\nExample Run Completed: {overall}")
+        if overall == "FAILED":
+            print(f"❌ Failed components: {', '.join(failures)}")
+            # Print detailed steps if available
+            if "steps" in test_results:
+                print("\n--- Detailed Results ---")
+                for step in test_results["steps"]:
+                    status_icon = "✅" if step["status"] == "PASS" else "❌"
+                    print(f"{status_icon} {step['name']}: {step['status']}")
+                    if step["status"] == "FAIL":
+                        print(f"   Details: {step.get('details', 'No details available')}")
+        
         print(f"Report: file://{os.path.join(reporter.log_dir, 'index.html')}")
 
         if overall == "FAILED":
