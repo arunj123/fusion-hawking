@@ -2,7 +2,7 @@ from .base import AbstractGenerator
 from ..models import Struct, Service, Method, Field, Type
 
 class RustGenerator(AbstractGenerator):
-    def generate(self, structs: list[Struct], services: list[Service]) -> dict[str, str]:
+    def generate(self, structs: list[Struct], services: list[Service], output_path: str = "build/generated/rust/mod.rs") -> dict[str, str]:
         lines = [
             "use fusion_hawking::codec::{SomeIpSerialize, SomeIpDeserialize, SomeIpHeader};",
             "#[allow(unused_imports)]",
@@ -59,7 +59,7 @@ class RustGenerator(AbstractGenerator):
             # Client Proxy
             lines.append(self._generate_client_proxy(svc))
 
-        return {"build/generated/rust/mod.rs": "\n".join(lines)}
+        return {output_path: "\n".join(lines)}
 
     def _generate_struct(self, s: Struct) -> str:
         lines = []
@@ -163,9 +163,8 @@ class RustGenerator(AbstractGenerator):
             lines.append("            },")
         lines.append("            _ => None")
         lines.append("        }")
-        lines.append("    }")
-        lines.append("}")
-        return "\n".join(lines)
+    }
+}
 
     def _generate_client_proxy(self, svc: Service) -> str:
         lines = []

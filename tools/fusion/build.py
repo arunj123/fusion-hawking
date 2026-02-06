@@ -23,15 +23,13 @@ class Builder:
 
     def generate_bindings(self):
         import sys
-        # Generate bindings for integrated apps
-        cmd1 = [sys.executable, "-m", "tools.codegen.main", "examples/integrated_apps/interface.py"]
-        res1 = self.run_command(cmd1, "codegen_bindings")
-        
-        # Generate bindings for automotive pubsub
-        cmd2 = [sys.executable, "-m", "tools.codegen.main", "examples/automotive_pubsub/interface.py"]
-        res2 = self.run_command(cmd2, "codegen_pubsub")
-        
-        return res1 and res2
+        # Generate all bindings in one call to avoid overwriting files
+        cmd = [
+            sys.executable, "-m", "tools.codegen.main", 
+            "examples/integrated_apps/interface.py",
+            "examples/automotive_pubsub/interface.py"
+        ]
+        return self.run_command(cmd, "codegen_all")
 
     def build_rust(self):
         cmd = ["cargo", "build", "--examples", "--bins"]
