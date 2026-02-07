@@ -22,6 +22,10 @@ def test_event_subscription():
         SERVICE_ID = 0x3001
         def get_service_id(self):
             return self.SERVICE_ID
+        def get_major_version(self):
+            return 1
+        def get_minor_version(self):
+            return 0
         def handle(self, header, payload):
             return None # Don't care about requests
             

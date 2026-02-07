@@ -130,6 +130,7 @@ class CoverageManager:
         info_file = os.path.join(self.reporter.coverage_dir, "cpp", "coverage.info")
         capture_cmd = ["lcov", "--directory", "build", "--capture", "--output-file", info_file]
         if not self._run(capture_cmd, "cpp_coverage_capture"):
+            self._dump_log("cpp_coverage_capture")
             return "FAIL"
 
         # 4. Filter (exclude tests, examples, tools)
@@ -140,7 +141,17 @@ class CoverageManager:
         gen_cmd = ["genhtml", info_file, "--output-directory", out_dir]
         if self._run(gen_cmd, "cpp_coverage_html"):
             return "PASS"
-        return "FAIL"
+        else:
+            self._dump_log("cpp_coverage_html")
+            return "FAIL"
+
+    def _dump_log(self, log_name):
+        log_path = self.reporter.get_log_path(log_name)
+        if os.path.exists(log_path):
+            print(f"\n--- FAILURE LOG: {log_name} ---")
+            with open(log_path, "r") as f:
+                print(f.read())
+            print(f"--- END LOG ---")
 
     def _run(self, cmd, log_name, env=None, header=None):
         log_path = self.reporter.get_log_path(log_name)
