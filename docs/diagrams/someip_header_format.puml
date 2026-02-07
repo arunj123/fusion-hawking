@@ -1,0 +1,34 @@
+@startuml
+skinparam backgroundColor #FEFEFE
+skinparam rectangleBackgroundColor #E8F4FD
+
+rectangle "SOME/IP Header (16 bytes)" {
+    rectangle "Bytes 0-1\n**Service ID**" as SID #FFE6CC
+    rectangle "Bytes 2-3\n**Method ID**" as MID #FFE6CC
+    rectangle "Bytes 4-7\n**Length**\n(Payload + 8)" as LEN #D5E8D4
+    rectangle "Bytes 8-9\n**Client ID**" as CID #DAE8FC
+    rectangle "Bytes 10-11\n**Session ID**" as SESS #DAE8FC
+    rectangle "Byte 12\n**Protocol Ver**\n(0x01)" as PVER #E1D5E7
+    rectangle "Byte 13\n**Interface Ver**" as IVER #E1D5E7
+    rectangle "Byte 14\n**Message Type**" as MTYPE #F8CECC
+    rectangle "Byte 15\n**Return Code**" as RCODE #F8CECC
+}
+
+SID -right-> MID
+MID -right-> LEN
+LEN -down-> CID
+CID -right-> SESS
+SESS -right-> PVER
+PVER -right-> IVER
+IVER -right-> MTYPE
+MTYPE -right-> RCODE
+
+note bottom of MTYPE
+  0x00 = REQUEST
+  0x01 = REQUEST_NO_RETURN
+  0x02 = NOTIFICATION
+  0x80 = RESPONSE
+  0x81 = ERROR
+end note
+
+@enduml

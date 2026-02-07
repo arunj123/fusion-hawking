@@ -1,0 +1,55 @@
+@startuml
+skinparam backgroundColor #FEFEFE
+
+start
+
+partition "Toolchain Check" {
+    :toolchains.py;
+    note right: Verify Rust, CMake,\nPython, llvm-cov
+}
+
+partition "Build Phase" {
+    :build.py;
+    split
+        :cargo build (Rust);
+    split again
+        :cmake build (C++);
+    split again
+        :codegen (all bindings);
+    end split
+}
+
+partition "Test Phase" {
+    :test.py;
+    split
+        :cargo test;
+    split again
+        :pytest;
+    split again
+        :ctest;
+    end split
+    :Integration Demo;
+    note right: Multi-process\ncross-language RPC
+}
+
+partition "Coverage" {
+    :coverage.py;
+    split
+        :cargo-llvm-cov (Rust);
+    split again
+        :coverage.py (Python);
+    split again
+        :OpenCppCoverage (C++);
+    end split
+}
+
+partition "Reporting" {
+    :report.py;
+    :Generate HTML Dashboard;
+    :server.py;
+    note right: Serve @ localhost:8000
+}
+
+stop
+
+@enduml

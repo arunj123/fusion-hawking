@@ -4,3 +4,4 @@
 # Listing development tools just in case.
 pytest
 pytest-cov
+plantuml>=0.3.0

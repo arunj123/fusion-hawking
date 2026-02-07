@@ -1,0 +1,32 @@
+@startuml
+skinparam backgroundColor #FEFEFE
+
+[*] --> Down
+
+Down --> InitialWait : offer_service()
+note right of InitialWait
+  [PRS_SOMEIPSD_00012]
+  Random delay:
+  INITIAL_DELAY_MIN..INITIAL_DELAY_MAX
+end note
+
+InitialWait --> Repetition : delay_elapsed
+note right of Repetition
+  [PRS_SOMEIPSD_00013]
+  Send Offers exponentially:
+  REPETITIONS_BASE_DELAY * 2^n
+end note
+
+Repetition --> Main : repetitions_done
+note right of Main
+  [PRS_SOMEIPSD_00014]
+  Steady state:
+  Send periodic Offers
+  (CYCLIC_OFFER_DELAY)
+end note
+
+Main --> Down : stop_offer()
+Repetition --> Down : stop_offer()
+InitialWait --> Down : stop_offer()
+
+@enduml

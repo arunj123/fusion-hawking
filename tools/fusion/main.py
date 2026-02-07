@@ -10,6 +10,84 @@ from tools.fusion.test import Tester
 from tools.fusion.coverage import CoverageManager
 from tools.fusion.server import ProgressServer
 from tools.fusion.utils import get_local_ip, patch_configs
+from tools.fusion.diagrams import DiagramManager
+
+
+def run_diagrams(root_dir, reporter, server):
+    """Stage: Generate PlantUML diagrams"""
+    if server: server.update({"current_step": "Generating Diagrams"})
+    reporter.generate_index({"current_step": "Generating Diagrams", "overall_status": "RUNNING"})
+    diagrams = DiagramManager(root_dir, reporter)
+    return diagrams.run()
+
+
+def run_build(root_dir, reporter, builder, tool_status, target, server):
+    """Stage: Build Rust and C++"""
+    if server: server.update({"current_step": "Building"})
+    reporter.generate_index({"current_step": "Building", "overall_status": "RUNNING", "tools": tool_status})
+    print("\n=== Building ===")
+    
+    if not builder.generate_bindings(): 
+        raise Exception("Bindings Generation Failed")
+    
+    if target in ["all", "rust", "python"]:
+        if not builder.build_rust(): 
+            raise Exception("Rust Build Failed")
+    
+    if tool_status.get("cmake") and target in ["all", "cpp"]:
+        builder.build_cpp()
+    
+    # Capture Configuration
+    try:
+        config_src = os.path.join(os.getcwd(), "build", "generated")
+        if os.path.exists(config_src):
+            config_dest = os.path.join(reporter.log_dir, "configs")
+            import shutil
+            shutil.copytree(config_src, config_dest, dirs_exist_ok=True)
+            print(f"Captured configurations to {config_dest}")
+    except Exception as e:
+        print(f"⚠️ Failed to capture configs: {e}")
+    
+    return {"build": "PASS"}
+
+
+def run_test(reporter, tester, target, server):
+    """Stage: Run unit tests"""
+    if server: server.update({"current_step": "Testing"})
+    print("\n=== Testing ===")
+    
+    test_results = {}
+    
+    if target == "all":
+        test_results = tester.run_unit_tests()
+    else:
+        if target == "rust":
+            test_results["rust"] = tester._run_rust_tests()
+        elif target == "python":
+            test_results.update(tester._run_python_tests())
+        elif target == "cpp":
+            test_results["cpp"] = tester._run_cpp_tests()
+    
+    return test_results
+
+
+def run_demos(reporter, tester, server, test_results):
+    """Stage: Run integration demos"""
+    if server: server.update({"current_step": "Running Demos"})
+    print("\n=== Demos ===")
+    demo_results = tester.run_demos()
+    test_results.update(demo_results)
+    return test_results
+
+
+def run_coverage(reporter, cover, server, test_results):
+    """Stage: Generate coverage reports"""
+    if server: server.update({"current_step": "Coverage"})
+    print("\n=== Coverage ===")
+    cov_results = cover.run_coverage()
+    test_results.update(cov_results)
+    return test_results
+
 
 def main():
     parser = argparse.ArgumentParser(description="Fusion Hawking Automation Tool")
@@ -18,19 +96,20 @@ def main():
     parser.add_argument("--server", action="store_true", default=True, help="Enable dashboard server")
     parser.add_argument("--no-dashboard", action="store_true", help="Disable dashboard server (override)")
     parser.add_argument("--target", type=str, choices=["all", "rust", "python", "cpp"], default="all", help="Target language to test")
+    parser.add_argument("--stage", type=str, 
+                        choices=["diagrams", "build", "test", "coverage", "docs", "all"],
+                        default="all", help="Run specific build stage (for CI)")
     args = parser.parse_args()
 
-    # Get Root Directory (assuming running from root or finding it)
+    # Get Root Directory
     root_dir = os.path.abspath(os.getcwd())
     
-    # Initialize Components
-    # Initialize Reporter FIRST to ensure index.html and directories exist
+    # Initialize Reporter FIRST
     reporter = Reporter(root_dir)
 
     # Server logic: Enable if --server is True AND --no-dashboard is False
-    enable_server = args.server and not args.no_dashboard
-    
-    # IMPORTANT: If this is a child process spawned by the dashboard, we DO NOT want to bind port 8000 again.
+    # Disable for stage-specific runs (CI mode)
+    enable_server = args.server and not args.no_dashboard and args.stage == "all"
     server = ProgressServer(report_dir=os.path.join(root_dir, "logs")) if enable_server else None
     
     if server: 
@@ -51,82 +130,52 @@ def main():
     builder = Builder(reporter)
     tester = Tester(reporter, builder)
     cover = CoverageManager(reporter, tools)
+    
+    test_results = {}
 
     try:
-        # 1. Build (Always build required components, or filter?)
-        # For simplicity, we build all if target is all or specific. 
-        # Incremental builds make this cheap.
-        if server: server.update({"current_step": "Building"})
-        reporter.generate_index({"current_step": "Building", "overall_status": "RUNNING", "tools": tool_status})
-        print("\n=== Building ===")
+        # Stage-based execution
+        stage = args.stage
         
-        if not builder.generate_bindings(): raise Exception("Bindings Generation Failed")
+        # DIAGRAMS stage
+        if stage in ["diagrams", "docs", "all"]:
+            diagram_results = run_diagrams(root_dir, reporter, server)
+            test_results.update(diagram_results)
         
-        # Build Rust if target is all or rust or dependent? (Python depends on specific impl? No, bindings)
-        if args.target in ["all", "rust", "python"]: # Python often wraps Rust or C++? Assume independent for now or build all.
-             if not builder.build_rust(): raise Exception("Rust Build Failed")
+        # BUILD stage
+        if stage in ["build", "all"]:
+            build_results = run_build(root_dir, reporter, builder, tool_status, args.target, server)
+            test_results.update(build_results)
         
-        if tool_status["cmake"] and args.target in ["all", "cpp"]:
-            builder.build_cpp() 
-
-        # Capture Configuration
-        try:
-            config_src = os.path.join(os.getcwd(), "build", "generated")
-            if os.path.exists(config_src):
-                config_dest = os.path.join(reporter.log_dir, "configs")
-                import shutil
-                shutil.copytree(config_src, config_dest, dirs_exist_ok=True)
-                print(f"Captured configurations to {config_dest}")
-        except Exception as e:
-            print(f"⚠️ Failed to capture configs: {e}")
-
-        # 2. Tests
-        if server: server.update({"current_step": "Testing"})
-        print("\n=== Testing ===")
+        # TEST stage
+        if stage in ["test", "all"]:
+            test_results.update(run_test(reporter, tester, args.target, server))
+            if server: server.update({"tests": test_results})
+            reporter.generate_index({"current_step": "Tests Completed", "overall_status": "RUNNING", "tools": tool_status, "tests": test_results})
         
-        test_results = {}
-        
-        # Filter tests based on target
-        if args.target == "all":
-            test_results = tester.run_unit_tests()
-        else:
-            # Run specific test
-            if args.target == "rust":
-                test_results["rust"] = tester._run_rust_tests()
-            elif args.target == "python":
-                test_results.update(tester._run_python_tests())
-            elif args.target == "cpp":
-                test_results["cpp"] = tester._run_cpp_tests()
-                
-        if server: server.update({"tests": test_results})
-        reporter.generate_index({"current_step": "Tests Completed", "overall_status": "RUNNING", "tools": tool_status, "tests": test_results})
-        
-        # 3. Demos
-        if not args.skip_demos and args.target == "all":
-            if server: server.update({"current_step": "Running Demos"})
-            print("\n=== Demos ===")
-            demo_results = tester.run_demos()
-            test_results.update(demo_results)
+        # DEMOS (part of test stage or all)
+        if stage == "all" and not args.skip_demos and args.target == "all":
+            test_results = run_demos(reporter, tester, server, test_results)
             if server: server.update({"tests": test_results})
             reporter.generate_index({"current_step": "Demos Completed", "overall_status": "RUNNING", "tools": tool_status, "tests": test_results})
-
-        # 4. Coverage (Only for all or specific?)
-        if not args.skip_coverage and args.target == "all":
-            if server: server.update({"current_step": "Coverage"})
-            print("\n=== Coverage ===")
-            cov_results = cover.run_coverage()
-            test_results.update(cov_results)
+        
+        # COVERAGE stage
+        if stage in ["coverage", "all"] and not args.skip_coverage and args.target == "all":
+            test_results = run_coverage(reporter, cover, server, test_results)
             if server: server.update({"tests": test_results})
             reporter.generate_index({"current_step": "Coverage Completed", "overall_status": "RUNNING", "tools": tool_status, "tests": test_results})
-        elif not args.skip_coverage and args.target != "all":
-            # Run specific coverage?
-            pass # Coverage usually runs all suite. Keep it simple for now.
+
+        # DOCS stage (diagrams + report generation)
+        if stage == "docs":
+            # Diagrams already run above
+            reporter.generate_index({"current_step": "Docs Generated", "overall_status": "SUCCESS", "tools": tool_status, "tests": test_results})
+            print("\n✅ Documentation generated successfully")
 
         # Finalize
         overall = "SUCCESS"
         failures = []
         for k, v in test_results.items():
-            if k == "steps": continue # List of detailed steps
+            if k == "steps": continue
             if v == "FAIL" or v is False: 
                 overall = "FAILED"
                 failures.append(k)
@@ -139,10 +188,9 @@ def main():
         if server: server.update(final_data)
         reporter.generate_index(final_data)
         
-        print(f"\nExample Run Completed: {overall}")
+        print(f"\nFusion Run Completed: {overall}")
         if overall == "FAILED":
             print(f"❌ Failed components: {', '.join(failures)}")
-            # Print detailed steps if available
             if "steps" in test_results:
                 print("\n--- Detailed Results ---")
                 for step in test_results["steps"]:
@@ -159,8 +207,6 @@ def main():
     except KeyboardInterrupt:
         print("\n🛑 Execution Interrupted by User.")
         if server: 
-            # Force immediate exit, skipping cleanup that might hang
-            # Daemon threads (server) will be killed automatically
             os._exit(0)
     except Exception as e:
         print(f"\n❌ Critical Error: {e}")
@@ -169,7 +215,6 @@ def main():
         
     finally:
         if server:
-            # Only block if we truly own the dashboard and are interactive
             if sys.stdin.isatty() and not args.no_dashboard:
                 try:
                     input("\nPress Enter to stop dashboard and exit...")

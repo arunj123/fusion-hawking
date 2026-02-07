@@ -1,0 +1,28 @@
+@startuml
+skinparam backgroundColor #FEFEFE
+
+file "interface.py\n(Python dataclasses)" as IDL
+component "tools/codegen/parser.py\n- Extract types, methods, events" as Parser
+component "tools/codegen/generators/\n- rust.py\n- python.py\n- cpp.py" as Generators
+
+artifact "build/generated/rust/\n*.rs" as RustGen
+artifact "build/generated/python/\n*.py" as PyGen
+artifact "build/generated/cpp/\n*.hpp" as CppGen
+
+IDL --> Parser
+Parser --> Generators
+Generators --> RustGen
+Generators --> PyGen
+Generators --> CppGen
+
+note bottom of IDL
+  @dataclass
+  class MathService:
+      @method(id=1)
+      def add(a: int, b: int) -> int: ...
+      
+      @event(id=0x8001)
+      on_result: int
+end note
+
+@enduml

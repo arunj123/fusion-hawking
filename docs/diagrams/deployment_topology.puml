@@ -1,0 +1,35 @@
+@startuml
+skinparam backgroundColor #FEFEFE
+
+node "Host A: Rust Server" as HostA {
+    artifact "rust_app" as RA
+    database "config.json" as CfgA
+    RA --> CfgA : loads
+}
+
+node "Host B: Python Client" as HostB {
+    artifact "python_app" as PA
+    database "config.json" as CfgB
+    PA --> CfgB : loads
+}
+
+node "Host C: C++ Client" as HostC {
+    artifact "cpp_app" as CA
+    database "config.json" as CfgC
+    CA --> CfgC : loads
+}
+
+cloud "Network" as Net {
+    interface "UDP Unicast\n(Service Communication)" as Unicast
+    interface "UDP Multicast\n224.0.0.1:30490\n(Service Discovery)" as Multicast
+}
+
+RA -down-> Unicast : bind port 30509
+PA -down-> Unicast : request
+CA -down-> Unicast : request
+
+RA --> Multicast : Offer Service
+PA --> Multicast : Find Service
+CA --> Multicast : Subscribe EventGroup
+
+@enduml

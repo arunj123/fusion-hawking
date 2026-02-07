@@ -1,0 +1,34 @@
+@startuml
+skinparam backgroundColor #FEFEFE
+
+actor "Python Client" as Client
+participant "Python Runtime\n(SomeIpRuntime)" as PyRT
+participant "Codec Layer\n(Header build)" as PyCodec
+participant "UDP Transport" as Net
+participant "Rust Runtime\n(SomeIpRuntime)" as RsRT
+participant "Dispatcher" as Disp
+participant "MathServiceImpl\n(User Code)" as Impl
+
+Client -> PyRT: client.add(5, 3)
+
+group Request Path
+    PyRT -> PyCodec: Build Header\n(ServiceID=0x1234, MethodID=0x0001,\nMsgType=REQUEST)
+    PyCodec -> PyCodec: Serialize payload (5, 3)
+    PyCodec -> Net: UDP Send
+    Net -> RsRT: recv_from()
+    RsRT -> RsRT: Parse Header
+    RsRT -> Disp: Lookup handler\n(ServiceID=0x1234)
+    Disp -> Impl: handle(method=1, payload)
+    Impl -> Impl: Compute 5+3=8
+end
+
+group Response Path
+    Impl --> Disp: return (8)
+    Disp --> RsRT: Build Response\n(MsgType=RESPONSE)
+    RsRT --> Net: UDP Send
+    Net --> PyRT: recv_from()
+    PyRT --> PyRT: Parse Response
+    PyRT --> Client: return 8
+end
+
+@enduml

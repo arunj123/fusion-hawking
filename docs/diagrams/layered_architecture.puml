@@ -1,0 +1,48 @@
+@startuml
+skinparam backgroundColor #FEFEFE
+skinparam rectangleBorderColor #333
+skinparam rectangleBackgroundColor #E8F4FD
+
+package "Application Layer" #F5F5F5 {
+    rectangle "Generated Service Stubs\n(MathServiceServer, StringServiceClient)" as GenCode
+    rectangle "User Business Logic" as UserLogic
+}
+
+package "Runtime Layer" #E8F4FD {
+    rectangle "SomeIpRuntime\n- Config Loading\n- Service Lifecycle\n- Request Dispatching" as Runtime
+    rectangle "ThreadPool\n- Concurrent Handler Execution\n- Non-blocking IO" as Pool
+}
+
+package "Service Discovery Layer" #D4EDDA {
+    rectangle "ServiceDiscovery\n- State Machine (Down→InitialWait→Repetition→Main)\n- TTL Management\n- EventGroup Subscriptions" as SD
+    rectangle "LocalService / RemoteService\n- Offer/Find/Subscribe" as SvcState
+}
+
+package "Codec Layer" #FFF3CD {
+    rectangle "SomeIpHeader\n- 16-byte Header Parsing/Serialization\n- MessageType, ReturnCode" as Header
+    rectangle "Serialization Traits\n- SomeIpSerialize / SomeIpDeserialize\n- Complex Types (Arrays, Structs)" as Serialize
+    rectangle "Session Management\n- Per-Service Session Counter" as Session
+}
+
+package "Transport Layer" #F8D7DA {
+    rectangle "UdpTransport\n- Unicast + Multicast\n- Non-blocking IO" as UdpT
+    rectangle "TcpTransport\n- Connection Management\n- Stream Handling" as TcpT
+    rectangle "SomeIpTransport Trait\n- Unified Interface" as Trait
+}
+
+UserLogic --> GenCode
+GenCode --> Runtime
+Runtime --> Pool
+Runtime --> SD
+SD --> SvcState
+Runtime --> Header
+SD --> Header
+Header --> Serialize
+Serialize --> Session
+SD --> UdpT
+Runtime --> UdpT
+Runtime --> TcpT
+UdpT --|> Trait
+TcpT --|> Trait
+
+@enduml

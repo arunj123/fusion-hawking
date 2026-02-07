@@ -1,0 +1,46 @@
+@startuml cross_language_runtimes
+skinparam backgroundColor #FEFEFE
+
+package "Rust Runtime" #FFE6CC {
+    class SomeIpRuntime {
+        +load(config, instance)
+        +offer_service(alias, handler)
+        +get_client(alias)
+        +run()
+        +stop()
+    }
+    class ServiceDiscovery
+    class ThreadPool
+    SomeIpRuntime --> ServiceDiscovery
+    SomeIpRuntime --> ThreadPool
+}
+
+package "Python Runtime" #D4EDDA {
+    class PyRuntime {
+        +__init__(config, instance)
+        +offer_service(alias, handler)
+        +get_client(alias, cls)
+        +start()
+        +stop()
+    }
+    class SessionIdManager
+    PyRuntime --> SessionIdManager
+}
+
+package "C++ Runtime" #DAE8FC {
+    class CppRuntime {
+        +SomeIpRuntime(config, instance)
+        +offer_service(alias, impl)
+        +create_client(alias)
+        +run()
+    }
+    class JsonConfig
+    CppRuntime --> JsonConfig
+}
+
+note "All runtimes share:\n- Config-driven topology\n- Same wire protocol\n- Same SD multicast group" as N
+N .. SomeIpRuntime
+N .. PyRuntime
+N .. CppRuntime
+
+@enduml

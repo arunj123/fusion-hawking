@@ -1,0 +1,24 @@
+@startuml
+skinparam backgroundColor #FEFEFE
+
+rectangle "Main Loop" as Main {
+    rectangle "Non-blocking recv()" as Recv
+    rectangle "SD Poll" as SD
+}
+
+rectangle "Thread Pool" as Pool {
+    rectangle "Worker 1" as W1
+    rectangle "Worker 2" as W2
+    rectangle "Worker N" as WN
+}
+
+Recv --> Pool : dispatch request
+SD --> Main : timer events
+W1 --> Main : send response
+
+note right of Pool
+  - Rust: Custom ThreadPool
+  - C++: std::vector<std::thread>
+  - Python: ThreadPoolExecutor
+end note
+@enduml

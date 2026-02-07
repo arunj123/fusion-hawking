@@ -1,0 +1,27 @@
+@startuml
+skinparam backgroundColor #FEFEFE
+
+participant "Consumer\n(Python)" as Consumer
+participant "Multicast\n(224.0.0.1:30490)" as MC
+participant "Provider\n(Rust)" as Provider
+
+== Discovery ==
+Provider -> MC: OfferService\n(ServiceID, InstanceID, Port, TTL)
+MC -> Consumer: Forward Offer
+Consumer -> Consumer: Update remote_services[]
+
+== Subscription ==
+Consumer -> MC: SubscribeEventgroup\n(ServiceID, EventgroupID, TTL)
+MC -> Provider: Forward Subscribe
+Provider -> Provider: Add to subscribers[]
+Provider -> MC: SubscribeEventgroupAck
+MC -> Consumer: Forward Ack
+Consumer -> Consumer: subscription_acked = true
+
+== Events ==
+loop Every 100ms
+    Provider -> Consumer: Notification Event\n(MSGTYPE=0x02)
+    Consumer -> Consumer: on_event(data)
+end
+
+@enduml

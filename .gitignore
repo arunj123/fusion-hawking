@@ -39,3 +39,7 @@ htmlcov/
 # Reference documents
 AUTOSAR_PRS_SOMEIPProtocol.pdf
 AUTOSAR_PRS_SOMEIPServiceDiscoveryProtocol.pdf
+
+# Generated diagrams (built by CI)
+docs/images/
+docs/diagrams/.diagram_hashes.json
