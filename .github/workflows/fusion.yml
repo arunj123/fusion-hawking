@@ -193,7 +193,7 @@ jobs:
         PYTHONPATH: src/python:build:build/generated/python
         FUSION_LOG_DIR: logs/unit_python
       run: |
-        python -m tools.fusion.main --stage test --target python --base-port 0 --no-dashboard
+        python -m tools.fusion.main --stage test --target python --base-port 300 --no-dashboard
     - name: Upload Logs
       if: always()
       uses: actions/upload-artifact@v4
@@ -357,12 +357,16 @@ jobs:
         path: build
     - name: Install Coverage Tools
       run: |
+        sudo apt-get update && sudo apt-get install -y lcov
         pip install pytest pytest-cov
         curl -LsSf https://github.com/taiki-e/cargo-llvm-cov/releases/latest/download/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz | tar xzf - -C ~/.cargo/bin || true
+    - name: Rebuild C++ with Coverage
+      run: |
+        python -m tools.fusion.main --stage build --target cpp --with-coverage --no-codegen --no-dashboard
     - name: Restore Permissions
       run: chmod +x build/* target/debug/* || true
     - name: Run Coverage
-      run: python -m tools.fusion.main --stage coverage --no-dashboard
+      run: python -m tools.fusion.main --stage coverage --base-port 400 --no-dashboard
     - name: Upload Logs
       if: always()
       uses: actions/upload-artifact@v4

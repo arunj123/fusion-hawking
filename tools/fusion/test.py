@@ -102,6 +102,11 @@ class Tester:
                      results["python_integration"] = "PASS"
                  else:
                      results["python_integration"] = "FAIL"
+                     # Dump log for CI visibility
+                     print(f"\n--- FAILURE LOG: python_integration ---")
+                     with open(self.reporter.get_log_path("test_python_pytest"), "r") as log_f:
+                         print(log_f.read())
+                     print(f"--- END LOG ---")
              except:
                  results["python_integration"] = "SKIPPED (pytest missing)"
         return results
@@ -206,6 +211,15 @@ class Tester:
                 
             print("  Verifying Integrated Apps logs...")
             results = self._verify_demos(rust_log, py_log, cpp_log, results)
+            
+            # If failed, dump logs
+            if results.get("demo_status") == "FAIL":
+                 for log_name, log_path in [("rust", rust_log), ("python", py_log), ("cpp", cpp_log)]:
+                     if os.path.exists(log_path):
+                         print(f"\n--- FAILURE LOG: {log_name} ---")
+                         with open(log_path, "r") as f:
+                             print(f.read())
+                         print(f"--- END LOG ---")
 
         # 3. Automotive Pub-Sub Demo (Radar -> Fusion -> ADAS)
         if demo_filter in ["all", "pubsub"]:

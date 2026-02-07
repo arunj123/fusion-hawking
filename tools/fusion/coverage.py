@@ -58,14 +58,28 @@ class CoverageManager:
         
         if self._run(cmd, "python_integration", env=env, header=header):
             return "PASS"
-        return "FAIL"
+        else:
+            # If it failed, dump the log to stdout for CI visibility
+            log_path = self.reporter.get_log_path("python_integration")
+            if os.path.exists(log_path):
+                print(f"\n--- FAILURE LOG: python_integration ---")
+                with open(log_path, "r") as f:
+                    print(f.read())
+                print(f"--- END LOG ---")
+            return "FAIL"
 
     def _run_cpp_coverage(self):
+        if os.name == 'nt':
+            return self._run_cpp_coverage_windows()
+        else:
+            return self._run_cpp_coverage_linux()
+
+    def _run_cpp_coverage_windows(self):
         if not self.toolchains.status.get("opencppcoverage"):
             print("Skipping C++ Coverage (OpenCppCoverage not found).")
             return "SKIPPED"
 
-        print("Generating C++ Coverage...")
+        print("Generating C++ Coverage (Windows)...")
         cpp_test_exe = "build/Release/cpp_test.exe"
         if not os.path.exists(cpp_test_exe):
             print("Skipping C++ Coverage (Executable not found).")
@@ -85,6 +99,46 @@ class CoverageManager:
                     shutil.move("LastCoverageResults.log", os.path.join(self.reporter.raw_logs_dir, "LastCoverageResults.log"))
                 except:
                     pass
+            return "PASS"
+        return "FAIL"
+
+    def _run_cpp_coverage_linux(self):
+        if not shutil.which("lcov"):
+             print("Skipping C++ Coverage (lcov not found).")
+             return "SKIPPED"
+
+        print("Generating C++ Coverage (Linux)...")
+        # Assuming build/cpp_test exists (built with --coverage)
+        cpp_test_exe = "build/cpp_test"
+        if not os.path.exists(cpp_test_exe):
+            print("Skipping C++ Coverage (Executable not found).")
+            return "SKIPPED"
+
+        out_dir = os.path.join(self.reporter.coverage_dir, "cpp")
+        if not os.path.exists(out_dir):
+            os.makedirs(out_dir)
+
+        # 1. Reset counters
+        subprocess.run(["lcov", "--directory", "build", "--zerocounters"], check=False)
+        
+        # 2. Run Test
+        header = f"=== FUSION C++ COVERAGE TEST RUN ===\n"
+        if not self._run([f"./{cpp_test_exe}"], "cpp_integration_run", header=header):
+            print("Warning: C++ test returned non-zero during coverage run")
+
+        # 3. Capture coverage
+        info_file = os.path.join(self.reporter.coverage_dir, "cpp", "coverage.info")
+        capture_cmd = ["lcov", "--directory", "build", "--capture", "--output-file", info_file]
+        if not self._run(capture_cmd, "cpp_coverage_capture"):
+            return "FAIL"
+
+        # 4. Filter (exclude tests, examples, tools)
+        filter_cmd = ["lcov", "--remove", info_file, "/usr/*", "*/tests/*", "*/examples/*", "*/build/*", "--output-file", info_file]
+        self._run(filter_cmd, "cpp_coverage_filter")
+
+        # 5. Generate HTML
+        gen_cmd = ["genhtml", info_file, "--output-directory", out_dir]
+        if self._run(gen_cmd, "cpp_coverage_html"):
             return "PASS"
         return "FAIL"
 

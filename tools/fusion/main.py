@@ -21,7 +21,7 @@ def run_diagrams(root_dir, reporter, server):
     return diagrams.run()
 
 
-def run_build(root_dir, reporter, builder, tool_status, target, server, skip_codegen=False):
+def run_build(root_dir, reporter, builder, tool_status, target, server, skip_codegen=False, with_coverage=False):
     """Stage: Build Rust and C++"""
     if server: server.update({"current_step": "Building"})
     reporter.generate_index({"current_step": "Building", "overall_status": "RUNNING", "tools": tool_status})
@@ -41,7 +41,7 @@ def run_build(root_dir, reporter, builder, tool_status, target, server, skip_cod
             raise Exception("Rust Build Failed")
     
     if tool_status.get("cmake") and target in ["all", "cpp"]:
-        if not builder.build_cpp():
+        if not builder.build_cpp(with_coverage):
             raise Exception("C++ Build Failed")
     
     # Capture Configuration
@@ -106,6 +106,7 @@ def main():
     parser.add_argument("--demo", type=str, choices=["all", "simple", "integrated", "pubsub"], default="all", help="Specific demo to run")
     parser.add_argument("--no-codegen", action="store_true", help="Skip codegen (assume artifacts exist)")
     parser.add_argument("--base-port", type=int, default=0, help="Port offset for test isolation")
+    parser.add_argument("--with-coverage", action="store_true", help="Build C++ with coverage instrumentation")
     parser.add_argument("--stage", type=str, 
                         choices=["diagrams", "codegen", "build", "test", "coverage", "docs", "demos", "all"],
                         default="all", help="Run specific build stage (for CI)")
@@ -166,7 +167,7 @@ def main():
             # But run_build (line 30) called generate_bindings() unconditionally.
             # We need to modify run_build signature and logic.
             # Let's pass args.no_codegen to run_build
-            build_results = run_build(root_dir, reporter, builder, tool_status, args.target, server, args.no_codegen)
+            build_results = run_build(root_dir, reporter, builder, tool_status, args.target, server, args.no_codegen, args.with_coverage)
             test_results.update(build_results)
         
         # TEST stage

@@ -33,6 +33,16 @@ endif()
 add_executable(cpp_test tests/cpp_test.cpp)
 target_link_libraries(cpp_test fusion_hawking_cpp)
 
+option(FUSION_ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
+
+if(FUSION_ENABLE_COVERAGE)
+    if(NOT WIN32)
+        # Linux (GCC/Clang) coverage flags
+        add_compile_options(--coverage)
+        add_link_options(--coverage)
+    endif()
+endif()
+
 if(WIN32)
     target_link_libraries(fusion_hawking_cpp ws2_32)
     target_compile_definitions(fusion_hawking_cpp PRIVATE _WINSOCK_DEPRECATED_NO_WARNINGS)

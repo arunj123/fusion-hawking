@@ -41,13 +41,16 @@ class Builder:
         cmd_demo = ["cargo", "build"]
         return self.run_command(cmd_demo, "build_rust_demo", cwd="examples/integrated_apps/rust_app")
 
-    def build_cpp(self):
+    def build_cpp(self, with_coverage=False):
         # Core Library + Simple Bins + Tests (Root CMake)
         build_dir = "build"
         if not os.path.exists(build_dir):
             os.makedirs(build_dir)
             
         cmake_config = ["cmake", "..", "-DCMAKE_BUILD_TYPE=Release"]
+        if with_coverage:
+            cmake_config.append("-DFUSION_ENABLE_COVERAGE=ON")
+            
         if not self.run_command(cmake_config, "build_cpp_config", cwd=build_dir):
             return False
             
