@@ -51,15 +51,18 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
     sockaddr_in sd_addr = {0};
     sd_addr.sin_family = AF_INET;
     sd_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    sd_addr.sin_port = htons(30490);
+    sd_addr.sin_port = htons(config.sd.multicast_port);
     if (bind(sd_sock, (struct sockaddr*)&sd_addr, sizeof(sd_addr)) < 0) {
-        this->logger->Log(LogLevel::ERR, "Runtime", "Failed to bind SD socket to port 30490");
-        // Don't crash, but log error
+        this->logger->Log(LogLevel::ERR, "Runtime", "Failed to bind SD socket to port " + std::to_string(config.sd.multicast_port));
+        exit(1);
     }
     ip_mreq mreq;
     mreq.imr_multiaddr.s_addr = inet_addr("224.0.0.1");
     mreq.imr_interface.s_addr = inet_addr(config.ip.c_str());
-    setsockopt(sd_sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, (const char*)&mreq, sizeof(mreq));
+    if (setsockopt(sd_sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, (const char*)&mreq, sizeof(mreq)) < 0) {
+        this->logger->Log(LogLevel::ERR, "Runtime", "Critical: Failed to join multicast group 224.0.0.1 on " + config.ip);
+        exit(1);
+    }
     in_addr if_addr;
     if_addr.s_addr = inet_addr(config.ip.c_str());
     setsockopt(sd_sock, IPPROTO_IP, IP_MULTICAST_IF, (const char*)&if_addr, sizeof(if_addr));
@@ -149,7 +152,7 @@ void SomeIpRuntime::SendOffer(uint16_t service_id, uint16_t instance_id, uint16_
     sockaddr_in dest;
     dest.sin_family = AF_INET;
     dest.sin_addr.s_addr = inet_addr("224.0.0.1");
-    dest.sin_port = htons(30490);
+    dest.sin_port = htons(config.sd.multicast_port);
     sendto(sd_sock, (const char*)buffer.data(), (int)buffer.size(), 0, (struct sockaddr*)&dest, sizeof(dest));
 }
 
@@ -204,7 +207,7 @@ void SomeIpRuntime::subscribe_eventgroup(uint16_t service_id, uint16_t instance_
     sockaddr_in dest;
     dest.sin_family = AF_INET;
     dest.sin_addr.s_addr = inet_addr("224.0.0.1");
-    dest.sin_port = htons(30490);
+    dest.sin_port = htons(config.sd.multicast_port);
     sendto(sd_sock, (const char*)buffer.data(), (int)buffer.size(), 0, (struct sockaddr*)&dest, sizeof(dest));
     subscriptions[{service_id, eventgroup_id}] = false;
     this->logger->Log(LogLevel::DEBUG, "SD", "Sent SubscribeEventgroup for " + std::to_string(service_id));
@@ -234,53 +237,43 @@ void SomeIpRuntime::Run() {
         sockaddr_in src;
         int len = sizeof(src);
         int bytes = recvfrom(sock, buf, sizeof(buf), 0, (struct sockaddr*)&src, (SOCKLEN_T*)&len);
-        if (bytes >= 16) {
-            std::vector<uint8_t> hdr_data(buf, buf+16);
-            SomeIpHeader header = SomeIpHeader::deserialize(hdr_data);
-            if ((header.msg_type == 0x00 || header.msg_type == 0x01) && services.find(header.service_id) != services.end()) {
-                std::vector<uint8_t> payload(buf + 16, buf + bytes);
-                auto res_payload = services[header.service_id]->handle(header, payload);
-                if (!res_payload.empty()) {
-                    SomeIpHeader res_header = header;
-                    res_header.length = (uint32_t)res_payload.size() + 8;
-                    res_header.msg_type = 0x80;
-                    auto hdr_bytes = res_header.serialize();
-                    std::vector<uint8_t> msg = hdr_bytes;
-                    msg.insert(msg.end(), res_payload.begin(), res_payload.end());
-                    sendto(sock, (const char*)msg.data(), (int)msg.size(), 0, (struct sockaddr*)&src, sizeof(src));
+        if (bytes > 0) {
+            if (bytes >= 16) {
+                std::vector<uint8_t> hdr_data(buf, buf+16);
+                SomeIpHeader header = SomeIpHeader::deserialize(hdr_data);
+                if ((header.msg_type == 0x00 || header.msg_type == 0x01) && services.find(header.service_id) != services.end()) {
+                    std::vector<uint8_t> payload(buf + 16, buf + bytes);
+                    auto res_payload = services[header.service_id]->handle(header, payload);
+                    if (!res_payload.empty()) {
+                        SomeIpHeader res_header = header;
+                        res_header.length = (uint32_t)res_payload.size() + 8;
+                        res_header.msg_type = 0x80;
+                        auto hdr_bytes = res_header.serialize();
+                        std::vector<uint8_t> msg = hdr_bytes;
+                        msg.insert(msg.end(), res_payload.begin(), res_payload.end());
+                        sendto(sock, (const char*)msg.data(), (int)msg.size(), 0, (struct sockaddr*)&src, sizeof(src));
+                    }
+                } else if (header.msg_type == 0x80) {
+                     // Handle Response
+                     std::lock_guard<std::mutex> lock(pending_requests_mutex);
+                     for (auto& pair : pending_requests) {
+                          if (std::get<0>(pair.first) == header.service_id && std::get<1>(pair.first) == header.method_id) {
+                               std::vector<uint8_t> payload(buf + 16, buf + bytes);
+                               {
+                                   std::lock_guard<std::mutex> lk(pair.second->mtx);
+                                   pair.second->payload = payload;
+                                   pair.second->completed = true;
+                               }
+                               pair.second->cv.notify_one();
+                          }
+                     }
                 }
-            } else if (header.msg_type == 0x80) {
-                 // Handle Response
-                 std::lock_guard<std::mutex> lock(pending_requests_mutex);
-                 auto it = pending_requests.find({header.service_id, header.method_id, header.client_id});
-                 // Client ID logic might need improvement if we use session ID matching strictly
-                 // For now, let's assume unique Service/Method/Client tuple or just Service/Method if client is us (0)
-                 // But wait, client_id is typically 0 for our client?
-                 // Let's match purely on service/method and assuming we are the unique client for now or check session id?
-                 // Simplification: Iterate pending requests to find match?
-                 // Or just trust the tuple.
-                 
-                 // Better: Match by Service/Method/SessionID? Or just Service/Method since we are simple.
-                 // Let's iterate values since we don't track session ID well yet.
-                 for (auto& pair : pending_requests) {
-                      if (std::get<0>(pair.first) == header.service_id && std::get<1>(pair.first) == header.method_id) {
-                           // Found it
-                           std::vector<uint8_t> payload(buf + 16, buf + bytes);
-                           {
-                               std::lock_guard<std::mutex> lk(pair.second->mtx);
-                               pair.second->payload = payload;
-                               pair.second->completed = true;
-                           }
-                           pair.second->cv.notify_one();
-                           // Don't break, technically could be multiple if mismatch, but for this demo one is fine.
-                           // Actually we should remove it? No, let the waiter remove it.
-                      }
-                 }
             }
         }
         bytes = recvfrom(sd_sock, buf, sizeof(buf), 0, NULL, NULL);
-        if (bytes >= 24) { 
-            uint32_t len_entries = (uint8_t(buf[16+4]) << 24) | (uint8_t(buf[16+5]) << 16) | (uint8_t(buf[16+6]) << 8) | uint8_t(buf[16+7]);
+        if (bytes > 0) {
+            if (bytes >= 24) { 
+                uint32_t len_entries = (uint8_t(buf[16+4]) << 24) | (uint8_t(buf[16+5]) << 16) | (uint8_t(buf[16+6]) << 8) | uint8_t(buf[16+7]);
             int offset = 16 + 8; 
             int end_entries = offset + len_entries;
             if (bytes >= end_entries + 4) { 
@@ -358,7 +351,7 @@ void SomeIpRuntime::Run() {
                                     sockaddr_in dest = {0};
                                     dest.sin_family = AF_INET;
                                     dest.sin_addr.s_addr = inet_addr("224.0.0.1");
-                                    dest.sin_port = htons(30490);
+                                    dest.sin_port = htons(config.sd.multicast_port);
                                     sendto(sd_sock, (const char*)abuf.data(), (int)abuf.size(), 0, (struct sockaddr*)&dest, sizeof(dest));
                                 }
                             }
@@ -401,11 +394,11 @@ std::vector<uint8_t> SendRequestGlue(void* rt_ptr, uint16_t service_id, uint16_t
     sockaddr_in target;
     {
          int retries = 0;
-         while (!rt->get_remote_service(service_id, target) && retries < 5) {
+         while (!rt->get_remote_service(service_id, target) && retries < 50) {
              std::this_thread::sleep_for(std::chrono::milliseconds(100));
              retries++;
          }
-         if (retries >= 5) {
+         if (retries >= 50) {
               // Try one last time or just fail
               if (!rt->get_remote_service(service_id, target)) {
                   if(rt->logger) rt->logger->Log(LogLevel::WARN, "Glue", "Service not found 0x" + std::to_string(service_id));
