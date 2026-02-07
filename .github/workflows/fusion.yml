@@ -113,6 +113,8 @@ jobs:
         path: build/generated
     - name: Run Build C++
       run: python -m tools.fusion.main --stage build --target cpp --no-codegen --no-dashboard
+    - name: Remove .gitignore (Force Upload)
+      run: rm .gitignore || true
     - name: Upload C++ Artifacts
       uses: actions/upload-artifact@v4
       with:

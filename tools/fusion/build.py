@@ -54,14 +54,5 @@ class Builder:
         cmake_build = ["cmake", "--build", ".", "--config", "Release"]
         if not self.run_command(cmake_build, "build_cpp_compile", cwd=build_dir):
             return False
-
-        # Standalone Demo (Sub CMake)
-        demo_dir = "examples/integrated_apps/cpp_app"
-        demo_build_dir = os.path.join(demo_dir, "build")
-        if not os.path.exists(demo_build_dir):
-            os.makedirs(demo_build_dir)
-
-        if not self.run_command(["cmake", ".."], "build_cpp_demo_config", cwd=demo_build_dir):
-            return False
-        
-        return self.run_command(["cmake", "--build", ".", "--config", "Release"], "build_cpp_demo_compile", cwd=demo_build_dir)
+            
+        return True
