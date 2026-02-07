@@ -53,7 +53,7 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
     sd_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     sd_addr.sin_port = htons(30490);
     if (bind(sd_sock, (struct sockaddr*)&sd_addr, sizeof(sd_addr)) < 0) {
-        this->logger->Log(LogLevel::ERROR, "Runtime", "Failed to bind SD socket to port 30490");
+        this->logger->Log(LogLevel::ERR, "Runtime", "Failed to bind SD socket to port 30490");
         // Don't crash, but log error
     }
     ip_mreq mreq;
