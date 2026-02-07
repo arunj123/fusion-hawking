@@ -179,13 +179,13 @@ jobs:
       with:
         name: artifact-codegen
         path: build/generated
-    - name: Restore Permissions
-      run: chmod +x target/release/* target/debug/* build/* || true
     - name: Download C++ Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-cpp
         path: build
+    - name: Restore Permissions
+      run: chmod +x build/* target/release/* target/debug/* || true
     - name: Install Pytest
       run: pip install pytest
     - name: Run Python Unit Tests
@@ -322,7 +322,7 @@ jobs:
         name: artifact-cpp
         path: build
     - name: Restore Permissions
-      run: chmod +x build/release/* target/debug/* || true
+      run: chmod +x build/* target/debug/* || true
     - name: Run PubSub Demo
       run: python -m tools.fusion.main --stage demos --demo pubsub --base-port 200 --no-dashboard
     - name: Upload Logs
