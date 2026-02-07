@@ -100,9 +100,15 @@ class SomeIpRuntime:
         self.logger.log(LogLevel.INFO, "Runtime", f"Initialized '{instance_name}' on port {self.port}")
         
         # SD Socket
+        self.sd_pub_port = 30490
+        self.sd_multicast_ip = "224.0.0.1"
+        if self.config and 'sd' in self.config:
+            self.sd_pub_port = self.config['sd'].get('multicast_port', 30490)
+            self.sd_multicast_ip = self.config['sd'].get('multicast_ip', "224.0.0.1")
+
         self.sd_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sd_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.sd_sock.bind(('0.0.0.0', 30490))
+        self.sd_sock.bind(('0.0.0.0', self.sd_pub_port))
         # Get interface IP from config (mandatory)
         interface_ip = self.config.get('ip', '127.0.0.1') if self.config else '127.0.0.1'
         # Join Multicast on configured interface
@@ -359,7 +365,7 @@ class SomeIpRuntime:
                      sh = struct.pack(">HHIHH4B", 0xFFFF, 0x8100, plen, 0, 1, 1, 1, 2, 0)
                      
                      # Send to Multicast (or Unicast if we implemented it properly)
-                     self.sd_sock.sendto(sh + ack_payload, ("224.0.0.1", 30490))
+                     self.sd_sock.sendto(sh + ack_payload, (self.sd_multicast_ip, self.sd_pub_port))
                     
             elif entry_type == 0x07: # SubscribeEventgroupAck
                 eventgroup_id = min_ver >> 16
@@ -395,7 +401,7 @@ class SomeIpRuntime:
         
         payload_len = len(sd_payload) + 8
         someip_header = struct.pack(">HHIHH4B", 0xFFFF, 0x8100, payload_len, 0, 1, 1, 1, 2, 0)
-        self.sd_sock.sendto(someip_header + sd_payload, ("224.0.0.1", 30490))
+        self.sd_sock.sendto(someip_header + sd_payload, (self.sd_multicast_ip, self.sd_pub_port))
         
         self.subscriptions[(service_id, eventgroup_id)] = False
         self.logger.log(LogLevel.DEBUG, "SD", f"Sent SubscribeEventgroup for 0x{service_id:04x}:{eventgroup_id}")
@@ -430,7 +436,7 @@ class SomeIpRuntime:
         
         payload_len = len(sd_payload) + 8
         someip_header = struct.pack(">HHIHH4B", 0xFFFF, 0x8100, payload_len, 0, 1, 1, 1, 2, 0)
-        self.sd_sock.sendto(someip_header + sd_payload, ("224.0.0.1", 30490))
+        self.sd_sock.sendto(someip_header + sd_payload, (self.sd_multicast_ip, self.sd_pub_port))
         self.logger.log(LogLevel.DEBUG, "SD", f"Sent Offer for 0x{service_id:04x}")
 
     def send_request(self, service_id, method_id, payload, target_addr, msg_type=0, wait_for_response=False, timeout=2.0):
@@ -490,12 +496,29 @@ class SomeIpRuntime:
                                 self.request_results[key] = data[16:]
                                 self.pending_requests.pop(key).set()
                 elif s == self.sd_sock:
-                    # Parse SD
-                    if len(data) >= 56:
-                        sid = struct.unpack(">H", data[28:30])[0]
-                        ip_bytes = data[48:52]
-                        ip_str = f"{ip_bytes[0]}.{ip_bytes[1]}.{ip_bytes[2]}.{ip_bytes[3]}"
-                        port = struct.unpack(">H", data[54:56])[0]
-                        if ip_str != '0.0.0.0' and port > 0:
-                            self.remote_services[sid] = (ip_str, port)
-                            self.logger.log(LogLevel.DEBUG, "SD", f"Discovered 0x{sid:04x} at {ip_str}:{port}")
+                    # Parse SD using the robust handler
+                    if len(data) >= 16:
+                        self._handle_sd_packet(data)
+
+    def _wait_for_service(self, service_id: int, alias: str, timeout: float = 5.0) -> Optional[Tuple[str, int]]:
+        """Wait for a service to be discovered via SD, with timeout."""
+        import time
+        start = time.time()
+        poll_interval = 0.1
+        
+        while time.time() - start < timeout:
+            # If we are not running the event loop thread, we must poll manually.
+            # If we are running, the thread handles polling.
+            if not self.running:
+                self._poll_sd()
+            
+            # Check if service is available
+            if service_id in self.remote_services:
+                endpoint = self.remote_services[service_id]
+                self.logger.log(LogLevel.INFO, "Runtime", f"Discovered '{alias}' (0x{service_id:04x}) at {endpoint[0]}:{endpoint[1]}")
+                return endpoint
+            
+            time.sleep(poll_interval)
+        
+        self.logger.log(LogLevel.WARN, "Runtime", f"Timeout waiting for '{alias}' (0x{service_id:04x})")
+        return None

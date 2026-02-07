@@ -30,7 +30,7 @@ This demo simulates a realistic autonomous driving perception pipeline:
 
 ## Design: SOME/IP Event Architecture
 
-![Architecture](images/automotive_pubsub_architecture.png)
+![Architecture](../../docs/images/automotive_pubsub_architecture.png)
 
 <details>
 <summary>View PlantUML Source</summary>
@@ -42,7 +42,7 @@ This demo simulates a realistic autonomous driving perception pipeline:
 
 ## Sequence Diagram: Event Flow
 
-![Sequence](images/automotive_pubsub_sequence.png)
+![Sequence](../../docs/images/automotive_pubsub_sequence.png)
 
 <details>
 <summary>View PlantUML Source</summary>
@@ -54,7 +54,7 @@ This demo simulates a realistic autonomous driving perception pipeline:
 
 ## Data Types
 
-![Types](images/automotive_pubsub_types.png)
+![Types](../../docs/images/automotive_pubsub_types.png)
 
 <details>
 <summary>View PlantUML Source</summary>

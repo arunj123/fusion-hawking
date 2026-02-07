@@ -54,7 +54,7 @@ class Tester:
         # Python
         env = os.environ.copy()
         env["PYTHONPATH"] = os.pathsep.join(["src/python", "build", "build/generated/python"])
-        env["FUSION_LOG_DIR"] = self.reporter.raw_logs_dir
+        env["FUSION_LOG_DIR"] = str(self.reporter.raw_logs_dir)
         
         # 1. Unittest
         with open(self.reporter.get_log_path("test_python_unittest"), "w") as f:

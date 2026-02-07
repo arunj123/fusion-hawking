@@ -31,20 +31,24 @@ def patch_configs(ip, root_dir, port_offset=0):
             with open(path, 'r') as f:
                 data = json.load(f)
             
-            # Recursive update helper
-            def update_node(node):
-                if isinstance(node, dict):
-                    for k, v in node.items():
-                        if k == "ip" and isinstance(v, str):
-                            node[k] = ip
-                        elif k == "port" and isinstance(v, int):
-                            node[k] = v + port_offset
-                        else:
-                            update_node(v)
-                elif isinstance(node, list):
-                    for item in node:
-                        update_node(item)
-            
+            # Specific Instance Patching for SD
+            if "instances" in data:
+                for inst_name, inst_cfg in data["instances"].items():
+                    # 1. Patch Unicast IP
+                    inst_cfg["ip"] = ip
+                    
+                    # 2. Patch SD Config
+                    if "sd" not in inst_cfg:
+                        inst_cfg["sd"] = {}
+                    
+                    # Ensure defaults + offset
+                    base_sd_port = inst_cfg["sd"].get("multicast_port", 30490)
+                    inst_cfg["sd"]["multicast_port"] = base_sd_port + port_offset
+                    
+                    if "multicast_ip" not in inst_cfg["sd"]:
+                        inst_cfg["sd"]["multicast_ip"] = "224.0.0.1"
+
+            # Recursive update for other ports (services)
             update_node(data)
             
             with open(path, 'w') as f:

@@ -79,6 +79,12 @@ class CoverageManager:
         header = f"=== FUSION COVERAGE RUNNER ===\nCommand: {' '.join(cmd)}\nPWD: {os.getcwd()}\n==============================\n\n"
 
         if self._run(cmd, "cpp_integration", header=header):
+            # Cleanup OpenCppCoverage log
+            if os.path.exists("LastCoverageResults.log"):
+                try:
+                    shutil.move("LastCoverageResults.log", os.path.join(self.reporter.raw_logs_dir, "LastCoverageResults.log"))
+                except:
+                    pass
             return "PASS"
         return "FAIL"
 

@@ -89,12 +89,16 @@ impl SomeIpRuntime {
         
         logger.log(LogLevel::Info, "Runtime", &format!("Initializing '{}' on port {}", instance_name, bind_port));
 
-        let sd_multicast: SocketAddr = "224.0.0.1:30490".parse().unwrap();
+        // Use Configured SD Settings
+        let multicast_addr = &instance_config.sd.multicast_ip;
+        let multicast_port = instance_config.sd.multicast_port;
+        
+        let sd_multicast: SocketAddr = format!("{}:{}", multicast_addr, multicast_port).parse().expect("Invalid SD Multicast Config");
         // Bind to multicast port with SO_REUSEADDR for port sharing
-        let sd_bind: SocketAddr = "0.0.0.0:30490".parse().unwrap();
+        let sd_bind: SocketAddr = format!("0.0.0.0:{}", multicast_port).parse().expect("Invalid SD Bind Config");
         let sd_transport = UdpTransport::new_multicast(sd_bind).expect("Failed to bind SD transport");
         // Join multicast group
-        let multicast_ip: Ipv4Addr = "224.0.0.1".parse().unwrap();
+        let multicast_ip: Ipv4Addr = multicast_addr.parse().expect("Invalid Multicast IP");
         let interface_ip: Ipv4Addr = instance_config.ip.parse().unwrap_or("0.0.0.0".parse().unwrap());
         let _ = sd_transport.join_multicast_v4(&multicast_ip, &interface_ip);
         // Set outgoing multicast interface to configured IP
