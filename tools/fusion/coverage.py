@@ -108,27 +108,69 @@ class CoverageManager:
              return "SKIPPED"
 
         print("Generating C++ Coverage (Linux)...")
-        # Assuming build/cpp_test exists (built with --coverage)
+        
+        # Diagnostics: List build directory
+        print("Checking build directory content...")
+        build_dir = "build"
+        if os.path.exists(build_dir):
+            files = []
+            for root, _, filenames in os.walk(build_dir):
+                for f in filenames:
+                    files.append(os.path.relpath(os.path.join(root, f), build_dir))
+            print(f"  [DEBUG] Found {len(files)} files in build/")
+            # Look for the test binary
+            potential_bins = [f for f in files if "cpp_test" in f]
+            print(f"  [DEBUG] Potential test binaries: {potential_bins}")
+        else:
+            print("  [ERROR] build directory not found!")
+            return "FAIL"
+
         cpp_test_exe = "build/cpp_test"
         if not os.path.exists(cpp_test_exe):
-            print("Skipping C++ Coverage (Executable not found).")
-            return "SKIPPED"
+            # Try to find it if it moved
+            found = False
+            for root, _, filenames in os.walk(build_dir):
+                if "cpp_test" in filenames:
+                    cpp_test_exe = os.path.join(root, "cpp_test")
+                    print(f"  [INFO] Found cpp_test at alternative path: {cpp_test_exe}")
+                    found = True
+                    break
+            if not found:
+                print("Skipping C++ Coverage (Executable not found).")
+                return "SKIPPED"
 
         out_dir = os.path.join(self.reporter.coverage_dir, "cpp")
         if not os.path.exists(out_dir):
             os.makedirs(out_dir)
 
         # 1. Reset counters
-        subprocess.run(["lcov", "--directory", "build", "--zerocounters"], check=False)
+        subprocess.run(["lcov", "--directory", build_dir, "--zerocounters"], check=False)
         
         # 2. Run Test
         header = f"=== FUSION C++ COVERAGE TEST RUN ===\n"
+        print(f"  Running test binary: {cpp_test_exe}")
         if not self._run([f"./{cpp_test_exe}"], "cpp_integration_run", header=header):
             print("Warning: C++ test returned non-zero during coverage run")
+            self._dump_log("cpp_integration_run")
+
+        # Diagnostics: Check for .gcda files
+        gcda_files = []
+        for root, _, filenames in os.walk(build_dir):
+            for f in filenames:
+                if f.endswith(".gcda"):
+                    gcda_files.append(os.path.join(root, f))
+        print(f"  [DEBUG] Found {len(gcda_files)} .gcda files after test run.")
+        if len(gcda_files) == 0:
+            print("  [ERROR] No .gcda files generated. Check if binary was built with --coverage and ran successfully.")
+            # Dump test output regardless of return code to see if it actually ran
+            self._dump_log("cpp_integration_run")
 
         # 3. Capture coverage
         info_file = os.path.join(self.reporter.coverage_dir, "cpp", "coverage.info")
-        capture_cmd = ["lcov", "--directory", "build", "--capture", "--output-file", info_file]
+        capture_cmd = ["lcov", "--directory", build_dir, "--capture", "--output-file", info_file]
+        # Base directory might help LCOV 2.0
+        capture_cmd.extend(["--base-directory", os.getcwd()])
+        
         if not self._run(capture_cmd, "cpp_coverage_capture"):
             self._dump_log("cpp_coverage_capture")
             return "FAIL"
