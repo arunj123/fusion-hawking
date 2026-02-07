@@ -45,6 +45,10 @@
                     "instance_id": 1,
                     "major_version": 1
                 }
+            },
+            "sd": {
+                "multicast_port": 30490,
+                "multicast_ip": "224.0.0.1"
             }
         },
         "python_app_instance": {
@@ -86,6 +90,10 @@
                     "instance_id": 1,
                     "major_version": 1
                 }
+            },
+            "sd": {
+                "multicast_port": 30490,
+                "multicast_ip": "224.0.0.1"
             }
         },
         "cpp_app_instance": {
@@ -127,6 +135,10 @@
                     "instance_id": 1,
                     "major_version": 1
                 }
+            },
+            "sd": {
+                "multicast_port": 30490,
+                "multicast_ip": "224.0.0.1"
             }
         }
     }

@@ -108,6 +108,11 @@ class SomeIpRuntime:
 
         self.sd_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sd_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if hasattr(socket, "SO_REUSEPORT"):
+            try:
+                self.sd_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            except OSError:
+                pass
         self.sd_sock.bind(('0.0.0.0', self.sd_pub_port))
         # Get interface IP from config (mandatory)
         interface_ip = self.config.get('ip', '127.0.0.1') if self.config else '127.0.0.1'
