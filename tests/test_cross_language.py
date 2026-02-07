@@ -9,8 +9,17 @@ import shutil
 # Path setup
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # C++ Demo is now in its own sub-build
+# C++ Demo is now in its own sub-build
 CPP_DEMO_DIR = os.path.join(PROJECT_ROOT, "examples", "integrated_apps", "cpp_app")
-CPP_EXE = os.path.join(CPP_DEMO_DIR, "build", "Release", "cpp_app.exe") if os.name == 'nt' else os.path.join(CPP_DEMO_DIR, "build", "cpp_app")
+# Check build artifact location first
+ARTIFACT_BUILD_PATH = os.path.join(PROJECT_ROOT, "build", "examples", "integrated_apps", "cpp_app", "cpp_app")
+LOCAL_BUILD_PATH = os.path.join(CPP_DEMO_DIR, "build", "cpp_app")
+
+if os.name == 'nt':
+    ARTIFACT_BUILD_PATH += ".exe"
+    LOCAL_BUILD_PATH = os.path.join(CPP_DEMO_DIR, "build", "Release", "cpp_app.exe")
+
+CPP_EXE = ARTIFACT_BUILD_PATH if os.path.exists(ARTIFACT_BUILD_PATH) else LOCAL_BUILD_PATH
 
 # Log Directory setup
 LOG_DIR = os.environ.get("FUSION_LOG_DIR", os.getcwd())

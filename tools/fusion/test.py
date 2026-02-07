@@ -24,6 +24,8 @@ class Tester:
             # Root build
             search_paths.append(os.path.join("build", name))
             search_paths.append(os.path.join("build_linux", name))
+            # Nested in build directory (CMake default for add_subdirectory)
+            search_paths.append(os.path.join("build", "examples", "integrated_apps", "cpp_app", name))
             
         for path in search_paths:
             if os.path.isfile(path): return path
