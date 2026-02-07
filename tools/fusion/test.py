@@ -31,6 +31,16 @@ class Tester:
             if os.path.isfile(path): return path
         
         print(f"WARNING: C++ binary '{name}' not found in: {search_paths}")
+        
+        # Debug: List build directory content
+        if os.path.exists("build"):
+            print("DEBUG: Listing 'build' directory content:")
+            for root, dirs, files in os.walk("build"):
+                for f in files:
+                    print(os.path.join(root, f))
+        else:
+            print("DEBUG: 'build' directory does not exist.")
+            
         return None
 
     def run_unit_tests(self):
