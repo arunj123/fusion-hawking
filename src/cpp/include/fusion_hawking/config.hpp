@@ -22,11 +22,17 @@ struct ClientConfig {
     uint16_t static_port = 0;
 };
 
+struct SdConfig {
+    uint16_t multicast_port = 30490;
+    std::string multicast_ip = "224.0.0.1";
+};
+
 struct InstanceConfig {
     std::string ip;
     int ip_version = 4;
     std::map<std::string, ServiceConfig> providing;
     std::map<std::string, ClientConfig> required;
+    SdConfig sd;
 };
 
 class ConfigLoader {
@@ -77,6 +83,23 @@ public:
             }
             ParseRequired(block.substr(r_start, r_end - r_start), config.required);
         }
+
+        size_t sd_pos = block.find("\"sd\"");
+        if (sd_pos != std::string::npos) {
+            size_t s_start = block.find("{", sd_pos);
+            size_t s_end = s_start + 1; int s_depth = 1;
+            while (s_depth > 0 && s_end < block.length()) {
+                if (block[s_end] == '{') s_depth++;
+                else if (block[s_end] == '}') s_depth--;
+                s_end++;
+            }
+            std::string sd_block = block.substr(s_start, s_end - s_start);
+            config.sd.multicast_port = ExtractInt(sd_block, "multicast_port");
+            config.sd.multicast_ip = ExtractString(sd_block, "multicast_ip");
+        }
+        
+        if (config.sd.multicast_port == 0) config.sd.multicast_port = 30490;
+        if (config.sd.multicast_ip.empty()) config.sd.multicast_ip = "224.0.0.1";
         
         config.ip = ExtractString(block, "ip");
         if (config.ip.empty()) config.ip = "127.0.0.1";
