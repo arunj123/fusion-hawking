@@ -45,11 +45,17 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
     sd_sock = socket(AF_INET, SOCK_DGRAM, 0);
     int reuse = 1;
     setsockopt(sd_sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse));
+#ifdef SO_REUSEPORT
+    setsockopt(sd_sock, SOL_SOCKET, SO_REUSEPORT, (const char*)&reuse, sizeof(reuse));
+#endif
     sockaddr_in sd_addr = {0};
     sd_addr.sin_family = AF_INET;
     sd_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     sd_addr.sin_port = htons(30490);
-    bind(sd_sock, (struct sockaddr*)&sd_addr, sizeof(sd_addr));
+    if (bind(sd_sock, (struct sockaddr*)&sd_addr, sizeof(sd_addr)) < 0) {
+        this->logger->Log(LogLevel::ERROR, "Runtime", "Failed to bind SD socket to port 30490");
+        // Don't crash, but log error
+    }
     ip_mreq mreq;
     mreq.imr_multiaddr.s_addr = inet_addr("224.0.0.1");
     mreq.imr_interface.s_addr = inet_addr(config.ip.c_str());

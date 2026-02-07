@@ -148,10 +148,12 @@ class Tester:
             try:
                 # Rust Standalone Demo
                 f_rust = open(rust_log, "w")
+                rust_env = os.environ.copy()
+                rust_env["RUST_LOG"] = "debug"
                 rust_cmd = ["cargo", "run"]
-                f_rust.write(f"=== FUSION TEST RUNNER ===\nCommand: {' '.join(rust_cmd)}\nPWD: {os.path.join(os.getcwd(), 'examples/integrated_apps/rust_app')}\n==========================\n\n")
+                f_rust.write(f"=== FUSION TEST RUNNER ===\nCommand: {' '.join(rust_cmd)}\nPWD: {os.path.join(os.getcwd(), 'examples/integrated_apps/rust_app')}\nEnvironment [RUST_LOG]: debug\n==========================\n\n")
                 f_rust.flush()
-                p_rust = subprocess.Popen(rust_cmd, stdout=f_rust, stderr=subprocess.STDOUT, cwd="examples/integrated_apps/rust_app")
+                p_rust = subprocess.Popen(rust_cmd, stdout=f_rust, stderr=subprocess.STDOUT, env=rust_env, cwd="examples/integrated_apps/rust_app")
                 procs.append(p_rust)
                 time.sleep(2)
                 
@@ -320,6 +322,7 @@ class Tester:
         # Helper logging
         def check(log_name, path, pattern, description):
             found = False
+            content = ""
             if os.path.exists(path):
                 with open(path, "r", errors="ignore") as f:
                     content = f.read()
@@ -333,6 +336,10 @@ class Tester:
                 "log": log_name,
                 "details": f"Checked '{log_name}' for '{pattern}'"
             })
+            
+            if not found:
+                print(f"\n❌ {description} FAILED. Log '{log_name}':\n{'-'*40}\n{content}\n{'-'*40}\n")
+                
             return found
 
         # Rust Checks
@@ -344,7 +351,7 @@ class Tester:
         check("demo_python", py, "Reversing", "RPC: Python String Service")
         
         # C++ Checks
-        check("demo_cpp", cpp, "Math.Add Result:", "RPC: C++ Client -> Rust Math")
+        check("demo_cpp", cpp, "Math.Add Result", "RPC: C++ Client -> Rust Math")
         check("demo_cpp", cpp, "Sorting 5 items", "RPC: Python -> C++ Sort")
         check("demo_cpp", cpp, "Sorting 3 items", "RPC: Rust -> C++ Sort")
         check("demo_cpp", cpp, "Field 'status' changed", "Field: C++ Service Update")
