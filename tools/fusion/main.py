@@ -156,11 +156,27 @@ def main():
             for d in dirs_to_clean:
                 path = os.path.join(root_dir, d)
                 if os.path.exists(path):
-                    print(f"Removing {d}...")
-                    try:
-                        shutil.rmtree(path)
-                    except Exception as e:
-                        print(f"[WARN] Failed to remove {d}: {e}")
+                    # Special case: don't delete build/generated if we are cleaning 'build'
+                    # as it might have been provided by a previous CI stage
+                    if d == "build" and os.path.exists(os.path.join(path, "generated")):
+                        print(f"Cleaning {d} but preserving {d}/generated...")
+                        for item in os.listdir(path):
+                            if item == "generated":
+                                continue
+                            item_path = os.path.join(path, item)
+                            try:
+                                if os.path.isdir(item_path):
+                                    shutil.rmtree(item_path)
+                                else:
+                                    os.remove(item_path)
+                            except Exception as e:
+                                print(f"[WARN] Failed to remove {item_path}: {e}")
+                    else:
+                        print(f"Removing {d}...")
+                        try:
+                            shutil.rmtree(path)
+                        except Exception as e:
+                            print(f"[WARN] Failed to remove {d}: {e}")
             print("Cleanup complete.\n")
 
         # Stage-based execution
