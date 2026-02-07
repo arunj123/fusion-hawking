@@ -1,0 +1,14 @@
+@startuml simple_no_sd_sequence
+participant "Simple Client" as C
+participant "Simple Server" as S
+
+C -> C: Construct Header\n(Service 0x1234, Method 0x0001)
+C -> S: UDP Send to 127.0.0.1:4000X
+note right: Payload: "Hello"
+
+S -> S: Parse Header
+S -> S: Verify Message Type (0x00)
+S -> S: Construct Response
+S -> C: UDP Send Response (Type 0x80)
+note left: Payload: "OK"
+@enduml

@@ -7,12 +7,19 @@ class CoverageManager:
         self.reporter = reporter
         self.toolchains = toolchains
 
-    def run_coverage(self):
+    def run_coverage(self, target="all"):
         print("\n--- Running Coverage ---")
         results = {}
-        results['coverage_rust'] = self._run_rust_coverage()
-        results['coverage_python'] = self._run_python_coverage()
-        results['coverage_cpp'] = self._run_cpp_coverage()
+        
+        if target in ["all", "rust"]:
+            results['coverage_rust'] = self._run_rust_coverage()
+            
+        if target in ["all", "python"]:
+            results['coverage_python'] = self._run_python_coverage()
+            
+        if target in ["all", "cpp"]:
+            results['coverage_cpp'] = self._run_cpp_coverage()
+            
         return results
         
     def _run_rust_coverage(self):

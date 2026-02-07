@@ -48,6 +48,22 @@ This will:
 ./fusion.sh
 ```
 
+### 3. Advanced Usage (CLI)
+
+The automation tool supports granular execution:
+
+```bash
+# Run specific demo
+python -m tools.fusion.main --stage demos --demo simple      # Run Simple Demo
+python -m tools.fusion.main --stage demos --demo integrated  # Run Integrated Demo
+python -m tools.fusion.main --stage demos --demo pubsub      # Run PubSub Demo
+
+# Run specific build stages
+python -m tools.fusion.main --stage codegen                  # Generate bindings only
+python -m tools.fusion.main --stage build --target rust      # Build Rust only
+python -m tools.fusion.main --stage test --target cpp        # Test C++ only
+```
+
 ## Architecture
 
 - **`src/`**: Core source code (Rust, Python, C++).

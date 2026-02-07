@@ -1,0 +1,36 @@
+@startuml automotive_pubsub_types
+skinparam backgroundColor #FEFEFE
+skinparam classAttributeIconSize 0
+
+class RadarObject {
+    +id: int
+    +range_m: float
+    +velocity_mps: float
+    +azimuth_deg: float
+}
+
+class FusedTrack {
+    +track_id: int
+    +position_x: float
+    +position_y: float
+    +velocity_x: float
+    +velocity_y: float
+    +confidence: float
+}
+
+class RadarService <<service 0x7001>> {
+    +on_object_detected(objects: RadarObject[])
+    +detection_count: int <<field>>
+}
+
+class FusionService <<service 0x7002>> {
+    +on_track_updated(tracks: FusedTrack[])
+    +get_active_tracks(): FusedTrack[]
+    +reset_tracks(): bool
+}
+
+RadarService ..> RadarObject : publishes
+FusionService ..> FusedTrack : publishes
+FusionService ..> RadarObject : subscribes to
+
+@enduml

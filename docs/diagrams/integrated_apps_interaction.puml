@@ -1,0 +1,15 @@
+@startuml integrated_apps_interaction
+component "Rust App" as R
+component "Python App" as P
+component "C++ App" as Cpp
+
+interface "UDP / SD" as Net
+
+R -down-> Net : Offer MathService
+P -up-> Net : Find MathService
+Cpp -up-> Net : Subscribe Events
+
+P -> R : Request (Method Call)
+R -> P : Response
+R -> Cpp : Notification (Event)
+@enduml

@@ -111,32 +111,13 @@ Configuration auto-detects IP version from address format:
 
 ## 5. Concurrency Model
 
-```plantuml
-@startuml
-skinparam backgroundColor #FEFEFE
+![Concurrency Model](images/concurrency_model.png)
 
-rectangle "Main Loop" as Main {
-    rectangle "Non-blocking recv()" as Recv
-    rectangle "SD Poll" as SD
-}
+<details>
+<summary>View PlantUML Source</summary>
 
-rectangle "Thread Pool" as Pool {
-    rectangle "Worker 1" as W1
-    rectangle "Worker 2" as W2
-    rectangle "Worker N" as WN
-}
-
-Recv --> Pool : dispatch request
-SD --> Main : timer events
-W1 --> Main : send response
-
-note right of Pool
-  - Rust: Custom ThreadPool
-  - C++: std::vector<std::thread>
-  - Python: ThreadPoolExecutor
-end note
-@enduml
-```
+[concurrency_model.puml](diagrams/concurrency_model.puml)
+</details>
 
 **Key Principles:**
 - All sockets set to non-blocking

@@ -1,0 +1,19 @@
+{
+  "cicd_pipeline": "e13636a0b999545e61dc9ad2057b6b63",
+  "codegen_pipeline": "62d166f5a067015a2d0111f2a5d78efa",
+  "concurrency_model": "4f428583d0c6cc8a1fcc8b4e98870c76",
+  "deployment_topology": "1bc574198f5b99eb0000410503ac400e",
+  "layered_architecture": "224aed9b38e912492d6f4f9daf82a250",
+  "request_response_flow": "9008fb9b4f4cc1498f8ee147d4439bc3",
+  "sd_state_machine": "3f05759158d7854d393ccc5a9a8b6aae",
+  "someip_header_format": "da40da0c4f334560acebcbf588d1a50e",
+  "subscription_flow": "197ce669d4a5da9f71995054587dd7b0",
+  "system_overview": "828f76a22d80669f53ec5f20cefe7c95",
+  "cross_language_runtimes": "51c8c0646842aee3974b21f1dfa759ba",
+  "integrated_apps_interaction": "354c41ae6e8b44acf2662001f14b22a9",
+  "sd_demo_sequence": "21022d4b4665ab0ad6d190a2d56a2b7f",
+  "simple_no_sd_sequence": "5e85b71e662ec9e34823b9117571f1c6",
+  "automotive_pubsub_architecture": "c7abc4a77a92eba096c8e29abaf2aba8",
+  "automotive_pubsub_sequence": "aa215166ed45e267016cc294248d8b7d",
+  "automotive_pubsub_types": "be5d726f0463c776c755ee4052e80d89"
+}

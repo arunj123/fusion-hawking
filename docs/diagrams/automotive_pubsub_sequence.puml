@@ -1,0 +1,31 @@
+@startuml automotive_pubsub_sequence
+skinparam backgroundColor #FEFEFE
+skinparam sequenceArrowThickness 2
+
+participant "RadarService\n(C++)" as R #FFB3B3
+participant "FusionService\n(Rust)" as F #B3D9FF
+participant "ADAS App\n(Python)" as A #B3FFB3
+
+== Initialization ==
+R -> R : offer_service("radar-service")
+F -> R : subscribe_eventgroup(0x7001, 1)
+F -> F : offer_service("fusion-service")
+A -> F : subscribe_eventgroup(0x7002, 1)
+
+== Runtime Event Loop ==
+loop Every 100ms
+    R -> R : SimulateScan()
+    R ->> F : **on_object_detected**(RadarObject[])
+    note right of R : SOME/IP Event\nType: 0x02
+    
+    F -> F : ProcessRadarData()
+    F -> F : UpdateTracks()
+    F ->> A : **on_track_updated**(FusedTrack[])
+    
+    A -> A : CheckCollisionWarning()
+    alt distance < 10m
+        A -> A : Log Warning
+    end
+end
+
+@enduml

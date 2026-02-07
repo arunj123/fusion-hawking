@@ -15,26 +15,54 @@ jobs:
   # ============================================
   # Stage 1: Build (Rust, C++, Codegen)
   # ============================================
-  build:
+  # ============================================
+  # Stage 1: Codegen (Generate Bindings)
+  # ============================================
+  codegen:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v5
+    - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
-
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+    - name: Run Codegen
+      run: python -m tools.fusion.main --stage codegen --no-dashboard
+    - name: Upload Codegen Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: artifact-codegen
+        path: build/generated/
+        retention-days: 1
+    - name: Upload Logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: logs-codegen
+        path: logs/
 
+  # ============================================
+  # Stage 1.1: Build Core (Rust + Python Bindings)
+  # ============================================
+  build-core:
+    needs: codegen
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
     - name: Set up Rust
       uses: dtolnay/rust-toolchain@stable
       with:
         components: llvm-tools-preview
-
     - name: Cache Rust build
       uses: actions/cache@v4
       with:
@@ -43,155 +71,509 @@ jobs:
           ~/.cargo/git
           target
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-    - name: Run Build Stage
-      run: |
-        chmod +x fusion.sh
-        ./fusion.sh --stage build --no-dashboard
-
-    - name: Upload build artifacts
+    - name: Download Codegen Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-codegen
+        path: build/generated
+    - name: Run Build Core
+      run: python -m tools.fusion.main --stage build --target rust --no-codegen --no-dashboard
+    - name: Upload Core Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: build-artifacts
-        path: |
-          target/
-          build/
+        name: artifact-core
+        path: target/
         retention-days: 1
+    - name: Upload Logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: logs-build-core
+        path: logs/
+
+  # ============================================
+  # Stage 1.2: Build C++
+  # ============================================
+  build-cpp:
+    needs: codegen
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    - name: Download Codegen Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-codegen
+        path: build/generated
+    - name: Run Build C++
+      run: python -m tools.fusion.main --stage build --target cpp --no-codegen --no-dashboard
+    - name: Upload C++ Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: artifact-cpp
+        path: build/
+        retention-days: 1
+    - name: Upload Logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: logs-build-cpp
+        path: logs/
 
   # ============================================
   # Stage 2: Test (depends on build)
   # ============================================
-  test:
+
+  unit-test-rust:
+    needs: build-core
     runs-on: ubuntu-latest
-    needs: build
     steps:
     - uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v5
+    - uses: actions/setup-python@v5
       with:
-        python-version: '3.12'
-
-    - name: Install Python dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-
-    - name: Set up Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: llvm-tools-preview
-
-    - name: Install cargo-llvm-cov
-      run: cargo install cargo-llvm-cov
-
-    - name: Download build artifacts
+        python-version: '3.10'
+    - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
-        name: build-artifacts
-
-    - name: Run Test Stage
-      run: |
-        chmod +x fusion.sh
-        ./fusion.sh --stage test --no-dashboard
-
-    - name: Run Coverage Stage
-      run: |
-        ./fusion.sh --stage coverage --no-dashboard
-
-    - name: Upload test logs
+        name: artifact-core
+        path: target
+    - name: Restore Permissions
+      run: chmod +x build/release/* target/release/* || true
+    - name: Run Rust Unit Tests
+      run: python -m tools.fusion.main --stage test --target rust --no-dashboard
+    - name: Upload Logs
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: test-logs
+        name: logs-unit-rust
+        path: logs/
+
+  unit-test-python:
+    needs: build-core
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    - name: Download Core Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-core
+        path: target
+    - name: Install Pytest
+      run: pip install pytest
+    - name: Run Python Unit Tests
+      run: python -m tools.fusion.main --stage test --target python --no-dashboard
+    - name: Upload Logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: logs-unit-python
+        path: logs/
+
+  unit-test-cpp:
+    needs: [codegen, build-cpp]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    - name: Download Codegen Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-codegen
+        path: build/generated
+    - name: Download C++ Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-cpp
+        path: build
+    - name: Restore Permissions
+      run: chmod +x build/* || true
+    - name: Run C++ Unit Tests
+      run: python -m tools.fusion.main --stage test --target cpp --no-dashboard
+    - name: Upload Logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: logs-unit-cpp
+        path: logs/
+
+  demo-simple:
+    needs: [build-core, build-cpp]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    - name: Download Core Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-core
+        path: target
+    - name: Download C++ Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-cpp
+        path: build
+    - name: Restore Permissions
+      run: chmod +x target/release/* || true
+    - name: Run Simple Demo
+      run: python -m tools.fusion.main --stage demos --demo simple --no-dashboard
+    - name: Upload Logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: logs-demo-simple
+        path: logs/
+
+  demo-integrated:
+    needs: [codegen, build-core, build-cpp]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    - name: Download Codegen Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-codegen
+        path: build/generated
+    - name: Download Core Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-core
+        path: target
+    - name: Download C++ Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-cpp
+        path: build
+    - name: Restore Permissions
+      run: chmod +x build/release/* examples/integrated_apps/cpp_app/build/release/* || true
+    - name: Run Integrated Demo
+      run: python -m tools.fusion.main --stage demos --demo integrated --no-dashboard
+    - name: Upload Logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: logs-demo-integrated
+        path: logs/
+
+  demo-pubsub:
+    needs: [codegen, build-core, build-cpp]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    - name: Download Codegen Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-codegen
+        path: build/generated
+    - name: Download Core Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-core
+        path: target
+    - name: Download C++ Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-cpp
+        path: build
+    - name: Restore Permissions
+      run: chmod +x build/release/* || true
+    - name: Run PubSub Demo
+      run: python -m tools.fusion.main --stage demos --demo pubsub --no-dashboard
+    - name: Upload Logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: logs-demo-pubsub
+        path: logs/
+
+  coverage:
+    needs: [codegen, build-core, build-cpp]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    - name: Download Codegen Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-codegen
+        path: build/generated
+    - name: Download Core Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-core
+        path: target
+    - name: Download C++ Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-cpp
+        path: build
+    - name: Install Coverage Tools
+      run: |
+        pip install pytest pytest-cov
+        curl -LsSf https://github.com/taiki-e/cargo-llvm-cov/releases/latest/download/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz | tar xzf - -C ~/.cargo/bin || true
+    - name: Restore Permissions
+      run: chmod +x build/* || true
+    - name: Run Coverage
+      run: python -m tools.fusion.main --stage coverage --no-dashboard
+    - name: Upload Logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: logs-coverage
         path: logs/
 
   # ============================================
   # Stage 3: Generate Documentation (depends on build)
   # ============================================
   docs:
+    needs: [codegen, build-core, build-cpp, unit-test-rust, unit-test-cpp, unit-test-python, demo-simple, demo-integrated, demo-pubsub, coverage]
     runs-on: ubuntu-latest
-    needs: build
+    permissions:
+      pages: write
+      id-token: write
     steps:
     - uses: actions/checkout@v4
+    
+    - name: Download All Logs
+      uses: actions/download-artifact@v4
+      with:
+        pattern: logs-*
+        path: logs
+        merge-multiple: true
 
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.12'
-
-    - name: Install Python dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        python-version: '3.10'
+        
+    - name: Install dependencies
+      run: pip install plantuml markdown
 
     - name: Generate Diagrams
-      run: |
-        chmod +x fusion.sh
-        ./fusion.sh --stage docs --no-dashboard
+      run: python -m tools.fusion.main --stage diagrams --no-dashboard
 
     - name: Prepare GitHub Pages content
       run: |
-        mkdir -p _site
-        # Copy documentation
-        cp -r docs/* _site/
+        mkdir -p _site/images _site/diagrams _site/reports
+        
+        # Copy documentation markdown files
+        cp docs/*.md _site/
         cp README.md _site/
-        # Create index.html redirect
+        cp examples/README.md _site/examples.md
+        cp examples/automotive_pubsub/README.md _site/automotive_pubsub.md
+        
+        # Copy generated images
+        cp -r docs/images/* _site/images/ 2>/dev/null || true
+        
+        # Copy diagram sources
+        cp -r docs/diagrams/*.puml _site/diagrams/ 2>/dev/null || true
+        
+        # Copy test reports (find latest log directory)
+        if [ -d "logs" ]; then
+          # Since we merged multiple logs, they might be in logs/logs-unit-rust etc?
+          # download-artifact with merge-multiple: true and path: logs
+          # If I uploaded path: logs/, and logs/ contained a timestamped subfolder...
+          # The upload-artifact behavior:
+          # "path: logs/" -> uploads contents of logs/.
+          # If logs/ contains "2024...", then artifact contains "2024...".
+          # If we download multiple artifacts into "logs", we get multiple "2024..." folders?
+          # Each job runs concurrently, so they might have slightly different timestamps.
+          # Or if they are exact same time?
+          # Reporter uses datetime.now() at init.
+          # They will likely be different.
+          # So we will have multiple folders in _site/reports/.
+          # We should copy ALL of them.
+          cp -r logs/* _site/reports/ 2>/dev/null || true
+        fi
+
+    - name: Convert Markdown to HTML
+      run: |
+        pip install markdown
+        
+        # Create conversion script
+        cat > convert_md.py << 'PYEOF'
+        import os
+        import re
+        import markdown
+        from pathlib import Path
+        
+        def convert_links(html):
+            """Convert .md links to .html links"""
+            # href="something.md" -> href="something.html"
+            html = re.sub(r'href="([^"]+)\.md(#[^"]*)?"\s*>', r'href="\1.html\2">', html)
+            # href="../docs/something.md" -> href="something.html" (flattened structure)
+            html = re.sub(r'href="(?:\.\./)?docs/([^"]+)\.md(#[^"]*)?"\s*>', r'href="\1.html\2">', html)
+            # href="examples/README.md" -> href="examples.html"
+            html = re.sub(r'href="examples/README.md(#[^"]*)?"\s*>', r'href="examples.html\2">', html)
+            # href="automotive_pubsub/README.md" -> href="automotive_pubsub.html"
+            html = re.sub(r'href="automotive_pubsub/README.md(#[^"]*)?"\s*>', r'href="automotive_pubsub.html\2">', html)
+            return html
+        
+        def convert_image_paths(html):
+            """Fix image paths for flat directory structure"""
+            # ../../docs/images/foo.png -> images/foo.png (for deep examples)
+            html = html.replace('../../docs/images/', 'images/')
+            html = html.replace('../../docs/diagrams/', 'diagrams/')
+            # ../docs/images/foo.png -> images/foo.png
+            html = html.replace('../docs/images/', 'images/')
+            html = html.replace('../docs/diagrams/', 'diagrams/')
+            # images/foo.png stays as images/foo.png
+            return html
+        
+        # Process all markdown files
+        for md_file in Path('_site').glob('*.md'):
+            name = md_file.stem
+            print(f"Converting {md_file.name} to {name}.html")
+            
+            content = md_file.read_text(encoding='utf-8')
+            
+            # Convert markdown to HTML
+            html_body = markdown.markdown(
+                content, 
+                extensions=['tables', 'fenced_code', 'toc', 'attr_list']
+            )
+            
+            # Fix links and image paths
+            html_body = convert_links(html_body)
+            html_body = convert_image_paths(html_body)
+            
+            # Create full HTML page
+            html = f'''<!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>{name} - Fusion Hawking</title>
+          <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5/github-markdown.min.css">
+          <style>
+            .markdown-body {{ max-width: 980px; margin: 0 auto; padding: 20px; }}
+            img {{ max-width: 100%; }}
+            pre {{ background: #1e1e1e; padding: 16px; border-radius: 6px; overflow-x: auto; }}
+            code {{ background: #1e1e1e; padding: 2px 6px; border-radius: 3px; }}
+            details {{ margin: 10px 0; padding: 10px; background: #161b22; border-radius: 6px; }}
+            summary {{ cursor: pointer; font-weight: bold; }}
+            nav {{ background: #21262d; padding: 10px 20px; margin: -20px -20px 20px -20px; border-radius: 6px 6px 0 0; }}
+            nav a {{ color: #58a6ff; margin-right: 15px; text-decoration: none; }}
+            nav a:hover {{ text-decoration: underline; }}
+          </style>
+        </head>
+        <body class="markdown-body">
+          <nav>
+            <a href="index.html">Home</a>
+            <a href="architecture.html">Architecture</a>
+            <a href="user_guide.html">User Guide</a>
+            <a href="IDL.html">IDL</a>
+            <a href="design_and_requirements.html">Design</a>
+            <a href="examples.html">Examples</a>
+            <a href="test_matrix.html">Tests</a>
+            <a href="reports/index.html">Reports</a>
+          </nav>
+        {html_body}
+        </body>
+        </html>'''
+            
+            # Write HTML file
+            html_file = md_file.with_suffix('.html')
+            html_file.write_text(html, encoding='utf-8')
+            
+            # Remove original .md file from _site
+            md_file.unlink()
+        
+        print("Conversion complete!")
+        PYEOF
+        
+        python convert_md.py
+
+    - name: Create index page
+      run: |
         cat > _site/index.html << 'EOF'
         <!DOCTYPE html>
         <html>
         <head>
           <meta charset="utf-8">
-          <title>Fusion Hawking</title>
-          <meta http-equiv="refresh" content="0; url=architecture.html">
+          <title>Fusion Hawking - SOME/IP Stack</title>
           <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5/github-markdown.min.css">
+          <style>
+            .markdown-body { max-width: 980px; margin: 0 auto; padding: 20px; }
+            .card { background: #21262d; padding: 20px; border-radius: 8px; margin: 10px 0; }
+            .card h3 { margin-top: 0; }
+            .card a { color: #58a6ff; }
+            nav { background: #21262d; padding: 10px 20px; margin: -20px -20px 20px -20px; border-radius: 6px 6px 0 0; }
+            nav a { color: #58a6ff; margin-right: 15px; text-decoration: none; }
+          </style>
         </head>
-        <body class="markdown-body" style="max-width: 980px; margin: 0 auto; padding: 20px;">
-          <h1>Fusion Hawking Documentation</h1>
-          <p>Redirecting to <a href="architecture.html">Architecture</a>...</p>
-          <ul>
-            <li><a href="architecture.html">Architecture</a></li>
-            <li><a href="user_guide.html">User Guide</a></li>
-            <li><a href="IDL.html">IDL Reference</a></li>
-            <li><a href="design_and_requirements.html">Design Doc</a></li>
-            <li><a href="test_matrix.html">Test Matrix</a></li>
-          </ul>
+        <body class="markdown-body">
+          <nav>
+            <a href="index.html">Home</a>
+            <a href="architecture.html">Architecture</a>
+            <a href="user_guide.html">User Guide</a>
+            <a href="IDL.html">IDL</a>
+            <a href="design_and_requirements.html">Design</a>
+            <a href="examples.html">Examples</a>
+            <a href="test_matrix.html">Tests</a>
+            <a href="reports/index.html">Reports</a>
+          </nav>
+          
+          <h1>🚀 Fusion Hawking</h1>
+          <p>A lightweight, dependency-free SOME/IP stack in Rust with Python and C++ bindings.</p>
+          
+          <div class="card">
+            <h3>📐 <a href="architecture.html">Architecture</a></h3>
+            <p>Visual diagrams of system components, deployment, data flow, and protocols.</p>
+          </div>
+          
+          <div class="card">
+            <h3>📖 <a href="user_guide.html">User Guide</a></h3>
+            <p>Quick start, configuration, and API reference for Rust, Python, and C++.</p>
+          </div>
+          
+          <div class="card">
+            <h3>💻 <a href="examples.html">Examples</a></h3>
+            <p>Annotated code samples for SD, RPC, and Pub-Sub patterns.</p>
+          </div>
+          
+          <div class="card">
+            <h3>🔧 <a href="IDL.html">IDL Reference</a></h3>
+            <p>Interface Definition Language for service definitions and code generation.</p>
+          </div>
+          
+          <div class="card">
+            <h3>📋 <a href="design_and_requirements.html">Design Document</a></h3>
+            <p>Design decisions, configuration schema, and technical requirements.</p>
+          </div>
+          
+          <div class="card">
+            <h3>✅ <a href="test_matrix.html">Test Matrix</a></h3>
+            <p>Test coverage, cross-language interoperability, and verification status.</p>
+          </div>
+          
+          <div class="card">
+            <h3>📊 <a href="reports/index.html">Build Reports</a></h3>
+            <p>Latest CI build results, test reports, and coverage data.</p>
+          </div>
         </body>
         </html>
         EOF
 
-    - name: Convert Markdown to HTML
-      run: |
-        pip install markdown
-        cd _site
-        for f in *.md; do
-          if [ -f "$f" ]; then
-            name="${f%.md}"
-            echo "Converting $f to ${name}.html"
-            python -c "
-        import markdown
-        with open('$f', 'r') as f:
-            md_content = f.read()
-        html = markdown.markdown(md_content, extensions=['tables', 'fenced_code', 'toc'])
-        with open('${name}.html', 'w') as f:
-            f.write('''<!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset=\"utf-8\">
-          <title>${name} - Fusion Hawking</title>
-          <link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/github-markdown-css@5/github-markdown.min.css\">
-          <style>
-            .markdown-body { max-width: 980px; margin: 0 auto; padding: 20px; }
-            img { max-width: 100%; }
-          </style>
-        </head>
-        <body class=\"markdown-body\">
-        ''' + html + '''
-        </body>
-        </html>''')
-        "
-          fi
-        done
 
     - name: Upload Pages artifact
       uses: actions/upload-pages-artifact@v3

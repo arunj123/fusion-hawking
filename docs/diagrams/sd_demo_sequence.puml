@@ -1,0 +1,11 @@
+@startuml sd_demo_sequence
+participant "Provider Thread" as P
+participant "Consumer Thread" as C
+participant "Multicast Group" as M
+
+P -> M: SD Offer Service (0x1234)
+C -> M: Join Multicast
+M -> C: Forward Offer
+C -> C: Update Internal State
+note right of C: Discovered 0x1234!
+@enduml

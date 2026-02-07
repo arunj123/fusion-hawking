@@ -1,0 +1,31 @@
+@startuml automotive_pubsub_architecture
+skinparam componentStyle uml2
+skinparam backgroundColor #FEFEFE
+
+package "ECU 1 - Radar Sensor" {
+    [RadarServiceImpl] as RS
+    note bottom of RS : Publishes at 10Hz
+}
+
+package "ECU 2 - Fusion Controller" {
+    [FusionServiceImpl] as FS
+    note bottom of FS : Subscribes + Publishes
+}
+
+package "ECU 3 - ADAS Domain Controller" {
+    [AdasApplication] as AA
+    note bottom of AA : Pure Subscriber
+}
+
+cloud "SOME/IP Network" as NET {
+    [Service Discovery\n(Multicast 224.0.0.1:30490)] as SD
+}
+
+RS -down-> SD : Offer RadarService
+FS -down-> SD : Find RadarService\nOffer FusionService
+AA -down-> SD : Find FusionService
+
+RS =right=> FS : **on_object_detected**\n(EventGroup 1)
+FS =right=> AA : **on_track_updated**\n(EventGroup 1)
+
+@enduml

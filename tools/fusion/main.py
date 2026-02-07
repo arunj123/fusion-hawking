@@ -21,14 +21,20 @@ def run_diagrams(root_dir, reporter, server):
     return diagrams.run()
 
 
-def run_build(root_dir, reporter, builder, tool_status, target, server):
+def run_build(root_dir, reporter, builder, tool_status, target, server, skip_codegen=False):
     """Stage: Build Rust and C++"""
     if server: server.update({"current_step": "Building"})
     reporter.generate_index({"current_step": "Building", "overall_status": "RUNNING", "tools": tool_status})
     print("\n=== Building ===")
     
-    if not builder.generate_bindings(): 
-        raise Exception("Bindings Generation Failed")
+    if not skip_codegen and target in ["all", "rust", "cpp"]:
+        # If running as "build" stage but NOT "all" stage (which handled it), we might need this.
+        # But main.py now handles it in "codegen" block if stage is "all".
+        # If stage is "build", user might expect it?
+        # CI will use --stage build --no-codegen.
+        # Local user using --stage build expects codegen.
+        if not builder.generate_bindings(): 
+            raise Exception("Bindings Generation Failed")
     
     if target in ["all", "rust", "python"]:
         if not builder.build_rust(): 
@@ -71,20 +77,20 @@ def run_test(reporter, tester, target, server):
     return test_results
 
 
-def run_demos(reporter, tester, server, test_results):
+def run_demos(reporter, tester, server, test_results, demo_filter):
     """Stage: Run integration demos"""
     if server: server.update({"current_step": "Running Demos"})
     print("\n=== Demos ===")
-    demo_results = tester.run_demos()
+    demo_results = tester.run_demos(demo_filter)
     test_results.update(demo_results)
     return test_results
 
 
-def run_coverage(reporter, cover, server, test_results):
+def run_coverage(reporter, cover, server, test_results, target):
     """Stage: Generate coverage reports"""
     if server: server.update({"current_step": "Coverage"})
     print("\n=== Coverage ===")
-    cov_results = cover.run_coverage()
+    cov_results = cover.run_coverage(target)
     test_results.update(cov_results)
     return test_results
 
@@ -96,8 +102,10 @@ def main():
     parser.add_argument("--server", action="store_true", default=True, help="Enable dashboard server")
     parser.add_argument("--no-dashboard", action="store_true", help="Disable dashboard server (override)")
     parser.add_argument("--target", type=str, choices=["all", "rust", "python", "cpp"], default="all", help="Target language to test")
+    parser.add_argument("--demo", type=str, choices=["all", "simple", "integrated", "pubsub"], default="all", help="Specific demo to run")
+    parser.add_argument("--no-codegen", action="store_true", help="Skip codegen (assume artifacts exist)")
     parser.add_argument("--stage", type=str, 
-                        choices=["diagrams", "build", "test", "coverage", "docs", "all"],
+                        choices=["diagrams", "codegen", "build", "test", "coverage", "docs", "demos", "all"],
                         default="all", help="Run specific build stage (for CI)")
     args = parser.parse_args()
 
@@ -137,14 +145,26 @@ def main():
         # Stage-based execution
         stage = args.stage
         
-        # DIAGRAMS stage
+    # DIAGRAMS stage
         if stage in ["diagrams", "docs", "all"]:
             diagram_results = run_diagrams(root_dir, reporter, server)
             test_results.update(diagram_results)
+            
+        # CODEGEN Stage (new)
+        if stage in ["codegen", "all"] and not args.no_codegen:
+            if server: server.update({"current_step": "Codegen"})
+            print("\n=== Codegen ===")
+            if not builder.generate_bindings():
+                raise Exception("Bindings Generation Failed")
+            test_results["codegen"] = "PASS"
         
         # BUILD stage
         if stage in ["build", "all"]:
-            build_results = run_build(root_dir, reporter, builder, tool_status, args.target, server)
+            # Pass no_codegen logic to run_build if needed, or we handled it above.
+            # But run_build (line 30) called generate_bindings() unconditionally.
+            # We need to modify run_build signature and logic.
+            # Let's pass args.no_codegen to run_build
+            build_results = run_build(root_dir, reporter, builder, tool_status, args.target, server, args.no_codegen)
             test_results.update(build_results)
         
         # TEST stage
@@ -153,15 +173,46 @@ def main():
             if server: server.update({"tests": test_results})
             reporter.generate_index({"current_step": "Tests Completed", "overall_status": "RUNNING", "tools": tool_status, "tests": test_results})
         
-        # DEMOS (part of test stage or all)
-        if stage == "all" and not args.skip_demos and args.target == "all":
-            test_results = run_demos(reporter, tester, server, test_results)
-            if server: server.update({"tests": test_results})
-            reporter.generate_index({"current_step": "Demos Completed", "overall_status": "RUNNING", "tools": tool_status, "tests": test_results})
+        # DEMOS (part of test stage if "test" selected, or explicit "demos" stage, or "all")
+        # NOTE: If stage is "test" we traditionally ran demos too if not skipped.
+        # But for granular CI, we might separate them.
+        # Let's say: if stage="demos", run demos.
+        # If stage="all", run demos (unless skipped).
+        # If stage="test", ideally we only run unit tests now?
+        # The legacy behavior was "test" included demos.
+        # To avoid breaking local behavior: keep demos in "test" if args.stage == "all"?
+        # Actually, let's explicit:
+        # If --stage demos is passed, run demos.
+        # If --stage all is passed, run demos.
+        # If --stage test is passed -> we can choose to NOT run demos if we want strict separation, 
+        # but existing users might expect it.
+        # Let's keep demos under its own block, but enable it if stage in ["demos", "all"] or (stage=="test" and not args.skip_demos) 
+        # Wait, if I split CI, I will use --stage demos.
+        # If I use --stage test locally, I might want demos.
+        
+        should_run_demos = False
+        if stage == "demos": should_run_demos = True
+        if stage == "all" and not args.skip_demos: should_run_demos = True
+        # Maintain legacy behavior: --stage test includes demos unless skipped
+        if stage == "test" and not args.skip_demos: should_run_demos = True
+
+        if should_run_demos and args.target == "all" or args.stage == "demos": 
+            # Note: args.target == "all" check was preventing single-language tests from running demos?
+            # If I run --target rust --stage test, main.py skipped demos before (line 157 in original).
+            # I'll respect that logic unless stage is explicitly "demos".
+            pass
+
+        # Simplified Logic:
+        if (stage in ["demos", "all"] or (stage == "test" and not args.skip_demos)):
+             # Only run if target is all OR stage is explicitly demos
+             if args.target == "all" or stage == "demos":
+                test_results = run_demos(reporter, tester, server, test_results, args.demo)
+                if server: server.update({"tests": test_results})
+                reporter.generate_index({"current_step": "Demos Completed", "overall_status": "RUNNING", "tools": tool_status, "tests": test_results})
         
         # COVERAGE stage
-        if stage in ["coverage", "all"] and not args.skip_coverage and args.target == "all":
-            test_results = run_coverage(reporter, cover, server, test_results)
+        if stage in ["coverage", "all"] and not args.skip_coverage:
+            test_results = run_coverage(reporter, cover, server, test_results, args.target)
             if server: server.update({"tests": test_results})
             reporter.generate_index({"current_step": "Coverage Completed", "overall_status": "RUNNING", "tools": tool_status, "tests": test_results})
 

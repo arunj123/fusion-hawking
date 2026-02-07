@@ -26,7 +26,7 @@ class Tester:
             search_paths.append(os.path.join("build_linux", name))
             
         for path in search_paths:
-            if os.path.exists(path): return path
+            if os.path.isfile(path): return path
             
         return None
 
@@ -106,86 +106,89 @@ class Tester:
         else:
              return "SKIPPED"
 
-    def run_demos(self):
+    def run_demos(self, demo_filter="all"):
         print("\n--- Running Integration Demos ---")
         
         results = {}
         
-        # 1. Simple Demos (No SD) - mimicking legacy run_demos.ps1
-        print("Running Simple Demos (No SD)...")
-        simple_res = self._run_simple_demos()
-        results.update(simple_res)
+        # 1. Simple Demos (No SD)
+        if demo_filter in ["all", "simple"]:
+            print("Running Simple Demos (No SD)...")
+            simple_res = self._run_simple_demos()
+            results.update(simple_res)
         
         # 2. Integrated Apps
-        # Logic from run_demos.ps1
-        # 1. Start Rust (runs, waits for events)
-        # 2. Start Python
-        # 3. Start C++
-        
-        # We need to capture outputs to separate logs to verify logic patterns
-        
-        rust_log = self.reporter.get_log_path("demo_rust")
-        py_log = self.reporter.get_log_path("demo_python")
-        cpp_log = self.reporter.get_log_path("demo_cpp")
-        
-        procs = []
-        
-        try:
-            # Rust Standalone Demo
-            f_rust = open(rust_log, "w")
-            rust_cmd = ["cargo", "run"]
-            f_rust.write(f"=== FUSION TEST RUNNER ===\nCommand: {' '.join(rust_cmd)}\nPWD: {os.path.join(os.getcwd(), 'examples/integrated_apps/rust_app')}\n==========================\n\n")
-            f_rust.flush()
-            p_rust = subprocess.Popen(rust_cmd, stdout=f_rust, stderr=subprocess.STDOUT, cwd="examples/integrated_apps/rust_app")
-            procs.append(p_rust)
-            time.sleep(2)
+        if demo_filter in ["all", "integrated"]:
+            # Logic from run_demos.ps1
+            # 1. Start Rust (runs, waits for events)
+            # 2. Start Python
+            # 3. Start C++
             
-            # Python Standalone Demo
-            env = os.environ.copy()
-            # Note: PYTHONPATH is still needed to find the core runtime if not installed via pip
-            env["PYTHONPATH"] = os.pathsep.join([
-                os.path.join(os.getcwd(), "src/python"),
-                os.path.join(os.getcwd(), "build/generated/python")
-            ])
-            f_py = open(py_log, "w")
-            # Run the script within its directory
-            py_cmd = ["python", "-u", "main.py"]
-            f_py.write(f"=== FUSION TEST RUNNER ===\nCommand: {' '.join(py_cmd)}\nPWD: {os.path.join(os.getcwd(), 'examples/integrated_apps/python_app')}\n==========================\n\n")
-            f_py.flush()
-            p_py = subprocess.Popen(py_cmd, stdout=f_py, stderr=subprocess.STDOUT, env=env, cwd="examples/integrated_apps/python_app")
-            procs.append(p_py)
+            # We need to capture outputs to separate logs to verify logic patterns
             
-            # C++ Standalone Demo
-            cpp_exe = self._get_cpp_binary_path("cpp_app")
-            if cpp_exe:
-                # Convert to absolute path since we change CWD
-                abs_cpp_exe = os.path.abspath(cpp_exe)
-                f_cpp = open(cpp_log, "w")
-                cpp_cmd = [abs_cpp_exe]
-                f_cpp.write(f"=== FUSION TEST RUNNER ===\nCommand: {abs_cpp_exe}\nPWD: {os.path.join(os.getcwd(), 'examples/integrated_apps/cpp_app')}\n==========================\n\n")
-                f_cpp.flush()
-                p_cpp = subprocess.Popen(cpp_cmd, stdout=f_cpp, stderr=subprocess.STDOUT, cwd="examples/integrated_apps/cpp_app")
-                procs.append(p_cpp)
+            rust_log = self.reporter.get_log_path("demo_rust")
+            py_log = self.reporter.get_log_path("demo_python")
+            cpp_log = self.reporter.get_log_path("demo_cpp")
             
-            # Run for 10s
-            print("  Integrated Apps started, waiting 10s...")
-            time.sleep(10)
+            procs = []
             
-        finally:
-            for p in procs:
-                p.kill() # Force kill
-            
-        print("  Verifying Integrated Apps logs...")
-        results = self._verify_demos(rust_log, py_log, cpp_log, results)
+            try:
+                # Rust Standalone Demo
+                f_rust = open(rust_log, "w")
+                rust_cmd = ["cargo", "run"]
+                f_rust.write(f"=== FUSION TEST RUNNER ===\nCommand: {' '.join(rust_cmd)}\nPWD: {os.path.join(os.getcwd(), 'examples/integrated_apps/rust_app')}\n==========================\n\n")
+                f_rust.flush()
+                p_rust = subprocess.Popen(rust_cmd, stdout=f_rust, stderr=subprocess.STDOUT, cwd="examples/integrated_apps/rust_app")
+                procs.append(p_rust)
+                time.sleep(2)
+                
+                # Python Standalone Demo
+                env = os.environ.copy()
+                # Note: PYTHONPATH is still needed to find the core runtime if not installed via pip
+                env["PYTHONPATH"] = os.pathsep.join([
+                    os.path.join(os.getcwd(), "src/python"),
+                    os.path.join(os.getcwd(), "build/generated/python")
+                ])
+                f_py = open(py_log, "w")
+                # Run the script within its directory
+                py_cmd = ["python", "-u", "main.py"]
+                f_py.write(f"=== FUSION TEST RUNNER ===\nCommand: {' '.join(py_cmd)}\nPWD: {os.path.join(os.getcwd(), 'examples/integrated_apps/python_app')}\n==========================\n\n")
+                f_py.flush()
+                p_py = subprocess.Popen(py_cmd, stdout=f_py, stderr=subprocess.STDOUT, env=env, cwd="examples/integrated_apps/python_app")
+                procs.append(p_py)
+                
+                # C++ Standalone Demo
+                cpp_exe = self._get_cpp_binary_path("cpp_app")
+                if cpp_exe:
+                    # Convert to absolute path since we change CWD
+                    abs_cpp_exe = os.path.abspath(cpp_exe)
+                    f_cpp = open(cpp_log, "w")
+                    cpp_cmd = [abs_cpp_exe]
+                    f_cpp.write(f"=== FUSION TEST RUNNER ===\nCommand: {abs_cpp_exe}\nPWD: {os.path.join(os.getcwd(), 'examples/integrated_apps/cpp_app')}\n==========================\n\n")
+                    f_cpp.flush()
+                    p_cpp = subprocess.Popen(cpp_cmd, stdout=f_cpp, stderr=subprocess.STDOUT, cwd="examples/integrated_apps/cpp_app")
+                    procs.append(p_cpp)
+                
+                # Run for 10s
+                print("  Integrated Apps started, waiting 10s...")
+                time.sleep(10)
+                
+            finally:
+                for p in procs:
+                    p.kill() # Force kill
+                
+            print("  Verifying Integrated Apps logs...")
+            results = self._verify_demos(rust_log, py_log, cpp_log, results)
 
         # 3. Automotive Pub-Sub Demo (Radar -> Fusion -> ADAS)
-        print("\nRunning Automotive Pub-Sub Demo...")
-        pubsub_result = self._run_automotive_pubsub_demo()
-        
-        # Merge pubsub results, extending steps list instead of overwriting
-        pubsub_steps = pubsub_result.pop("steps", [])
-        results.update(pubsub_result)
-        results.setdefault("steps", []).extend(pubsub_steps)
+        if demo_filter in ["all", "pubsub"]:
+            print("\nRunning Automotive Pub-Sub Demo...")
+            pubsub_result = self._run_automotive_pubsub_demo()
+            
+            # Merge pubsub results, extending steps list instead of overwriting
+            pubsub_steps = pubsub_result.pop("steps", [])
+            results.update(pubsub_result)
+            results.setdefault("steps", []).extend(pubsub_steps)
 
         return results
 

@@ -27,20 +27,13 @@ examples/
 **Purpose**: To demonstrate the Service Discovery State Machine in isolation.
 - `sd_demo.rs`: A single Rust binary that spawns a **Provider** thread and a **Consumer** thread. They discover each other via Multicast UDP (`224.0.0.1:30490`).
 
-```plantuml
-@startuml
-participant "Provider Thread" as P
-participant "Consumer Thread" as C
-participant "Multicast Group" as M
+![SD Demo Sequence](../docs/images/sd_demo_sequence.png)
 
-P -> M: SD Offer Service (0x1234)
-C -> M: Join Multicast
-M -> C: Forward Offer
-C -> C: Update Internal State
-note right of C: Discovered 0x1234!
-@enduml
-```
+<details>
+<summary>View PlantUML Source</summary>
 
+[sd_demo_sequence.puml](../docs/diagrams/sd_demo_sequence.puml)
+</details>
 ---
 
 ## 2. Simple No-SD (`simple_no_sd/`)
@@ -56,23 +49,13 @@ These examples manually construct the **16-byte SOME/IP Header** and send raw UD
 - Handling Request (0x00) and Response (0x80) Message Types.
 - No config files, no discovery delays.
 
-```plantuml
-@startuml
-participant "Simple Client" as C
-participant "Simple Server" as S
+![Simple No-SD Sequence](../docs/images/simple_no_sd_sequence.png)
 
-C -> C: Construct Header\n(Service 0x1234, Method 0x0001)
-C -> S: UDP Send to 127.0.0.1:4000X
-note right: Payload: "Hello"
+<details>
+<summary>View PlantUML Source</summary>
 
-S -> S: Parse Header
-S -> S: Verify Message Type (0x00)
-S -> S: Construct Response
-S -> C: UDP Send Response (Type 0x80)
-note left: Payload: "OK"
-@enduml
-```
-
+[simple_no_sd_sequence.puml](../docs/diagrams/simple_no_sd_sequence.puml)
+</details>
 ---
 
 ## 3. Integrated Apps (`integrated_apps/`)
@@ -107,24 +90,13 @@ cargo run --bin codegen -- --idl interface.json --lang python --out src/python/g
 
 **Architecture**:
 
-```plantuml
-@startuml
-component "Rust App" as R
-component "Python App" as P
-component "C++ App" as Cpp
+![Integrated Apps Interaction](../docs/images/integrated_apps_interaction.png)
 
-interface "UDP / SD" as Net
+<details>
+<summary>View PlantUML Source</summary>
 
-R -down-> Net : Offer MathService
-P -up-> Net : Find MathService
-Cpp -up-> Net : Subscribe Events
-
-P -> R : Request (Method Call)
-R -> P : Response
-R -> Cpp : Notification (Event)
-@enduml
-```
-
+[integrated_apps_interaction.puml](../docs/diagrams/integrated_apps_interaction.puml)
+</details>
 ---
 
 ## 4. Automotive Pub-Sub (`automotive_pubsub/`)

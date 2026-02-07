@@ -30,120 +30,37 @@ This demo simulates a realistic autonomous driving perception pipeline:
 
 ## Design: SOME/IP Event Architecture
 
-```plantuml
-@startuml
-skinparam componentStyle uml2
-skinparam backgroundColor #FEFEFE
+![Architecture](images/automotive_pubsub_architecture.png)
 
-package "ECU 1 - Radar Sensor" {
-    [RadarServiceImpl] as RS
-    note bottom of RS : Publishes at 10Hz
-}
+<details>
+<summary>View PlantUML Source</summary>
 
-package "ECU 2 - Fusion Controller" {
-    [FusionServiceImpl] as FS
-    note bottom of FS : Subscribes + Publishes
-}
-
-package "ECU 3 - ADAS Domain Controller" {
-    [AdasApplication] as AA
-    note bottom of AA : Pure Subscriber
-}
-
-cloud "SOME/IP Network" as NET {
-    [Service Discovery\n(Multicast 224.0.0.1:30490)] as SD
-}
-
-RS -down-> SD : Offer RadarService
-FS -down-> SD : Find RadarService\nOffer FusionService
-AA -down-> SD : Find FusionService
-
-RS =right=> FS : **on_object_detected**\n(EventGroup 1)
-FS =right=> AA : **on_track_updated**\n(EventGroup 1)
-
-@enduml
-```
+[automotive_pubsub_architecture.puml](../../docs/diagrams/automotive_pubsub_architecture.puml)
+</details>
 
 ---
 
 ## Sequence Diagram: Event Flow
 
-```plantuml
-@startuml
-skinparam backgroundColor #FEFEFE
-skinparam sequenceArrowThickness 2
+![Sequence](images/automotive_pubsub_sequence.png)
 
-participant "RadarService\n(C++)" as R #FFB3B3
-participant "FusionService\n(Rust)" as F #B3D9FF
-participant "ADAS App\n(Python)" as A #B3FFB3
+<details>
+<summary>View PlantUML Source</summary>
 
-== Initialization ==
-R -> R : offer_service("radar-service")
-F -> R : subscribe_eventgroup(0x7001, 1)
-F -> F : offer_service("fusion-service")
-A -> F : subscribe_eventgroup(0x7002, 1)
-
-== Runtime Event Loop ==
-loop Every 100ms
-    R -> R : SimulateScan()
-    R ->> F : **on_object_detected**(RadarObject[])
-    note right of R : SOME/IP Event\nType: 0x02
-    
-    F -> F : ProcessRadarData()
-    F -> F : UpdateTracks()
-    F ->> A : **on_track_updated**(FusedTrack[])
-    
-    A -> A : CheckCollisionWarning()
-    alt distance < 10m
-        A -> A : Log Warning
-    end
-end
-
-@enduml
-```
+[automotive_pubsub_sequence.puml](../../docs/diagrams/automotive_pubsub_sequence.puml)
+</details>
 
 ---
 
 ## Data Types
 
-```plantuml
-@startuml
-skinparam backgroundColor #FEFEFE
-skinparam classAttributeIconSize 0
+![Types](images/automotive_pubsub_types.png)
 
-class RadarObject {
-    +id: int
-    +range_m: float
-    +velocity_mps: float
-    +azimuth_deg: float
-}
+<details>
+<summary>View PlantUML Source</summary>
 
-class FusedTrack {
-    +track_id: int
-    +position_x: float
-    +position_y: float
-    +velocity_x: float
-    +velocity_y: float
-    +confidence: float
-}
-
-class RadarService <<service 0x7001>> {
-    +on_object_detected(objects: RadarObject[])
-    +detection_count: int <<field>>
-}
-
-class FusionService <<service 0x7002>> {
-    +on_track_updated(tracks: FusedTrack[])
-    +get_active_tracks(): FusedTrack[]
-    +reset_tracks(): bool
-}
-
-RadarService ..> RadarObject : publishes
-FusionService ..> FusedTrack : publishes
-FusionService ..> RadarObject : subscribes to
-
-@enduml
-```
+[automotive_pubsub_types.puml](../../docs/diagrams/automotive_pubsub_types.puml)
+</details>
 
 ---
 
