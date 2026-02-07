@@ -1,38 +1,49 @@
-# Design & Requirements: Configuration-Driven SOME/IP Stack
+# Design & Requirements
+
+> **See Also:** [Architecture](architecture.md) | [User Guide](user_guide.md) | [IDL Reference](IDL.md)
+
+This document captures the design decisions and technical requirements for the Fusion Hawking SOME/IP stack.
+
+---
 
 ## 1. Objective
-To introduce a configuration layer that decouples Service IDs, Instance IDs, Ports, and IP addresses from the application code. This allows flexible deployment scenarios without recompilation and solves persistent "hardcoded port" mismatch issues.
+
+Introduce a **configuration-driven architecture** that decouples Service IDs, Instance IDs, Ports, and IP addresses from application code. This enables:
+- Flexible deployment without recompilation
+- Consistent topology across all language runtimes
+- Resolution of "hardcoded port" mismatch issues
+
+---
 
 ## 2. JSON Configuration Schema
-The system will use a single JSON file to define the topology of the distributed system.
 
-### Structure
+A single `config.json` defines the distributed system topology. All runtimes load and interpret this identically.
+
 ```json
 {
   "instances": {
     "app_instance_name": {
       "ip": "127.0.0.1",
       "providing": {
-        "service_alias_name": {
-          "service_id": 0x1234,
+        "service_alias": {
+          "service_id": "0x1234",
           "instance_id": 1,
           "major_version": 1,
           "minor_version": 0,
           "port": 30509,
           "protocol": "udp",
           "multicast": {
-             "ip": "224.0.0.1",
-             "port": 30490
+            "ip": "224.0.0.1",
+            "port": 30490
           }
         }
       },
       "required": {
-        "client_alias_name": {
-          "service_id": 0x5678,
+        "client_alias": {
+          "service_id": "0x5678",
           "instance_id": 1,
           "major_version": 1,
-           // Optional: Static routing if SD is bypassed
-          "static_ip": "127.0.0.1", 
+          "static_ip": "127.0.0.1",
           "static_port": 30510
         }
       }
@@ -41,120 +52,159 @@ The system will use a single JSON file to define the topology of the distributed
 }
 ```
 
-## 3. Runtime API Changes
+| Field | Description |
+|-------|-------------|
+| `providing` | Services this instance offers |
+| `required` | Services this instance consumes |
+| `static_ip/port` | Optional bypass for Service Discovery |
+| `multicast` | SD announcement group (default: `224.0.0.1:30490`) |
 
-All runtimes (C++, Rust, Python) must support initializing from this configuration.
+> **Deployment Diagram:** See [Architecture - Deployment Topology](architecture.md#deployment-topology)
 
-### 3.1 C++ API
-**Current:**
-```cpp
-SomeIpRuntime rt(30509);
-```
-**New:**
-```cpp
-SomeIpRuntime rt("config.json", "cpp-app-instance");
-```
-**Usage:**
-```cpp
-// Offering
-rt.offer_service("math-service", my_math_impl);
+---
 
-// Consuming
-auto client = rt.create_client<MathServiceClient>("math-client");
-```
+## 3. Logging Abstraction (DLT-Ready)
 
-### 3.2 Python API
-**Current:**
-```python
-rt = SomeIpRuntime(30510)
-```
-**New:**
-```python
-rt = SomeIpRuntime("config.json", "python-app-instance")
-```
-**Usage:**
-```python
-rt.offer_service("string-service", StringImpl())
-client = rt.get_client("math-client", MathClient)
-```
+All runtimes implement a pluggable logger for future DLT (Diagnostic Log and Trace) integration:
 
-### 3.3 Rust API
-**Current:**
+| Language | Interface | Injection Point |
+|----------|-----------|-----------------|
+| Rust | `trait FusionLogger` | Via builder or `with_logger()` |
+| Python | `class ILogger` | Constructor parameter |
+| C++ | `class ILogger` | Constructor parameter |
+
 ```rust
-let rt = SomeIpRuntime::new(30509);
-```
-**New:**
-```rust
-let rt = SomeIpRuntime::load("config.json", "rust-app-instance");
-```
-**Usage:**
-```rust
-rt.offer_service("math-service", Box::new(math_service));
-let client = rt.get_client::<StringServiceClient>("string-client");
+// Rust trait
+pub trait FusionLogger: Send + Sync {
+    fn log(&self, level: LogLevel, component: &str, msg: &str);
+}
 ```
 
-## 4. Implementation Details
+```cpp
+// C++ interface
+class ILogger {
+public:
+    virtual void Log(LogLevel level, const char* comp, const char* msg) = 0;
+};
+```
 
-### JSON Parsing
-- **Python**: Built-in `json` module.
-- **Rust**: `serde` + `serde_json`.
-- **C++**: Minimally invasive JSON parser. For this playground, a simple header-only library (like `nlohmann/json` or a tiny custom parser for this specific schema) is preferred. Given the constraints, we might use a very simple regex-based parser or `picojson` if available, or just implement a basic parser for the specific known structure to avoid heavy dependencies on Windows. *Decision*: Will attempt to use a simple custom parser in `json_parser.h` to keep it dependency-free.
+---
 
-### Service Discovery Integration
-- The Runtime will now use the Configured IP/Port for its bind address.
-- `offer_service` will look up the `service_id` and packing details from the config, not just the generated class.
+## 4. IPv6 Support
 
-## 5. Migration Strategy
-1. Create `config.json`.
-2. Update Runtimes to load config.
-3. Update Demos to use config aliases.
-## 6. Logging Abstraction (DLT-Ready)
+Configuration auto-detects IP version from address format:
 
-To support future DLT (Diagnostic Log and Trace) integration without adding heavy dependencies now, we will introduce a `Logger` abstraction in all runtimes.
-
-### Rust
-- **Trait**: `pub trait FusionLogger { fn log(&self, level: LogLevel, component: &str, msg: &str); }`
-- **Default**: `StdOutLogger` (console).
-- **Future**: `DltLogger` implementation.
-
-### C++
-- **Abstract Class**: `class ILogger { virtual void Log(LogLevel level, const char* comp, const char* msg) = 0; }`
-- **Injection**: Passed to `SomeIpRuntime` constructor.
-
-### Python
-- **Polymorphism**: Base `Logger` class.
-- **Integration**: `SomeIpRuntime(config, logger=MyLogger())`
-
-## 7. IPv6 Support
-The configuration schema supports `protocol` specific settings.
 ```json
 "multicast": {
-  "ip": "ff14::1", // IPv6 Multicast
+  "ip": "ff14::1",
   "port": 30490
 }
 ```
-- **Socket Creation**: Runtimes must detect IP version from the config string (contains `:`) and open `AF_INET6` sockets accordingly.
-- **SD Endpoint Option**: Generator must choose between IPv4 Option (0x04) and IPv6 Option (0x06).
 
-## 8. Concurrency & Async Model
-- **Non-blocking IO**: All sockets set to non-blocking.
-- **Thread Pool**:
-    - **Rust**: Existing `ThreadPool` for handler execution.
-    - **C++**: Simple `std::vector<std::thread>` pool for callback execution to avoid blocking the reactor loop.
-    - **Python**: `concurrent.futures.ThreadPoolExecutor` for service method calls.
-- **Callbacks**:
-    - `on_message(service, result)` style for clients.
+**Implementation:**
+- Socket creation uses `AF_INET6` when address contains `:`
+- SD Endpoint Option selects IPv4 (0x04) or IPv6 (0x06) accordingly
 
-## 9. Dependency Management
-- **Rule**: No OS-level installs required.
-- **Rust**: `serde`, `serde_json` (Standard in ecosystem, static link).
-- **C++**: `SimpleJson` (Header only, committed to repo). No Boost.
-- **Python**: Standard Library `json`, `socket`, `threading`.
+> **Feature Matrix:** See [Test Matrix](test_matrix.md#feature-coverage) for IPv6 support status.
 
-## 10. Testing Strategy
-- **Unit Tests**: Test configuration loading and parsing in isolation.
-- **Integration Matrix**:
-    - Python Client -> Rust Server (IPv4)
-    - Rust Client -> C++ Server (IPv4)
-    - C++ Client -> Python Server (IPv6) @TODO
-- **Fault Injection**: Test behavior when config refers to unreachable request.
+---
+
+## 5. Concurrency Model
+
+```plantuml
+@startuml
+skinparam backgroundColor #FEFEFE
+
+rectangle "Main Loop" as Main {
+    rectangle "Non-blocking recv()" as Recv
+    rectangle "SD Poll" as SD
+}
+
+rectangle "Thread Pool" as Pool {
+    rectangle "Worker 1" as W1
+    rectangle "Worker 2" as W2
+    rectangle "Worker N" as WN
+}
+
+Recv --> Pool : dispatch request
+SD --> Main : timer events
+W1 --> Main : send response
+
+note right of Pool
+  - Rust: Custom ThreadPool
+  - C++: std::vector<std::thread>
+  - Python: ThreadPoolExecutor
+end note
+@enduml
+```
+
+**Key Principles:**
+- All sockets set to non-blocking
+- Handlers execute in thread pool (don't block reactor)
+- Callbacks follow `on_message(service, result)` pattern
+
+---
+
+## 6. Dependency Management
+
+| Language | Dependencies | Notes |
+|----------|--------------|-------|
+| Rust | `serde`, `serde_json` | Standard ecosystem, statically linked |
+| C++ | None | Custom header-only JSON parser |
+| Python | None | Standard library only (`json`, `socket`, `threading`) |
+
+**Rule:** No OS-level package installs required.
+
+---
+
+## 7. Testing Strategy
+
+### Unit Tests
+- Configuration loading and parsing
+- Codec serialization roundtrip
+- SD state machine transitions
+
+### Integration Matrix
+
+| Client | Server | Protocol | Status |
+|--------|--------|----------|--------|
+| Python | Rust | IPv4 | ✅ |
+| Rust | C++ | IPv4 | ✅ |
+| C++ | Python | IPv6 | 🔲 TODO |
+
+> **Full Matrix:** See [Test Matrix](test_matrix.md)
+
+### Fault Injection
+- Unreachable config targets
+- Malformed packets
+- TTL expiry
+
+---
+
+## 8. Migration Path
+
+For projects adopting Fusion Hawking:
+
+1. **Create `config.json`** with your topology
+2. **Update runtime initialization** to use config:
+   ```rust
+   // Before
+   let rt = SomeIpRuntime::new(30509);
+   // After  
+   let rt = SomeIpRuntime::load("config.json", "my-instance");
+   ```
+3. **Replace hardcoded IDs** with config aliases:
+   ```rust
+   rt.offer_service("math-service", handler);  // Uses config lookup
+   ```
+
+> **API Examples:** See [User Guide - Runtime API](user_guide.md#runtime-api)
+
+---
+
+## References
+
+- [Architecture Document](architecture.md) - Visual diagrams and layer details
+- [User Guide](user_guide.md) - Day-to-day usage
+- [IDL Documentation](IDL.md) - Type system and code generation
+- [Test Matrix](test_matrix.md) - Coverage and verification status

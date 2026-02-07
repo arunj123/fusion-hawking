@@ -54,6 +54,19 @@ This will:
 - **`tools/fusion/`**: Automation infrastructure (Python).
 - **`examples/`**: Demo applications.
 
+> **Detailed Architecture:** See [Architecture Document](docs/architecture.md) for diagrams covering deployment, layers, data flow, and service discovery.
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Architecture](docs/architecture.md) | Visual architecture with PlantUML diagrams |
+| [User Guide](docs/user_guide.md) | Day-to-day usage and API reference |
+| [IDL Reference](docs/IDL.md) | Type system and code generation |
+| [Design Doc](docs/design_and_requirements.md) | Design decisions and requirements |
+| [Test Matrix](docs/test_matrix.md) | Coverage and verification status |
+| [Examples](examples/README.md) | Demo applications walkthrough |
+
 ## Testing & Verification
 
 The `fusion` tool unifies all testing steps.

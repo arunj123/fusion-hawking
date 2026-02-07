@@ -1,5 +1,7 @@
 # Fusion Hawking Architecture
 
+> **See Also:** [User Guide](user_guide.md) | [IDL Reference](IDL.md) | [Design Doc](design_and_requirements.md) | [Test Matrix](test_matrix.md)
+
 This document provides a comprehensive view of the Fusion Hawking SOME/IP stack architecture, including deployment topology, internal layers, data flows, and component interactions.
 
 ---
@@ -95,25 +97,7 @@ CA --> Multicast : Subscribe EventGroup
 @enduml
 ```
 
-### Configuration Example
-
-Each application instance loads a shared `config.json` that defines the topology:
-
-```json
-{
-  "instances": {
-    "rust_app_instance": {
-      "ip": "127.0.0.1",
-      "providing": {
-        "math-service": { "service_id": 4660, "port": 30509, "protocol": "udp" }
-      }
-    },
-    "python_app_instance": {
-      "required": { "math-service": { "service_id": 4660 } }
-    }
-  }
-}
-```
+> **Configuration Schema:** See [Design Doc - JSON Configuration](design_and_requirements.md#2-json-configuration-schema)
 
 ---
 
@@ -215,11 +199,13 @@ end
 @enduml
 ```
 
+> **API Usage:** See [User Guide - Runtime API](user_guide.md#runtime-api)
+
 ---
 
 ## Service Discovery State Machine
 
-The SD layer implements the AUTOSAR-specified state machine for service lifecycle:
+The SD layer implements the AUTOSAR-specified state machine for service lifecycle per [PRS_SOMEIPSD_00011-00014]:
 
 ```plantuml
 @startuml
@@ -256,7 +242,9 @@ InitialWait --> Down : stop_offer()
 @enduml
 ```
 
-### Subscription Flow
+---
+
+## Subscription Flow
 
 ```plantuml
 @startuml
@@ -287,6 +275,8 @@ end
 
 @enduml
 ```
+
+> **Event Definitions:** See [IDL - Events](IDL.md#events-pubsub)
 
 ---
 
@@ -331,6 +321,8 @@ end note
 @enduml
 ```
 
+> **Serialization Details:** See [IDL - Serialization](IDL.md#serialization-details)
+
 ---
 
 ## Code Generation Pipeline
@@ -367,6 +359,8 @@ end note
 
 @enduml
 ```
+
+> **Full IDL Reference:** See [IDL Documentation](IDL.md)
 
 ---
 
@@ -421,6 +415,8 @@ N .. CppRuntime
 
 @enduml
 ```
+
+> **Logging Interface:** See [Design Doc - Logging](design_and_requirements.md#3-logging-abstraction-dlt-ready)
 
 ---
 
@@ -486,27 +482,28 @@ stop
 @enduml
 ```
 
+> **Coverage Reports:** See [Test Matrix - Coverage](test_matrix.md#coverage-reports)
+
 ---
 
 ## Module Reference
 
-| Module | Path | Description |
-|--------|------|-------------|
-| **Codec** | `src/codec/` | Header parsing, serialization traits, session management |
-| **Transport** | `src/transport/` | UDP/TCP abstraction with multicast support |
-| **Service Discovery** | `src/sd/` | AUTOSAR-compliant SD state machine |
-| **Runtime** | `src/runtime/` | High-level API for service lifecycle |
-| **Logging** | `src/logging.rs` | DLT-ready logger abstraction |
-| **Python Bindings** | `src/python/` | Native Python runtime |
-| **C++ Bindings** | `src/cpp/` | Modern C++14 runtime |
-| **Code Generator** | `tools/codegen/` | IDL compiler for multi-language stubs |
-| **Automation** | `tools/fusion/` | Build, test, coverage, dashboard |
+| Module | Path | Description | Docs |
+|--------|------|-------------|------|
+| **Codec** | `src/codec/` | Header parsing, serialization traits | [IDL](IDL.md#serialization-details) |
+| **Transport** | `src/transport/` | UDP/TCP abstraction with multicast | |
+| **Service Discovery** | `src/sd/` | AUTOSAR-compliant SD state machine | |
+| **Runtime** | `src/runtime/` | High-level API for service lifecycle | [User Guide](user_guide.md#runtime-api) |
+| **Logging** | `src/logging.rs` | DLT-ready logger abstraction | [Design Doc](design_and_requirements.md#3-logging-abstraction-dlt-ready) |
+| **Python Bindings** | `src/python/` | Native Python runtime | |
+| **C++ Bindings** | `src/cpp/` | Modern C++14 runtime | |
+| **Code Generator** | `tools/codegen/` | IDL compiler for multi-language stubs | [IDL](IDL.md) |
+| **Automation** | `tools/fusion/` | Build, test, coverage, dashboard | |
 
 ---
 
 ## References
 
-- [AUTOSAR SOME/IP Protocol Specification](AUTOSAR_PRS_SOMEIPProtocol.pdf)
-- [AUTOSAR SOME/IP-SD Protocol Specification](AUTOSAR_PRS_SOMEIPServiceDiscoveryProtocol.pdf)
-- [IDL Documentation](IDL.md)
+- [AUTOSAR SOME/IP Protocol Specification](../AUTOSAR_PRS_SOMEIPProtocol.pdf)
+- [AUTOSAR SOME/IP-SD Protocol Specification](../AUTOSAR_PRS_SOMEIPServiceDiscoveryProtocol.pdf)
 - [Examples README](../examples/README.md)

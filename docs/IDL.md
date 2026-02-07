@@ -1,15 +1,29 @@
 # Fusion Hawking IDL Documentation
 
-This document describes the Interface Definition Language (IDL) used in the Fusion Hawking project for cross-language communication.
+> **See Also:** [User Guide](user_guide.md) | [Architecture](architecture.md)
+
+This document describes the Interface Definition Language (IDL) used for cross-language service definitions in Fusion Hawking.
+
+---
+
+## Overview
+
+Services are defined using Python dataclasses with type annotations. The code generator (`tools/codegen`) produces type-safe bindings for Rust, Python, and C++.
+
+```bash
+python -m tools.codegen.main examples/integrated_apps/interface.py
+```
+
+> **Code Generation Pipeline:** See [Architecture - Code Generation](architecture.md#code-generation-pipeline)
+
+---
 
 ## Type System
 
-The IDL supports a variety of primitive types and recursive structures.
-
-### Supported Primitives
+### Primitives
 
 | IDL Type | Python | Rust | C++ |
-| :------- | :----- | :--- | :--- |
+|----------|--------|------|-----|
 | `int` / `int32` | `int` | `i32` | `int32_t` |
 | `int8` | `int` | `i8` | `int8_t` |
 | `int16` | `int` | `i16` | `int16_t` |
@@ -23,15 +37,25 @@ The IDL supports a variety of primitive types and recursive structures.
 | `bool` | `bool` | `bool` | `bool` |
 | `string` / `str` | `str` | `String` | `std::string` |
 
-### Recursive Types
+### Complex Types
 
-The IDL supports nested lists using the `List[T]` syntax. This can be nested to any depth, e.g., `List[List[int]]`.
+```python
+from typing import List
+
+# Nested lists (any depth)
+List[int]
+List[List[int]]
+List[List[List[str]]]
+
+# Custom structs
+class Point:
+    x: int
+    y: int
+```
+
+---
 
 ## Defining Services
-
-Services are defined using Python classes with type annotations.
-
-### Example
 
 ```python
 from typing import List
@@ -44,26 +68,107 @@ class MapService:
     SERVICE_ID = 0x1000
     
     def get_path(self, start: Point, end: Point) -> List[Point]:
-        """Calculates a path between two points."""
+        """Returns a path between two points."""
         pass
-
-    def add_points(self, points: List[Point]):
-        """Adds a list of points to the map."""
+    
+    def add_waypoint(self, point: Point):
+        """Adds a waypoint (fire-and-forget)."""
         pass
 ```
 
+---
+
 ## RPC Behavior
 
-### Synchronous RPC
-Methods that specify a return type (other than `None`) will result in a **synchronous** call in the generated client. The client will wait for a response from the service or timeout.
+| Return Type | Behavior | Client Waits? |
+|-------------|----------|---------------|
+| Non-None | **Synchronous** | Yes (blocks until response) |
+| `None` | **Fire-and-forget** | No (returns immediately) |
 
-### Fire-and-Forget
-Methods with a `None` return type are **asynchronous** and "fire-and-forget". The client sends the request and returns immediately without waiting for a result.
+### Example
 
-## Implementation Details
+```python
+class ExampleService:
+    SERVICE_ID = 0x2000
+    
+    # Synchronous - client waits for int result
+    def compute(self, x: int) -> int:
+        pass
+    
+    # Fire-and-forget - client returns immediately  
+    def notify(self, message: str):
+        pass
+```
 
-- **Serialization**: Big-endian (Network Byte Order) is used for all primitive types.
-- **Lists**: Lists are prefixed with a 4-byte length field indicating the total byte length of the serialized items.
-- **Strings**: Strings are prefixed with a 4-byte length field and encoded as UTF-8.
-- **Structs**: Structs are serialized field-by-field in the order they are defined.
-- **SOME/IP**: The underlying transport uses SOME/IP headers (16 bytes) with appropriate Service IDs, Method IDs, and Session IDs for request/response matching.
+---
+
+## Events (Pub/Sub)
+
+Events enable the publish/subscribe pattern for notifications:
+
+```python
+class RadarService:
+    SERVICE_ID = 0x3000
+    
+    # Event definition
+    @event(id=0x8001, eventgroup_id=1)
+    on_detection: List[Detection]
+    
+    # Methods still work alongside events
+    def get_status(self) -> int:
+        pass
+```
+
+> **Event Flow Diagram:** See [Architecture - Subscription Flow](architecture.md#subscription-flow)
+
+---
+
+## Serialization Details
+
+| Element | Format |
+|---------|--------|
+| Byte Order | Big-endian (Network) |
+| Primitives | Fixed-width per type table |
+| Lists | 4-byte length prefix (byte count) + items |
+| Strings | 4-byte length prefix + UTF-8 bytes |
+| Structs | Field-by-field in declaration order |
+
+### Wire Format Example
+
+```
+add(a=5, b=3) serialized:
+┌────────────────────────────────────┬───────────────┐
+│ SOME/IP Header (16 bytes)          │ Payload       │
+│ ServiceID=0x1001, MethodID=0x0001  │ 00 00 00 05   │  (a = 5)
+│ Length=16, MsgType=REQUEST         │ 00 00 00 03   │  (b = 3)
+└────────────────────────────────────┴───────────────┘
+```
+
+> **Header Format:** See [Architecture - SOME/IP Message Format](architecture.md#someip-message-format)
+
+---
+
+## Generated Code Structure
+
+After running `codegen`, files are created in `build/generated/`:
+
+```
+build/generated/
+├── rust/
+│   ├── math_service.rs      # Server trait + Client struct
+│   └── mod.rs
+├── python/
+│   ├── math_service.py      # Handler base + Client class
+│   └── __init__.py
+└── cpp/
+    ├── MathService.hpp      # Abstract handler + Client class
+    └── generated.hpp
+```
+
+---
+
+## Next Steps
+
+- **Using generated code:** [User Guide - Runtime API](user_guide.md#runtime-api)
+- **Event patterns:** [Examples - Automotive Pub/Sub](../examples/README.md#4-automotive-pub-sub)
+- **Testing services:** [Test Matrix](test_matrix.md)
