@@ -104,6 +104,7 @@ def main():
     parser.add_argument("--target", type=str, choices=["all", "rust", "python", "cpp"], default="all", help="Target language to test")
     parser.add_argument("--demo", type=str, choices=["all", "simple", "integrated", "pubsub"], default="all", help="Specific demo to run")
     parser.add_argument("--no-codegen", action="store_true", help="Skip codegen (assume artifacts exist)")
+    parser.add_argument("--base-port", type=int, default=0, help="Port offset for test isolation")
     parser.add_argument("--stage", type=str, 
                         choices=["diagrams", "codegen", "build", "test", "coverage", "docs", "demos", "all"],
                         default="all", help="Run specific build stage (for CI)")
@@ -127,9 +128,9 @@ def main():
     tools = ToolchainManager()
     tool_status = tools.check_all()
     
-    # Patch configs with local IP
+    # Patch configs with local IP and Port Offset
     local_ip = get_local_ip()
-    patch_configs(local_ip, root_dir)
+    patch_configs(local_ip, root_dir, args.base_port)
     
     if server: server.update({"tools": tool_status})
     tools.print_status()

@@ -17,8 +17,8 @@ def get_local_ip():
         s.close()
     return ip
 
-def patch_configs(ip, root_dir):
-    """Update config files with the detected local IP."""
+def patch_configs(ip, root_dir, port_offset=0):
+    """Update config files with the detected local IP and apply port offset."""
     config_paths = [
         "examples/integrated_apps/config.json",
         "examples/automotive_pubsub/config.json"
@@ -31,13 +31,24 @@ def patch_configs(ip, root_dir):
             with open(path, 'r') as f:
                 data = json.load(f)
             
-            # Patch instances
-            if 'instances' in data:
-                for inst in data['instances'].values():
-                    inst['ip'] = ip
+            # Recursive update helper
+            def update_node(node):
+                if isinstance(node, dict):
+                    for k, v in node.items():
+                        if k == "ip" and isinstance(v, str):
+                            node[k] = ip
+                        elif k == "port" and isinstance(v, int):
+                            node[k] = v + port_offset
+                        else:
+                            update_node(v)
+                elif isinstance(node, list):
+                    for item in node:
+                        update_node(item)
+            
+            update_node(data)
             
             with open(path, 'w') as f:
                 json.dump(data, f, indent=4)
-            print(f"Patched {rel_path} with IP: {ip}")
+            print(f"Patched {rel_path} with IP: {ip} Offset: {port_offset}")
         except Exception as e:
             print(f"Failed to patch {rel_path}: {e}")

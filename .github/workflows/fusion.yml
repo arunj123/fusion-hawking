@@ -143,8 +143,13 @@ jobs:
       with:
         name: artifact-core
         path: target
+    - name: Download Codegen Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-codegen
+        path: build/generated
     - name: Restore Permissions
-      run: chmod +x build/release/* target/release/* || true
+      run: chmod +x build/release/* target/release/* target/debug/* || true
     - name: Run Rust Unit Tests
       run: python -m tools.fusion.main --stage test --target rust --no-dashboard
     - name: Upload Logs
@@ -167,6 +172,13 @@ jobs:
       with:
         name: artifact-core
         path: target
+    - name: Download Codegen Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-codegen
+        path: build/generated
+    - name: Restore Permissions
+      run: chmod +x target/release/* target/debug/* || true
     - name: Install Pytest
       run: pip install pytest
     - name: Run Python Unit Tests
@@ -226,9 +238,9 @@ jobs:
         name: artifact-cpp
         path: build
     - name: Restore Permissions
-      run: chmod +x target/release/* || true
+      run: chmod +x target/release/* target/debug/* || true
     - name: Run Simple Demo
-      run: python -m tools.fusion.main --stage demos --demo simple --no-dashboard
+      run: python -m tools.fusion.main --stage demos --demo simple --base-port 0 --no-dashboard
     - name: Upload Logs
       if: always()
       uses: actions/upload-artifact@v4
@@ -260,9 +272,9 @@ jobs:
         name: artifact-cpp
         path: build
     - name: Restore Permissions
-      run: chmod +x build/release/* examples/integrated_apps/cpp_app/build/release/* || true
+      run: chmod +x build/release/* examples/integrated_apps/cpp_app/build/release/* target/debug/* || true
     - name: Run Integrated Demo
-      run: python -m tools.fusion.main --stage demos --demo integrated --no-dashboard
+      run: python -m tools.fusion.main --stage demos --demo integrated --base-port 100 --no-dashboard
     - name: Upload Logs
       if: always()
       uses: actions/upload-artifact@v4
@@ -294,9 +306,9 @@ jobs:
         name: artifact-cpp
         path: build
     - name: Restore Permissions
-      run: chmod +x build/release/* || true
+      run: chmod +x build/release/* target/debug/* || true
     - name: Run PubSub Demo
-      run: python -m tools.fusion.main --stage demos --demo pubsub --no-dashboard
+      run: python -m tools.fusion.main --stage demos --demo pubsub --base-port 200 --no-dashboard
     - name: Upload Logs
       if: always()
       uses: actions/upload-artifact@v4
@@ -332,7 +344,7 @@ jobs:
         pip install pytest pytest-cov
         curl -LsSf https://github.com/taiki-e/cargo-llvm-cov/releases/latest/download/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz | tar xzf - -C ~/.cargo/bin || true
     - name: Restore Permissions
-      run: chmod +x build/* || true
+      run: chmod +x build/* target/debug/* || true
     - name: Run Coverage
       run: python -m tools.fusion.main --stage coverage --no-dashboard
     - name: Upload Logs
