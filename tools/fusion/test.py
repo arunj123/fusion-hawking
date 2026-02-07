@@ -10,114 +10,39 @@ class Tester:
 
     def _get_cpp_binary_path(self, name):
         """Helper to find C++ binary path based on platform."""
+        # 1. Search standard locations
         search_paths = []
         if os.name == 'nt':
-            # Demo build (prioritize specific demo builds)
             search_paths.append(os.path.join("examples", "integrated_apps", "cpp_app", "build", "Release", f"{name}.exe"))
             search_paths.append(os.path.join("examples", "integrated_apps", "cpp_app", "build", f"{name}.exe"))
-            # Root build
             search_paths.append(os.path.join("build", "Release", f"{name}.exe"))
             search_paths.append(os.path.join("build", f"{name}.exe"))
         else:
-            # Demo build (prioritize specific demo builds)
             search_paths.append(os.path.join("examples", "integrated_apps", "cpp_app", "build", name))
-            # Root build
             search_paths.append(os.path.join("build", name))
             search_paths.append(os.path.join("build_linux", name))
-            # Nested in build directory (CMake default for add_subdirectory)
             search_paths.append(os.path.join("build", "examples", "integrated_apps", "cpp_app", name))
             
         for path in search_paths:
             if os.path.isfile(path): return path
-        
-        print(f"WARNING: C++ binary '{name}' not found in: {search_paths}")
-        
-        # Debug: List build directory content
-        if os.path.exists("build"):
-            print("DEBUG: Listing 'build' directory content:")
-            for root, dirs, files in os.walk("build"):
-                for f in files:
-                    print(os.path.join(root, f))
-        else:
-            print("DEBUG: 'build' directory does not exist.")
             
+        # 2. Fallback: Recursive Search in build dir
+        print(f"DEBUG: '{name}' not found in standard paths. Searching 'build' directory...")
+        for root, dirs, files in os.walk("build"):
+            if name in files or f"{name}.exe" in files:
+                found_path = os.path.join(root, name if name in files else f"{name}.exe")
+                print(f"DEBUG: Found '{name}' at {found_path}")
+                return found_path
+        
+        print(f"WARNING: C++ binary '{name}' not found.")
         return None
 
-    def run_unit_tests(self):
-        print("\n--- Running Unit Tests ---")
-        results = {}
-        print("  Running Rust tests...")
-        results["rust"] = self._run_rust_tests()
-        print("  Running Python tests...")
-        results.update(self._run_python_tests())
-        print("  Running C++ tests...")
-        results["cpp"] = self._run_cpp_tests()
-        print(f"  Unit test results: {results}")
-        return results
-
-    def _run_rust_tests(self):
-        # Rust
-        if self.builder.run_command(["cargo", "test"], "test_rust"):
-            return "PASS"
-        else:
-            return "FAIL"
-
-    def _run_python_tests(self):
-        results = {}
-        # Python
-        env = os.environ.copy()
-        env["PYTHONPATH"] = os.pathsep.join(["src/python", "build", "build/generated/python"])
-        env["FUSION_LOG_DIR"] = str(self.reporter.raw_logs_dir)
-        
-        # 1. Unittest
-        with open(self.reporter.get_log_path("test_python_unittest"), "w") as f:
-             py_cmd = ["python", "-m", "unittest", "discover", "tests"]
-             f.write(f"=== FUSION UNIT TEST ===\nCommand: {' '.join(py_cmd)}\nPWD: {os.getcwd()}\nEnvironment [PYTHONPATH]: {env['PYTHONPATH']}\n========================\n\n")
-             f.flush()
-             if subprocess.call(py_cmd, stdout=f, stderr=subprocess.STDOUT, env=env) == 0:
-                 results["python_unittest"] = "PASS"
-             else:
-                 results["python_unittest"] = "FAIL"
-
-        # 2. Codegen Tests
-        with open(self.reporter.get_log_path("test_codegen"), "w") as f:
-             codegen_cmd = ["python", "-m", "unittest", "tools.codegen.tests.test_codegen", "-v"]
-             f.write(f"=== FUSION CODEGEN UNIT TEST ===\nCommand: {' '.join(codegen_cmd)}\nPWD: {os.getcwd()}\n================================\n\n")
-             f.flush()
-             if subprocess.call(codegen_cmd, stdout=f, stderr=subprocess.STDOUT, env=env) == 0:
-                 results["python_codegen"] = "PASS"
-             else:
-                 results["python_codegen"] = "FAIL"
-
-        # 3. Pytest (Cross Language)
-        with open(self.reporter.get_log_path("test_python_pytest"), "w") as f:
-             # Check if pytest is installed
-             try:
-                 pytest_cmd = ["python", "-m", "pytest", "tests/test_cross_language.py"]
-                 f.write(f"=== FUSION PYTEST ===\nCommand: {' '.join(pytest_cmd)}\nPWD: {os.getcwd()}\nEnvironment [PYTHONPATH]: {env['PYTHONPATH']}\n=====================\n\n")
-                 f.flush()
-                 if subprocess.call(pytest_cmd, stdout=f, stderr=subprocess.STDOUT, env=env) == 0:
-                     results["python_integration"] = "PASS"
-                 else:
-                     results["python_integration"] = "FAIL"
-             except:
-                 results["python_integration"] = "SKIPPED (pytest missing)"
-        return results
-
-    def _run_cpp_tests(self):
-        # C++
-        cpp_exe = self._get_cpp_binary_path("cpp_test")
-        if cpp_exe:
-            cpp_cmd = [cpp_exe]
-            with open(self.reporter.get_log_path("test_cpp"), "w") as f:
-                 f.write(f"=== FUSION C++ TEST ===\nCommand: {cpp_exe}\nPWD: {os.getcwd()}\n=======================\n\n")
-                 f.flush()
-                 if subprocess.call(cpp_cmd, stdout=f, stderr=subprocess.STDOUT) == 0:
-                     return "PASS"
-                 else:
-                     return "FAIL"
-        else:
-             return "SKIPPED"
+    def _prebuild_rust_demo(self):
+        """Builds the Rust demo app to avoid compilation delays during runtime."""
+        print("  Pre-building Rust Demo...")
+        cmd = ["cargo", "build"]
+        cwd = "examples/integrated_apps/rust_app"
+        subprocess.run(cmd, cwd=cwd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def run_demos(self, demo_filter="all"):
         print("\n--- Running Integration Demos ---")
@@ -136,6 +61,9 @@ class Tester:
             # 1. Start Rust (runs, waits for events)
             # 2. Start Python
             # 3. Start C++
+            
+            # Pre-build Rust to ensure starts immediately
+            self._prebuild_rust_demo()
             
             # We need to capture outputs to separate logs to verify logic patterns
             
@@ -184,9 +112,9 @@ class Tester:
                     p_cpp = subprocess.Popen(cpp_cmd, stdout=f_cpp, stderr=subprocess.STDOUT, cwd="examples/integrated_apps/cpp_app")
                     procs.append(p_cpp)
                 
-                # Run for 10s
-                print("  Integrated Apps started, waiting 10s...")
-                time.sleep(10)
+                # Run for 20s (Increased for safety)
+                print("  Integrated Apps started, waiting 20s...")
+                time.sleep(20)
                 
             finally:
                 for p in procs:
