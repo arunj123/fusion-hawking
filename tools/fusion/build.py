@@ -47,7 +47,7 @@ class Builder:
         if not os.path.exists(build_dir):
             os.makedirs(build_dir)
             
-        cmake_config = ["cmake", ".."]
+        cmake_config = ["cmake", "..", "-DCMAKE_BUILD_TYPE=Release"]
         if not self.run_command(cmake_config, "build_cpp_config", cwd=build_dir):
             return False
             

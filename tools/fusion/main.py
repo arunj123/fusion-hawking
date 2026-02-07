@@ -41,7 +41,8 @@ def run_build(root_dir, reporter, builder, tool_status, target, server, skip_cod
             raise Exception("Rust Build Failed")
     
     if tool_status.get("cmake") and target in ["all", "cpp"]:
-        builder.build_cpp()
+        if not builder.build_cpp():
+            raise Exception("C++ Build Failed")
     
     # Capture Configuration
     try:
