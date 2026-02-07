@@ -12,7 +12,7 @@
                     "port": 30601,
                     "protocol": "udp",
                     "multicast": {
-                        "ip": "224.0.0.1",
+                        "ip": "192.168.0.113",
                         "port": 30490
                     },
                     "eventgroups": {
@@ -38,7 +38,7 @@
                     "port": 30602,
                     "protocol": "udp",
                     "multicast": {
-                        "ip": "224.0.0.1",
+                        "ip": "192.168.0.113",
                         "port": 30490
                     },
                     "eventgroups": {

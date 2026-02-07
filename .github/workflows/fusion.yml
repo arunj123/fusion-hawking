@@ -277,6 +277,8 @@ jobs:
         path: build
     - name: Restore Permissions
       run: chmod +x build/release/* examples/integrated_apps/cpp_app/build/release/* target/debug/* || true
+    - name: List Build Directory (Debug)
+      run: ls -R build
     - name: Run Integrated Demo
       run: python -m tools.fusion.main --stage demos --demo integrated --base-port 100 --no-dashboard
     - name: Upload Logs

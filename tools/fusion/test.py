@@ -27,7 +27,8 @@ class Tester:
             
         for path in search_paths:
             if os.path.isfile(path): return path
-            
+        
+        print(f"WARNING: C++ binary '{name}' not found in: {search_paths}")
         return None
 
     def run_unit_tests(self):

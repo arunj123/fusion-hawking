@@ -319,6 +319,7 @@ class SomeIpRuntime:
                     if endpoint and endpoint[0] != '0.0.0.0':
                         self.remote_services[sid] = endpoint
                         self.logger.log(LogLevel.DEBUG, "SD", f"Discovered 0x{sid:04x} at {endpoint[0]}:{endpoint[1]}")
+                        self.logger.log(LogLevel.DEBUG, "SD", f"DEBUG: Added 0x{sid:04x} (Key Type: {type(sid)}). Current Keys: {list(self.remote_services.keys())}")
                         
             elif entry_type == 0x06: # SubscribeEventgroup
                 # Verify if we provide this service? 
@@ -518,6 +519,10 @@ class SomeIpRuntime:
                 self.logger.log(LogLevel.INFO, "Runtime", f"Discovered '{alias}' (0x{service_id:04x}) at {endpoint[0]}:{endpoint[1]}")
                 return endpoint
             
+            # DEBUG: Print keys periodically
+            if int(time.time() * 10) % 20 == 0:
+                 print(f"DEBUG: Waiting for 0x{service_id:04x} (Type: {type(service_id)}). Available: {list(self.remote_services.keys())} Types: {[type(k) for k in self.remote_services.keys()]}")
+
             time.sleep(poll_interval)
         
         self.logger.log(LogLevel.WARN, "Runtime", f"Timeout waiting for '{alias}' (0x{service_id:04x})")
