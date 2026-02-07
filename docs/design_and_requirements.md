@@ -151,7 +151,7 @@ Configuration auto-detects IP version from address format:
 |--------|--------|----------|--------|
 | Python | Rust | IPv4 | ✅ |
 | Rust | C++ | IPv4 | ✅ |
-| C++ | Python | IPv6 | 🔲 TODO |
+| C++ | Python | IPv6 | ✅ |
 
 > **Full Matrix:** See [Test Matrix](test_matrix.md)
 

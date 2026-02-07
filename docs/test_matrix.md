@@ -42,7 +42,7 @@ This document tracks test coverage and cross-language interoperability status.
 |---------|------|--------|-----|-------|
 | UDP Transport | ✅ | ✅ | ✅ | |
 | TCP Transport | ✅ | 🔲 | 🔲 | Planned |
-| Service Discovery | ✅ | ✅ | 🔲 | C++ uses static routing |
+| Service Discovery | ✅ | ✅ | ✅ | |
 | IPv4 | ✅ | ✅ | ✅ | |
 | IPv6 | ✅ | ✅ | ✅ | |
 | Configuration (JSON) | ✅ | ✅ | ✅ | |
@@ -91,7 +91,8 @@ After a test run, coverage reports are available in `logs/latest/coverage/`:
 |----------|-------------|------|
 | Rust | `coverage/rust/index.html` | `cargo-llvm-cov` |
 | Python | `coverage/python/index.html` | `coverage.py` |
-| C++ | `coverage/cpp/index.html` | `OpenCppCoverage` |
+| C++ (Windows) | `coverage/cpp/index.html` | `OpenCppCoverage` |
+| C++ (Linux) | `coverage/cpp/index.html` | `lcov` / `genhtml` |
 
 > **CI/CD Pipeline:** See [Architecture - Automation Pipeline](architecture.md#automation--cicd-pipeline)
 

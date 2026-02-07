@@ -102,7 +102,7 @@ rt.offer_service("math-service", MathServiceStub())
 rt.start()
 ```
 
-### C++
+### C++ (C++23)
 
 ```cpp
 SomeIpRuntime rt("config.json", "my_instance");

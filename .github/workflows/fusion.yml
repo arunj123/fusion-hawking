@@ -477,9 +477,9 @@ jobs:
             # href="../docs/something.md" -> href="something.html" (flattened structure)
             html = re.sub(r'href="(?:\.\./)?docs/([^"]+)\.md(#[^"]*)?"\s*>', r'href="\1.html\2">', html)
             # href="examples/README.md" -> href="examples.html"
-            html = re.sub(r'href="examples/README.md(#[^"]*)?"\s*>', r'href="examples.html\2">', html)
+            html = re.sub(r'href="examples/README.md(#[^"]*)?"\s*>', r'href="examples.html\1">', html)
             # href="automotive_pubsub/README.md" -> href="automotive_pubsub.html"
-            html = re.sub(r'href="automotive_pubsub/README.md(#[^"]*)?"\s*>', r'href="automotive_pubsub.html\2">', html)
+            html = re.sub(r'href="automotive_pubsub/README.md(#[^"]*)?"\s*>', r'href="automotive_pubsub.html\1">', html)
             return html
         
         def convert_image_paths(html):

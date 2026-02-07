@@ -170,7 +170,7 @@ The `tools/fusion/` toolkit orchestrates the complete build/test/coverage workfl
 | **Runtime** | `src/runtime/` | High-level API for service lifecycle | [User Guide](user_guide.md#runtime-api) |
 | **Logging** | `src/logging.rs` | DLT-ready logger abstraction | [Design Doc](design_and_requirements.md#3-logging-abstraction-dlt-ready) |
 | **Python Bindings** | `src/python/` | Native Python runtime | |
-| **C++ Bindings** | `src/cpp/` | Modern C++14 runtime | |
+| **C++ Bindings** | `src/cpp/` | Modern C++23 runtime | |
 | **Code Generator** | `tools/codegen/` | IDL compiler for multi-language stubs | [IDL](IDL.md) |
 | **Automation** | `tools/fusion/` | Build, test, coverage, dashboard | |
 
