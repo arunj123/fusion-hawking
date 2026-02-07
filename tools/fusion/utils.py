@@ -49,6 +49,20 @@ def patch_configs(ip, root_dir, port_offset=0):
                     if "multicast_ip" not in inst_cfg["sd"]:
                         inst_cfg["sd"]["multicast_ip"] = "224.0.0.1"
 
+            # Recursive update helper
+            def update_node(node):
+                if isinstance(node, dict):
+                    for k, v in node.items():
+                        if k == "ip" and isinstance(v, str):
+                            node[k] = ip
+                        elif k == "port" and isinstance(v, int):
+                            node[k] = v + port_offset
+                        else:
+                            update_node(v)
+                elif isinstance(node, list):
+                    for item in node:
+                        update_node(item)
+
             # Recursive update for other ports (services)
             update_node(data)
             
