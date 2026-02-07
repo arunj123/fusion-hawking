@@ -9,6 +9,7 @@ from .generators.cpp import CppGenerator
 def main():
     parser = argparse.ArgumentParser(description="Modular Code Generator")
     parser.add_argument("files", nargs="+", help="Path to IDL file(s) (Python)")
+    parser.add_argument("--output-dir", default="build/generated", help="Base output directory for generated code")
     args = parser.parse_args()
     
     all_structs = []
@@ -34,7 +35,7 @@ def main():
     
     output_files = {}
     for gen in generators:
-        output_files.update(gen.generate(structs, services))
+        output_files.update(gen.generate(structs, services, output_dir=args.output_dir))
         
     # 3. Write
     for filename, content in output_files.items():

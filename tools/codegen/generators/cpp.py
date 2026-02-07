@@ -2,7 +2,7 @@ from .base import AbstractGenerator
 from ..models import Struct, Service, Method, Field, Type
 
 class CppGenerator(AbstractGenerator):
-    def generate(self, structs: list[Struct], services: list[Service]) -> dict[str, str]:
+    def generate(self, structs: list[Struct], services: list[Service], output_dir: str = "build/generated") -> dict[str, str]:
         lines = []
         lines.append("#pragma once")
         lines.append("#include <vector>")
@@ -42,7 +42,11 @@ class CppGenerator(AbstractGenerator):
              lines.append(f"class {svc.name}Stub : public RequestHandler {{")
              lines.append("public:")
              lines.append(f"    static const uint16_t SERVICE_ID = {svc.id};")
+             lines.append(f"    static const uint32_t MAJOR_VERSION = {svc.major_version};")
+             lines.append(f"    static const uint32_t MINOR_VERSION = {svc.minor_version};")
              lines.append(f"    uint16_t get_service_id() override {{ return SERVICE_ID; }}")
+             lines.append(f"    uint32_t get_major_version() override {{ return MAJOR_VERSION; }}")
+             lines.append(f"    uint32_t get_minor_version() override {{ return MINOR_VERSION; }}")
 
              # Method IDs
              for m in svc.methods:
@@ -116,6 +120,8 @@ class CppGenerator(AbstractGenerator):
              lines.append("    uint16_t service_id;")
              lines.append("public:")
              lines.append(f"    static const uint16_t SERVICE_ID = {svc.id};")
+             lines.append(f"    static const uint32_t MAJOR_VERSION = {svc.major_version};")
+             lines.append(f"    static const uint32_t MINOR_VERSION = {svc.minor_version};")
              lines.append(f"    {svc.name}Client(void* rt, uint16_t sid) : runtime(rt), service_id(sid) {{}}")
              
              for m in svc.methods:
@@ -145,7 +151,8 @@ class CppGenerator(AbstractGenerator):
              lines.append("};")
 
         lines.append("} // namespace generated")
-        return {"build/generated/cpp/bindings.h": "\n".join(lines)}
+        import os
+        return {os.path.join(output_dir, "cpp/bindings.h"): "\n".join(lines)}
 
     def _generate_struct(self, s: Struct) -> str:
         lines = []

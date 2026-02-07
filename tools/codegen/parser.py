@@ -21,7 +21,9 @@ class PythonASTParser(AbstractParser):
                 
                 service_id = self._get_decorator_id(node, 'service')
                 if service_id is not None:
-                    services.append(self._parse_service(node, service_id))
+                    major = self._get_decorator_id(node, 'service', 'major_version') or 1
+                    minor = self._get_decorator_id(node, 'service', 'minor_version') or 0
+                    services.append(self._parse_service(node, service_id, major, minor))
                     
         return structs, services
 
@@ -33,13 +35,8 @@ class PythonASTParser(AbstractParser):
                 return True
         return False
 
-    def _get_decorator_id(self, node, name: str) -> Optional[int]:
-        for d in node.decorator_list:
-            if isinstance(d, ast.Call) and isinstance(d.func, ast.Name) and d.func.id == name:
-                for kw in d.keywords:
-                    if kw.arg == 'id':
-                        return kw.value.value
-        return None
+    def _get_decorator_id(self, node, name: str, key: str = 'id') -> Optional[int]:
+        return self._get_decorator_id(node, name, key)
 
     def _parse_type(self, annotation) -> Type:
         if isinstance(annotation, ast.Name):
@@ -69,32 +66,32 @@ class PythonASTParser(AbstractParser):
                 fields.append(Field(name, field_type))
         return Struct(node.name, fields)
 
-    def _parse_service(self, node: ast.ClassDef, service_id: int) -> Service:
+    def _parse_service(self, node: ast.ClassDef, service_id: int, major: int = 1, minor: int = 0) -> Service:
         methods = []
         events = []
         fields = []
         for item in node.body:
             if isinstance(item, ast.FunctionDef):
                 # Check for @method
-                method_id = self._get_decorator_data(item, 'method', 'id')
+                method_id = self._get_decorator_id(item, 'method', 'id')
                 if method_id is not None:
                      methods.append(self._parse_method(item, method_id))
                 
-                event_id = self._get_decorator_data(item, 'event', 'id')
+                event_id = self._get_decorator_id(item, 'event', 'id')
                 if event_id is not None:
                      events.append(self._parse_event(item, event_id))
                      
-                field_id = self._get_decorator_data(item, 'field', 'id')
+                field_id = self._get_decorator_id(item, 'field', 'id')
                 if field_id is not None:
                      fields.append(self._parse_field_method(item, field_id))
             
             elif isinstance(item, ast.AnnAssign):
                 # Check for @field
-                field_id = self._get_decorator_data(item, 'field', 'id')
+                field_id = self._get_decorator_id(item, 'field', 'id')
                 if field_id is not None:
                     fields.append(self._parse_field_spec(item))
                     
-        return Service(node.name, service_id, methods, events, fields)
+        return Service(node.name, service_id, methods, events, fields, major, minor)
 
     def _parse_method(self, item: ast.FunctionDef, method_id: int) -> Method:
         args = []
@@ -125,9 +122,9 @@ class PythonASTParser(AbstractParser):
         if item.returns:
             field_type = self._parse_type(item.returns)
             
-        get_id = self._get_decorator_data(item, 'field', 'get_id')
-        set_id = self._get_decorator_data(item, 'field', 'set_id')
-        notifier_id = self._get_decorator_data(item, 'field', 'notifier_id')
+        get_id = self._get_decorator_id(item, 'field', 'get_id')
+        set_id = self._get_decorator_id(item, 'field', 'set_id')
+        notifier_id = self._get_decorator_id(item, 'field', 'notifier_id')
         
         return FieldSpec(name, field_id, field_type, get_id, set_id, notifier_id)
 
@@ -136,18 +133,23 @@ class PythonASTParser(AbstractParser):
         field_type = self._parse_type(item.annotation)
         
         # Get decorator details
-        field_id = self._get_decorator_data(item, 'field', 'id')
-        get_id = self._get_decorator_data(item, 'field', 'get_id')
-        set_id = self._get_decorator_data(item, 'field', 'set_id')
-        notifier_id = self._get_decorator_data(item, 'field', 'notifier_id')
+        field_id = self._get_decorator_id(item, 'field', 'id')
+        get_id = self._get_decorator_id(item, 'field', 'get_id')
+        set_id = self._get_decorator_id(item, 'field', 'set_id')
+        notifier_id = self._get_decorator_id(item, 'field', 'notifier_id')
         
         return FieldSpec(name, field_id, field_type, get_id, set_id, notifier_id)
 
-    def _get_decorator_data(self, node, decorator_name: str, key: str) -> Optional[int]:
+    def _get_decorator_id(self, node, decorator_name: str, key: str = 'id') -> Optional[int]:
         if not hasattr(node, 'decorator_list'): return None
         for d in node.decorator_list:
             if isinstance(d, ast.Call) and isinstance(d.func, ast.Name) and d.func.id == decorator_name:
                 for kw in d.keywords:
+                    # Parse 'id' or other keys
                     if kw.arg == key:
-                        return kw.value.value
+                         if isinstance(kw.value, ast.Constant):
+                             return kw.value.value
+                         # Handle unary minus for negative values if needed, mostly IDs are positive
+                         if isinstance(kw.value, ast.UnaryOp) and isinstance(kw.value.op, ast.USub) and isinstance(kw.value.operand, ast.Constant):
+                             return -kw.value.operand.value
         return None

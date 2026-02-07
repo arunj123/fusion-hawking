@@ -2,6 +2,7 @@
 **/target/
 **/build/
 **/build_linux/
+**/build_cpp/
 **/bin/
 **/obj/
 *.exe
@@ -18,11 +19,14 @@ cargo_*.txt
 rust_test_out.txt
 demo_output.txt
 compilation_error.txt
+temp_config.json
+output.txt
 
 # Python
 *.pyc
 __pycache__/
 .venv/
+.venv_linux/
 .pytest_cache/
 .coverage
 coverage/

@@ -12,12 +12,16 @@ namespace fusion_hawking {
 struct ServiceConfig {
     uint16_t service_id = 0;
     uint16_t instance_id = 1;
+    uint8_t major_version = 1;
+    uint32_t minor_version = 0;
     uint16_t port = 0;
 };
 
 struct ClientConfig {
     uint16_t service_id = 0;
     uint16_t instance_id = 1;
+    uint8_t major_version = 1;
+    uint32_t minor_version = 0;
     std::string static_ip;
     uint16_t static_port = 0;
 };
@@ -25,6 +29,9 @@ struct ClientConfig {
 struct SdConfig {
     uint16_t multicast_port = 30490;
     std::string multicast_ip = "224.0.0.1";
+    uint32_t cycle_offer_ms = 500;
+    uint32_t request_response_delay_ms = 50;
+    uint32_t request_timeout_ms = 2000;
 };
 
 struct InstanceConfig {
@@ -96,6 +103,9 @@ public:
             std::string sd_block = block.substr(s_start, s_end - s_start);
             config.sd.multicast_port = ExtractInt(sd_block, "multicast_port");
             config.sd.multicast_ip = ExtractString(sd_block, "multicast_ip");
+            int cycle = ExtractInt(sd_block, "cycle_offer_ms"); if (cycle > 0) config.sd.cycle_offer_ms = cycle;
+            int delay = ExtractInt(sd_block, "request_response_delay_ms"); if (delay > 0) config.sd.request_response_delay_ms = delay;
+            int timeout = ExtractInt(sd_block, "request_timeout_ms"); if (timeout > 0) config.sd.request_timeout_ms = timeout;
         }
         
         if (config.sd.multicast_port == 0) config.sd.multicast_port = 30490;
@@ -132,6 +142,8 @@ private:
             ServiceConfig cfg;
             cfg.service_id = ExtractInt(val, "service_id");
             cfg.instance_id = ExtractInt(val, "instance_id");
+            cfg.major_version = ExtractInt(val, "major_version");
+            cfg.minor_version = ExtractInt(val, "minor_version");
             cfg.port = ExtractInt(val, "port");
             map[key] = cfg;
             pos = obj_end;
@@ -158,6 +170,8 @@ private:
             ClientConfig cfg;
             cfg.service_id = ExtractInt(val, "service_id");
             cfg.instance_id = ExtractInt(val, "instance_id");
+            cfg.major_version = ExtractInt(val, "major_version");
+            cfg.minor_version = ExtractInt(val, "minor_version");
             cfg.static_ip = ExtractString(val, "static_ip");
             cfg.static_port = ExtractInt(val, "static_port");
             map[key] = cfg;
@@ -172,7 +186,7 @@ private:
         size_t val_start = json.find_first_not_of(" \t\n\r", colon + 1);
         size_t val_end = json.find_first_of(",}", val_start);
         std::string num = json.substr(val_start, val_end - val_start);
-        try { return std::stoi(num); } catch(...) { return 0; }
+        try { return std::stoi(num, nullptr, 0); } catch(...) { return 0; }
     }
     
     static std::string ExtractString(const std::string& json, const std::string& key) {

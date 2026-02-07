@@ -12,6 +12,8 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #define SOCKLEN_T socklen_t
+typedef int SOCKET;
+#define closesocket close
 #endif
 
 void print_hex(const std::vector<uint8_t>& data) {
@@ -25,7 +27,7 @@ int main() {
     WSAStartup(MAKEWORD(2, 2), &wsa);
 #endif
 
-    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    SOCKET sock = socket(AF_INET, SOCK_DGRAM, 0);
     sockaddr_in addr = {0};
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK); // 127.0.0.1
@@ -63,7 +65,7 @@ int main() {
             
             // Payload "C++ OK"
             std::string payload = "C++ OK";
-            uint32_t total_len = payload.size() + 8;
+            uint32_t total_len = (uint32_t)payload.size() + 8;
             res[4] = (total_len >> 24) & 0xFF;
             res[5] = (total_len >> 16) & 0xFF;
             res[6] = (total_len >> 8) & 0xFF;
@@ -71,7 +73,7 @@ int main() {
 
             res.insert(res.end(), payload.begin(), payload.end());
 
-            sendto(sock, (const char*)res.data(), res.size(), 0, (struct sockaddr*)&src, len);
+            sendto(sock, (const char*)res.data(), (int)res.size(), 0, (struct sockaddr*)&src, len);
         }
     }
 

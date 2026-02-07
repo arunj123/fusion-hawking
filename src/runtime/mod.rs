@@ -45,6 +45,8 @@ use crate::codec::SomeIpHeader;
 
 pub trait RequestHandler: Send + Sync {
     fn service_id(&self) -> u16;
+    fn major_version(&self) -> u8;
+    fn minor_version(&self) -> u32;
     fn handle(&self, header: &SomeIpHeader, payload: &[u8]) -> Option<Vec<u8>>;
 }
 
@@ -170,8 +172,13 @@ impl SomeIpRuntime {
             T::SERVICE_ID
         };
 
-        // Wait for service discovery with timeout (5 seconds, polling every 100ms)
-        let timeout = Duration::from_secs(5);
+        // Resolve timeout from config
+        let timeout_ms = if let Some(cfg) = &self.config {
+            cfg.sd.request_timeout_ms
+        } else {
+            2000 // Default fallback
+        };
+        let timeout = Duration::from_millis(timeout_ms);
         let poll_interval = Duration::from_millis(100);
         let start = std::time::Instant::now();
 
@@ -208,15 +215,15 @@ impl SomeIpRuntime {
 
     pub fn offer_service(&self, alias: &str, instance: Box<dyn RequestHandler>) {
         // Resolve Config
-        let (service_id, instance_id, port) = if let Some(cfg) = &self.config {
+        let (service_id, major, minor, instance_id, port) = if let Some(cfg) = &self.config {
             if let Some(prov_cfg) = cfg.providing.get(alias) {
-                (prov_cfg.service_id, prov_cfg.instance_id, prov_cfg.port.unwrap_or(0))
+                (prov_cfg.service_id, prov_cfg.major_version, prov_cfg.minor_version, prov_cfg.instance_id, prov_cfg.port.unwrap_or(0))
             } else {
                 self.logger.log(LogLevel::Warn, "Runtime", &format!("Alias '{}' not found in config. Using struct defaults.", alias));
-                (instance.service_id(), 1, self.transport.local_addr().unwrap().port())
+                (instance.service_id(), instance.major_version(), instance.minor_version(), 1, self.transport.local_addr().unwrap().port())
             }
         } else {
-            (instance.service_id(), 1, self.transport.local_addr().unwrap().port())
+            (instance.service_id(), instance.major_version(), instance.minor_version(), 1, self.transport.local_addr().unwrap().port())
         };
         
         // Register in Dispatch Map
@@ -230,7 +237,7 @@ impl SomeIpRuntime {
         // Use configured port if available, else bound port
         let final_port = if port != 0 { port } else { self.transport.local_addr().unwrap().port() };
         
-        sd.offer_service(service_id, instance_id, 1, 0, final_port, 0x11); // 0x11 = UDP
+        sd.offer_service(service_id, instance_id, major, minor, final_port, 0x11); // 0x11 = UDP
         self.logger.log(LogLevel::Info, "Runtime", &format!("Offered Service '{}' (0x{:04x}) on port {}", alias, service_id, final_port));
     }
     

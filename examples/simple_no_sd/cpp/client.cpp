@@ -11,6 +11,8 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #define SOCKLEN_T socklen_t
+typedef int SOCKET;
+#define closesocket close
 #endif
 
 int main() {
@@ -19,7 +21,7 @@ int main() {
     WSAStartup(MAKEWORD(2, 2), &wsa);
 #endif
 
-    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    SOCKET sock = socket(AF_INET, SOCK_DGRAM, 0);
     
     // Target: C++ Server on 40002
     sockaddr_in target = {0};
@@ -42,7 +44,7 @@ int main() {
     req.insert(req.end(), p.begin(), p.end());
 
     std::cout << "Sending Request to 127.0.0.1:40002" << std::endl;
-    sendto(sock, (const char*)req.data(), req.size(), 0, (struct sockaddr*)&target, sizeof(target));
+    sendto(sock, (const char*)req.data(), (int)req.size(), 0, (struct sockaddr*)&target, sizeof(target));
 
     char buf[1500];
     sockaddr_in src;

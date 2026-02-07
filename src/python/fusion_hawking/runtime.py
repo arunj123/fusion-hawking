@@ -64,6 +64,10 @@ class SessionIdManager:
 class RequestHandler:
     def get_service_id(self) -> int:
         raise NotImplementedError()
+    def get_major_version(self) -> int:
+        return 1
+    def get_minor_version(self) -> int:
+        return 0
     def handle(self, header: Dict, payload: bytes) -> bytes:
         raise NotImplementedError()
 
@@ -105,6 +109,9 @@ class SomeIpRuntime:
         if self.config and 'sd' in self.config:
             self.sd_pub_port = self.config['sd'].get('multicast_port', 30490)
             self.sd_multicast_ip = self.config['sd'].get('multicast_ip', "224.0.0.1")
+        
+        self.request_timeout = self.config.get('sd', {}).get('request_timeout_ms', 2000) / 1000.0
+        self.offer_interval = self.config.get('sd', {}).get('cycle_offer_ms', 500) / 1000.0
 
         self.sd_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sd_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -118,12 +125,12 @@ class SomeIpRuntime:
         interface_ip = self.config.get('ip', '127.0.0.1') if self.config else '127.0.0.1'
         # Join Multicast on configured interface
         self.interface_ip = interface_ip
-        mreq = struct.pack("4s4s", socket.inet_aton("224.0.0.1"), socket.inet_aton(self.interface_ip))
+        mreq = struct.pack("4s4s", socket.inet_aton(self.sd_multicast_ip), socket.inet_aton(self.interface_ip))
         try:
             self.sd_sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
         except OSError:
             self.logger.log(LogLevel.WARN, "Runtime", f"Failed to join multicast on {self.interface_ip}, retrying on INADDR_ANY")
-            mreq = struct.pack("4s4s", socket.inet_aton("224.0.0.1"), socket.inet_aton("0.0.0.0"))
+            mreq = struct.pack("4s4s", socket.inet_aton(self.sd_multicast_ip), socket.inet_aton("0.0.0.0"))
             self.sd_sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
         # Ensure outgoing multicast uses configured interface
         self.sd_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(self.interface_ip))
@@ -181,11 +188,12 @@ class SomeIpRuntime:
                 instance_id = cfg.get('instance_id', 1)
                 port = cfg.get('port', self.port)
         
-        self.offered_services.append((sid, instance_id, port))
-        self._send_offer(sid, instance_id, port)
-        self.logger.log(LogLevel.INFO, "Runtime", f"Offered {alias} (0x{sid:04x}) on port {port}")
+        self.offered_services.append((sid, instance_id, handler.get_major_version(), handler.get_minor_version(), port))
+        self._send_offer(sid, instance_id, handler.get_major_version(), handler.get_minor_version(), port)
+        self.logger.log(LogLevel.INFO, "Runtime", f"Offered {alias} (0x{sid:04x}) v{handler.get_major_version()}.{handler.get_minor_version()} on port {port}")
 
-    def get_client(self, alias: str, client_cls, timeout: float = 5.0):
+    def get_client(self, alias: str, client_cls, timeout: float = None):
+        if timeout is None: timeout = self.request_timeout
         """Get a client for a remote service, waiting for SD discovery if needed."""
         # Resolve service ID from config
         service_id = client_cls.SERVICE_ID if hasattr(client_cls, 'SERVICE_ID') else 0
@@ -421,7 +429,7 @@ class SomeIpRuntime:
         """Check if subscription was acknowledged."""
         return self.subscriptions.get((service_id, eventgroup_id), False)
 
-    def _send_offer(self, service_id, instance_id, port):
+    def _send_offer(self, service_id, instance_id, major, minor, port):
         # SD Payload Construction (Match C++ logic)
         sd_payload = bytearray([0x80, 0, 0, 0]) # Flags
         sd_payload += struct.pack(">I", 16)     # Entries Len (4 bytes)
@@ -429,8 +437,8 @@ class SomeIpRuntime:
         # Entry (16 bytes)
         # Type(1), Idx1(1), Idx2(1), NumOpts(1), SvcId(2), InstId(2), Maj/TTL(4), Min(4)
         num_opts_byte = (1 << 4) | 0
-        maj_ttl = (1 << 24) | 0xFFFFFF
-        sd_payload += struct.pack(">BBBBHHII", 0x01, 0, 0, num_opts_byte, service_id, instance_id, maj_ttl, 10)
+        maj_ttl = (major << 24) | 0xFFFFFF
+        sd_payload += struct.pack(">BBBBHHII", 0x01, 0, 0, num_opts_byte, service_id, instance_id, maj_ttl, minor)
         
         # Options Len (4 bytes)
         sd_payload += struct.pack(">I", 12)
@@ -472,10 +480,10 @@ class SomeIpRuntime:
         while self.running:
             # Periodic SD Offers
             now = time.time()
-            if now - self.last_offer_time > 0.5:  # Faster offer interval for quicker discovery
+            if now - self.last_offer_time > self.offer_interval:  # Faster offer interval for quicker discovery
                 self.last_offer_time = now
-                for (sid, iid, port) in self.offered_services:
-                    self._send_offer(sid, iid, port)
+                for (sid, iid, major, minor, port) in self.offered_services:
+                    self._send_offer(sid, iid, major, minor, port)
 
             readable, _, _ = select.select([self.sock, self.sd_sock], [], [], 0.5)
             for s in readable:

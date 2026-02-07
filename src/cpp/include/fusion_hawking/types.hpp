@@ -99,6 +99,8 @@ class RequestHandler {
 public:
     virtual ~RequestHandler() = default;
     virtual uint16_t get_service_id() = 0;
+    virtual uint32_t get_major_version() = 0;
+    virtual uint32_t get_minor_version() = 0;
     virtual std::vector<uint8_t> handle(const SomeIpHeader& header, const std::vector<uint8_t>& payload) = 0;
 };
 

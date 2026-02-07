@@ -107,6 +107,18 @@ class Tester:
                      with open(self.reporter.get_log_path("test_python_pytest"), "r") as log_f:
                          print(log_f.read())
                      print(f"--- END LOG ---")
+ 
+                     # Dump application-specific integration logs
+                     for app_log in ["cpp_integration.log", "rust_integration.log", "python_integration.log"]:
+                         log_path = os.path.join(env["FUSION_LOG_DIR"], app_log)
+                         if os.path.exists(log_path):
+                             print(f"\n--- COMPONENT LOG: {app_log} ---")
+                             try:
+                                 with open(log_path, "r", encoding='utf-8', errors='ignore') as log_f:
+                                     print(log_f.read())
+                             except Exception as e:
+                                 print(f"Error reading {app_log}: {e}")
+                             print(f"--- END COMPONENT LOG ---")
              except:
                  results["python_integration"] = "SKIPPED (pytest missing)"
         return results

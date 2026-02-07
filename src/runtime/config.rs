@@ -62,6 +62,9 @@ pub struct SdConfig {
     /// Request response delay max (ms, default: 100)
     #[serde(default = "default_request_response_delay_max")]
     pub request_response_delay_max_ms: u64,
+    /// Request timeout (ms, default: 2000)
+    #[serde(default = "default_request_timeout")]
+    pub request_timeout_ms: u64,
 }
 
 impl Default for SdConfig {
@@ -77,6 +80,7 @@ impl Default for SdConfig {
             ttl: default_ttl(),
             request_response_delay_min_ms: default_request_response_delay_min(),
             request_response_delay_max_ms: default_request_response_delay_max(),
+            request_timeout_ms: default_request_timeout(),
         }
     }
 }
@@ -91,6 +95,7 @@ fn default_cyclic_delay() -> u64 { 1000 }
 fn default_ttl() -> u32 { 0x00FFFFFF }
 fn default_request_response_delay_min() -> u64 { 10 }
 fn default_request_response_delay_max() -> u64 { 100 }
+fn default_request_timeout() -> u64 { 2000 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct InstanceConfig {

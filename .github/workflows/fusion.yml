@@ -13,9 +13,6 @@ concurrency:
 
 jobs:
   # ============================================
-  # Stage 1: Build (Rust, C++, Codegen)
-  # ============================================
-  # ============================================
   # Stage 1: Codegen (Generate Bindings)
   # ============================================
   codegen:
@@ -30,7 +27,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
     - name: Run Codegen
-      run: python -m tools.fusion.main --stage codegen --no-dashboard
+      run: python -m tools.fusion.main --stage codegen --no-dashboard --clean
     - name: Upload Codegen Artifacts
       uses: actions/upload-artifact@v4
       with:
@@ -49,7 +46,10 @@ jobs:
   # ============================================
   build-core:
     needs: codegen
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
@@ -81,14 +81,14 @@ jobs:
     - name: Upload Core Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: artifact-core
+        name: artifact-core-${{ matrix.os }}
         path: target/
         retention-days: 1
     - name: Upload Logs
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: logs-build-core
+        name: logs-build-core-${{ matrix.os }}
         path: logs/
 
   # ============================================
@@ -96,7 +96,10 @@ jobs:
   # ============================================
   build-cpp:
     needs: codegen
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
@@ -112,20 +115,26 @@ jobs:
         name: artifact-codegen
         path: build/generated
     - name: Run Build C++
+      # Using --clean to ensure fresh build
       run: python -m tools.fusion.main --stage build --target cpp --no-codegen --no-dashboard
     - name: Remove .gitignore (Force Upload)
+      if: runner.os == 'Linux'
       run: rm .gitignore || true
+    - name: Remove .gitignore (Windows)
+      if: runner.os == 'Windows'
+      run: del .gitignore
+      continue-on-error: true
     - name: Upload C++ Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: artifact-cpp
+        name: artifact-cpp-${{ matrix.os }}
         path: build/
         retention-days: 1
     - name: Upload Logs
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: logs-build-cpp
+        name: logs-build-cpp-${{ matrix.os }}
         path: logs/
 
   # ============================================
@@ -134,7 +143,10 @@ jobs:
 
   unit-test-rust:
     needs: build-core
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
@@ -143,27 +155,32 @@ jobs:
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
-        name: artifact-core
+        name: artifact-core-${{ matrix.os }}
         path: target
     - name: Download Codegen Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
         path: build/generated
-    - name: Restore Permissions
+    - name: Restore Permissions (Linux)
+      if: runner.os == 'Linux'
       run: chmod +x build/release/* target/release/* target/debug/* || true
     - name: Run Rust Unit Tests
+      # Note: No --clean here, as it would wipe downloaded artifacts
       run: python -m tools.fusion.main --stage test --target rust --no-dashboard
     - name: Upload Logs
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: logs-unit-rust
+        name: logs-unit-rust-${{ matrix.os }}
         path: logs/
 
   unit-test-python:
-    needs: build-core
-    runs-on: ubuntu-latest
+    needs: [build-core, build-cpp]
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
@@ -172,7 +189,7 @@ jobs:
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
-        name: artifact-core
+        name: artifact-core-${{ matrix.os }}
         path: target
     - name: Download Codegen Artifacts
       uses: actions/download-artifact@v4
@@ -182,28 +199,33 @@ jobs:
     - name: Download C++ Artifacts
       uses: actions/download-artifact@v4
       with:
-        name: artifact-cpp
+        name: artifact-cpp-${{ matrix.os }}
         path: build
-    - name: Restore Permissions
+    - name: Restore Permissions (Linux)
+      if: runner.os == 'Linux'
       run: chmod +x build/* target/release/* target/debug/* || true
     - name: Install Pytest
-      run: pip install pytest
+      run: pip install pytest pytest-cov
     - name: Run Python Unit Tests
       env:
         PYTHONPATH: src/python:build:build/generated/python
         FUSION_LOG_DIR: logs/unit_python
+      # Note: No --clean here
       run: |
         python -m tools.fusion.main --stage test --target python --base-port 300 --no-dashboard
     - name: Upload Logs
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: logs-unit-python
+        name: logs-unit-python-${{ matrix.os }}
         path: logs/
 
   unit-test-cpp:
     needs: [codegen, build-cpp]
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
@@ -217,22 +239,27 @@ jobs:
     - name: Download C++ Artifacts
       uses: actions/download-artifact@v4
       with:
-        name: artifact-cpp
+        name: artifact-cpp-${{ matrix.os }}
         path: build
-    - name: Restore Permissions
+    - name: Restore Permissions (Linux)
+      if: runner.os == 'Linux'
       run: chmod +x build/* || true
     - name: Run C++ Unit Tests
+      # Note: No --clean here
       run: python -m tools.fusion.main --stage test --target cpp --no-dashboard
     - name: Upload Logs
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: logs-unit-cpp
+        name: logs-unit-cpp-${{ matrix.os }}
         path: logs/
 
   demo-simple:
     needs: [build-core, build-cpp]
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
@@ -241,14 +268,15 @@ jobs:
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
-        name: artifact-core
+        name: artifact-core-${{ matrix.os }}
         path: target
     - name: Download C++ Artifacts
       uses: actions/download-artifact@v4
       with:
-        name: artifact-cpp
+        name: artifact-cpp-${{ matrix.os }}
         path: build
-    - name: Restore Permissions
+    - name: Restore Permissions (Linux)
+      if: runner.os == 'Linux'
       run: chmod +x target/release/* target/debug/* build/* || true
     - name: Run Simple Demo
       run: python -m tools.fusion.main --stage demos --demo simple --base-port 0 --no-dashboard
@@ -256,12 +284,15 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: logs-demo-simple
+        name: logs-demo-simple-${{ matrix.os }}
         path: logs/
 
   demo-integrated:
     needs: [codegen, build-core, build-cpp]
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
@@ -275,32 +306,31 @@ jobs:
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
-        name: artifact-core
+        name: artifact-core-${{ matrix.os }}
         path: target
     - name: Download C++ Artifacts
       uses: actions/download-artifact@v4
       with:
-        name: artifact-cpp
+        name: artifact-cpp-${{ matrix.os }}
         path: build
-    - name: Restore Permissions
+    - name: Restore Permissions (Linux)
+      if: runner.os == 'Linux'
       run: chmod +x build/* target/debug/* || true
-    - name: List Build Directory (Debug)
-      run: |
-        mkdir -p logs
-        ls -laR build > logs/build_listing.txt 2>&1 || true
-        cat logs/build_listing.txt | grep -iE "cpp_app|cpp_test|Release" || true
     - name: Run Integrated Demo
       run: python -m tools.fusion.main --stage demos --demo integrated --base-port 100 --no-dashboard
     - name: Upload Logs
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: logs-demo-integrated
+        name: logs-demo-integrated-${{ matrix.os }}
         path: logs/
 
   demo-pubsub:
     needs: [codegen, build-core, build-cpp]
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
@@ -314,14 +344,15 @@ jobs:
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
-        name: artifact-core
+        name: artifact-core-${{ matrix.os }}
         path: target
     - name: Download C++ Artifacts
       uses: actions/download-artifact@v4
       with:
-        name: artifact-cpp
+        name: artifact-cpp-${{ matrix.os }}
         path: build
-    - name: Restore Permissions
+    - name: Restore Permissions (Linux)
+      if: runner.os == 'Linux'
       run: chmod +x build/* target/debug/* || true
     - name: Run PubSub Demo
       run: python -m tools.fusion.main --stage demos --demo pubsub --base-port 200 --no-dashboard
@@ -329,10 +360,11 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: logs-demo-pubsub
+        name: logs-demo-pubsub-${{ matrix.os }}
         path: logs/
 
   coverage:
+    # Coverage typically easiest on Linux (lcov, llvm-cov)
     needs: [codegen, build-core, build-cpp]
     runs-on: ubuntu-latest
     steps:
@@ -348,12 +380,12 @@ jobs:
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
-        name: artifact-core
+        name: artifact-core-ubuntu-latest
         path: target
     - name: Download C++ Artifacts
       uses: actions/download-artifact@v4
       with:
-        name: artifact-cpp
+        name: artifact-cpp-ubuntu-latest
         path: build
     - name: Install Coverage Tools
       run: |
@@ -361,8 +393,10 @@ jobs:
         pip install pytest pytest-cov
         curl -LsSf https://github.com/taiki-e/cargo-llvm-cov/releases/latest/download/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz | tar xzf - -C ~/.cargo/bin || true
     - name: Rebuild C++ with Coverage
+      # Rebuild is clean by nature if we pass --clean, or just force clean.
+      # Coverage specific flags.
       run: |
-        python -m tools.fusion.main --stage build --target cpp --with-coverage --no-codegen --no-dashboard
+        python -m tools.fusion.main --stage build --target cpp --with-coverage --no-codegen --no-dashboard --clean
     - name: Restore Permissions
       run: chmod +x build/* target/debug/* || true
     - name: Run Coverage
@@ -422,19 +456,6 @@ jobs:
         
         # Copy test reports (find latest log directory)
         if [ -d "logs" ]; then
-          # Since we merged multiple logs, they might be in logs/logs-unit-rust etc?
-          # download-artifact with merge-multiple: true and path: logs
-          # If I uploaded path: logs/, and logs/ contained a timestamped subfolder...
-          # The upload-artifact behavior:
-          # "path: logs/" -> uploads contents of logs/.
-          # If logs/ contains "2024...", then artifact contains "2024...".
-          # If we download multiple artifacts into "logs", we get multiple "2024..." folders?
-          # Each job runs concurrently, so they might have slightly different timestamps.
-          # Or if they are exact same time?
-          # Reporter uses datetime.now() at init.
-          # They will likely be different.
-          # So we will have multiple folders in _site/reports/.
-          # We should copy ALL of them.
           cp -r logs/* _site/reports/ 2>/dev/null || true
         fi
 
@@ -605,7 +626,6 @@ jobs:
         </body>
         </html>
         EOF
-
 
     - name: Upload Pages artifact
       uses: actions/upload-pages-artifact@v3

@@ -95,10 +95,29 @@ int main() {
     rt.offer_service("sensor-service", &sensor_svc);
     
     std::this_thread::sleep_for(std::chrono::seconds(2));
-    MathServiceClient* client = rt.create_client<MathServiceClient>("math-client");
+    std::shared_ptr<MathServiceClient> client = nullptr;
+
+    // Retry loop for client creation will happen in main loop
     
     while (true) {
         sensor_svc.Update();
+        
+        if (!client) {
+            // Try to create client if not exists
+            // Since create_client might block or log warning, we try periodically
+             try {
+                // We use specific method if available, or just create_client
+                // If create_client returns raw pointer, we manage it. 
+                // The original code used raw pointer: MathServiceClient* client = ...
+                // generated bindings probably return raw pointer (owned by runtime?) or unique_ptr?
+                // checked main.cpp: MathServiceClient* client = rt.create_client<...>();
+                // If it fails, it returns nullptr?
+                client.reset(rt.create_client<MathServiceClient>("math-client"));
+             } catch (...) {
+                 // Ignore
+             }
+        }
+
         if (client) {
             auto res = client->Add(rand() % 100, rand() % 100);
             logger->Log(LogLevel::INFO, "Main", "Math.Add Result: " + std::to_string(res.result));

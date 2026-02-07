@@ -2,7 +2,7 @@ from .base import AbstractGenerator
 from ..models import Struct, Service, Method, Field, Type
 
 class RustGenerator(AbstractGenerator):
-    def generate(self, structs: list[Struct], services: list[Service], output_path: str = "build/generated/rust/mod.rs") -> dict[str, str]:
+    def generate(self, structs: list[Struct], services: list[Service], output_dir: str = "build/generated") -> dict[str, str]:
         lines = [
             "use fusion_hawking::codec::{SomeIpSerialize, SomeIpDeserialize, SomeIpHeader};",
             "#[allow(unused_imports)]",
@@ -59,7 +59,8 @@ class RustGenerator(AbstractGenerator):
             # Client Proxy
             lines.append(self._generate_client_proxy(svc))
 
-        return {output_path: "\n".join(lines)}
+        import os
+        return {os.path.join(output_dir, "rust/mod.rs"): "\n".join(lines)}
 
     def _generate_struct(self, s: Struct) -> str:
         lines = []
@@ -114,6 +115,8 @@ class RustGenerator(AbstractGenerator):
         lines.append("#[allow(dead_code)]")
         lines.append(f"impl {svc.name}Server<()> {{")
         lines.append(f"    pub const SERVICE_ID: u16 = {svc.id};")
+        lines.append(f"    pub const MAJOR_VERSION: u32 = {svc.major_version};")
+        lines.append(f"    pub const MINOR_VERSION: u32 = {svc.minor_version};")
         for m in svc.methods:
             lines.append(f"    pub const METHOD_{m.name.upper()}: u16 = {m.id};")
         for e in svc.events:
@@ -132,6 +135,8 @@ class RustGenerator(AbstractGenerator):
         
         lines.append(f"impl<T: {svc.name}Provider> fusion_hawking::runtime::RequestHandler for {svc.name}Server<T> {{")
         lines.append(f"    fn service_id(&self) -> u16 {{ {svc.name}Server::<()>::SERVICE_ID }}")
+        lines.append(f"    fn major_version(&self) -> u8 {{ {svc.name}Server::<()>::MAJOR_VERSION as u8 }}")
+        lines.append(f"    fn minor_version(&self) -> u32 {{ {svc.name}Server::<()>::MINOR_VERSION }}")
         lines.append("    fn handle(&self, header: &SomeIpHeader, _payload: &[u8]) -> Option<Vec<u8>> {")
         lines.append(f"        println!(\"DEBUG: Handler {svc.name} handling {{:?}}\", header);")
         lines.append(f"        if header.service_id != {svc.name}Server::<()>::SERVICE_ID {{ return None; }}")
@@ -183,6 +188,8 @@ class RustGenerator(AbstractGenerator):
         lines.append(f"#[allow(dead_code)]")
         lines.append(f"impl {svc.name}Client {{")
         lines.append(f"    pub const SERVICE_ID: u16 = {svc.id};")
+        lines.append(f"    pub const MAJOR_VERSION: u32 = {svc.major_version};")
+        lines.append(f"    pub const MINOR_VERSION: u32 = {svc.minor_version};")
         
         for m in svc.methods:
             method_pascal = m.name.title().replace('_', '')

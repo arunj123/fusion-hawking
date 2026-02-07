@@ -47,10 +47,17 @@ def build_cpp():
         subprocess.check_call(["cmake", "--build", ".", "--config", "Release"], cwd=build_dir)
 
 @pytest.fixture(scope="module")
-def processes(build_cpp):
+def build_rust():
+    """Ensure Rust app is built"""
+    rust_demo_dir = os.path.join(PROJECT_ROOT, "examples", "integrated_apps", "rust_app")
+    # Build release to match C++? Or debug is fine.
+    subprocess.check_call(["cargo", "build"], cwd=rust_demo_dir)
+
+@pytest.fixture(scope="module")
+def processes(build_cpp, build_rust):
     """Start all three demo apps and yield them, then cleanup"""
     
-    # 1. Start C++ App
+    # 1. Start C++ App (Client of Rust, Provider for others)
     cpp_log_path = get_log_path("cpp_integration.log")
     cpp_log = open(cpp_log_path, "w")
     cpp_proc = subprocess.Popen(
@@ -59,21 +66,26 @@ def processes(build_cpp):
         stderr=subprocess.STDOUT,
         cwd=CPP_DEMO_DIR
     )
-    time.sleep(1) # Let it start
+    time.sleep(2) # Let it start
 
-    # 2. Start Rust App
+    # 2. Start Rust App (Provider)
     rust_log_path = get_log_path("rust_integration.log")
     rust_log = open(rust_log_path, "w")
     rust_demo_dir = os.path.join(PROJECT_ROOT, "examples", "integrated_apps", "rust_app")
+    # Execute binary directly to avoid cargo overhead/rebuilds
+    # Binary name depends on Cargo.toml package name: "rust_app_demo"
+    rust_bin = os.path.join(rust_demo_dir, "target", "debug", "rust_app_demo")
+    if sys.platform == "win32": rust_bin += ".exe"
+    
     rust_proc = subprocess.Popen(
-        ["cargo", "run"],
+        [rust_bin],
         stdout=rust_log,
         stderr=subprocess.STDOUT,
         cwd=rust_demo_dir
     )
-    time.sleep(2) # Let it start
+    time.sleep(3) # Let it start and settle
 
-    # 3. Start Python App
+    # 3. Start Python App (Client/Provider)
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join(["src/python", "build", "build/generated/python"])
     

@@ -49,6 +49,8 @@ class Service:
     methods: List[Method] = field(default_factory=list)
     events: List[Event] = field(default_factory=list)
     fields: List[FieldSpec] = field(default_factory=list)
+    major_version: int = 1
+    minor_version: int = 0
 
 @dataclass
 class Struct:

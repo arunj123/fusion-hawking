@@ -3,7 +3,7 @@ from ..models import Struct, Service, Method, Field, Type
 import struct
 
 class PythonGenerator(AbstractGenerator):
-    def generate(self, structs: list[Struct], services: list[Service]) -> dict[str, str]:
+    def generate(self, structs: list[Struct], services: list[Service], output_dir: str = "build/generated") -> dict[str, str]:
         # 1. Bindings
         bind_lines = [
             "import struct",
@@ -59,7 +59,11 @@ class PythonGenerator(AbstractGenerator):
             # Stub
             runtime_lines.append(f"class {svc.name}Stub(RequestHandler):")
             runtime_lines.append(f"    SERVICE_ID = {svc.id}")
+            runtime_lines.append(f"    MAJOR_VERSION = {svc.major_version}")
+            runtime_lines.append(f"    MINOR_VERSION = {svc.minor_version}")
             runtime_lines.append(f"    def get_service_id(self): return self.SERVICE_ID")
+            runtime_lines.append(f"    def get_major_version(self): return self.MAJOR_VERSION")
+            runtime_lines.append(f"    def get_minor_version(self): return self.MINOR_VERSION")
             for m in svc.methods:
                 runtime_lines.append(f"    METHOD_{m.name.upper()} = {m.id}")
             for e in svc.events:
@@ -105,6 +109,8 @@ class PythonGenerator(AbstractGenerator):
             # Client
             runtime_lines.append(f"class {svc.name}Client:")
             runtime_lines.append(f"    SERVICE_ID = {svc.id}")
+            runtime_lines.append(f"    MAJOR_VERSION = {svc.major_version}")
+            runtime_lines.append(f"    MINOR_VERSION = {svc.minor_version}")
             runtime_lines.append("    def __init__(self, runtime, alias=None):")
             runtime_lines.append("        self.runtime = runtime")
             runtime_lines.append("        self.alias = alias")
@@ -142,9 +148,10 @@ class PythonGenerator(AbstractGenerator):
                     runtime_lines.append(f"            return None")
             runtime_lines.append("")
 
+        import os
         return {
-            "build/generated/python/bindings.py": "\n".join(bind_lines),
-            "build/generated/python/runtime.py": "\n".join(runtime_lines)
+            os.path.join(output_dir, "python/bindings.py"): "\n".join(bind_lines),
+            os.path.join(output_dir, "python/runtime.py"): "\n".join(runtime_lines)
         }
 
     def _generate_struct(self, s: Struct) -> str:

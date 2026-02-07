@@ -100,6 +100,7 @@ def main():
     parser = argparse.ArgumentParser(description="Fusion Hawking Automation Tool")
     parser.add_argument("--skip-demos", action="store_true", help="Skip integration demos")
     parser.add_argument("--skip-coverage", action="store_true", help="Skip coverage generation")
+    parser.add_argument("--clean", action="store_true", help="Clean build artifacts before running")
     parser.add_argument("--server", action="store_true", default=True, help="Enable dashboard server")
     parser.add_argument("--no-dashboard", action="store_true", help="Disable dashboard server (override)")
     parser.add_argument("--target", type=str, choices=["all", "rust", "python", "cpp"], default="all", help="Target language to test")
@@ -145,6 +146,27 @@ def main():
     test_results = {}
 
     try:
+        # CLEAN stage
+        if args.clean:
+            if server: server.update({"current_step": "Cleaning"})
+            print("\n=== Cleaning Build Artifacts ===")
+            import shutil
+            dirs_to_clean = [
+                "build", "build_cpp", "build_linux", 
+                "target", 
+                "examples/integrated_apps/cpp_app/build",
+                "examples/integrated_apps/rust_app/target"
+            ]
+            for d in dirs_to_clean:
+                path = os.path.join(root_dir, d)
+                if os.path.exists(path):
+                    print(f"Removing {d}...")
+                    try:
+                        shutil.rmtree(path)
+                    except Exception as e:
+                        print(f"⚠️ Failed to remove {d}: {e}")
+            print("Cleanup complete.\n")
+
         # Stage-based execution
         stage = args.stage
         

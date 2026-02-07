@@ -66,11 +66,22 @@ class MyService:
         self.assertEqual(services[0].methods[0].name, "my_method")
         self.assertEqual(services[0].methods[0].id, 1)
 
+    def get_file(self, output, path):
+        # Normalize path separators for Windows
+        norm_path = os.path.normpath(path)
+        # Try finding exact match or normalized match
+        if path in output: return output[path]
+        if norm_path in output: return output[norm_path]
+        # Try matching partials if absolute paths involved (fallback)
+        for k in output:
+            if os.path.normpath(k).endswith(norm_path):
+                return output[k]
+        raise KeyError(f"Path '{path}' (norm: '{norm_path}') not found in {list(output.keys())}")
+
     def test_rust_generator(self):
         structs, services = self.parser.parse(self.tmp_file.name)
         output = self.rust_gen.generate(structs, services)
-        self.assertIn("build/generated/rust/mod.rs", output)
-        content = output["build/generated/rust/mod.rs"]
+        content = self.get_file(output, "build/generated/rust/mod.rs")
         
         self.assertIn("pub struct MyStruct", content)
         self.assertIn("pub trait MyServiceProvider", content)
@@ -80,21 +91,18 @@ class MyService:
     def test_python_generator(self):
         structs, services = self.parser.parse(self.tmp_file.name)
         output = self.py_gen.generate(structs, services)
-        self.assertIn("build/generated/python/bindings.py", output)
-        content = output["build/generated/python/bindings.py"]
+        content = self.get_file(output, "build/generated/python/bindings.py")
         
         self.assertIn("class MyStruct", content)
         
-        self.assertIn("build/generated/python/runtime.py", output)
-        runtime_content = output["build/generated/python/runtime.py"]
+        runtime_content = self.get_file(output, "build/generated/python/runtime.py")
         self.assertIn("class MyServiceStub", runtime_content)
         self.assertIn("class MyServiceClient", runtime_content)
 
     def test_cpp_generator(self):
         structs, services = self.parser.parse(self.tmp_file.name)
         output = self.cpp_gen.generate(structs, services)
-        self.assertIn("build/generated/cpp/bindings.h", output)
-        content = output["build/generated/cpp/bindings.h"]
+        content = self.get_file(output, "build/generated/cpp/bindings.h")
         
         self.assertIn("struct MyStruct", content)
         # Check generated types
@@ -135,6 +143,14 @@ class PathCollection:
 
     def tearDown(self):
         os.unlink(self.tmp_file.name)
+        
+    def get_file(self, output, path):
+        # Normalize path separators for Windows
+        norm_path = os.path.normpath(path)
+        for k in output:
+            if os.path.normpath(k) == norm_path:
+                return output[k]
+        raise KeyError(f"Path '{path}' not found in {list(output.keys())}")
 
     def test_parser_nested_list(self):
         structs, _ = self.parser.parse(self.tmp_file.name)
@@ -153,7 +169,7 @@ class PathCollection:
     def test_rust_recursive_type(self):
         structs, _ = self.parser.parse(self.tmp_file.name)
         output = self.rust_gen.generate(structs, [])
-        content = output["build/generated/rust/mod.rs"]
+        content = self.get_file(output, "build/generated/rust/mod.rs")
         
         self.assertIn("pub struct PathCollection", content)
         self.assertIn("Vec<Vec<Point>>", content)
@@ -161,7 +177,7 @@ class PathCollection:
     def test_python_recursive_type(self):
         structs, _ = self.parser.parse(self.tmp_file.name)
         output = self.py_gen.generate(structs, [])
-        content = output["build/generated/python/bindings.py"]
+        content = self.get_file(output, "build/generated/python/bindings.py")
         
         self.assertIn("class PathCollection", content)
         # Check for nested list serialization
@@ -170,7 +186,7 @@ class PathCollection:
     def test_cpp_recursive_type(self):
         structs, _ = self.parser.parse(self.tmp_file.name)
         output = self.cpp_gen.generate(structs, [])
-        content = output["build/generated/cpp/bindings.h"]
+        content = self.get_file(output, "build/generated/cpp/bindings.h")
         
         self.assertIn("struct PathCollection", content)
         self.assertIn("std::vector<std::vector<Point>>", content)
@@ -202,11 +218,19 @@ class AllPrimitives:
 
     def tearDown(self):
         os.unlink(self.tmp_file.name)
+        
+    def get_file(self, output, path):
+        # Normalize path separators for Windows
+        norm_path = os.path.normpath(path)
+        for k in output:
+            if os.path.normpath(k) == norm_path:
+                return output[k]
+        raise KeyError(f"Path '{path}' not found in {list(output.keys())}")
 
     def test_rust_primitives(self):
         structs, _ = self.parser.parse(self.tmp_file.name)
         output = self.rust_gen.generate(structs, [])
-        content = output["build/generated/rust/mod.rs"]
+        content = self.get_file(output, "build/generated/rust/mod.rs")
         
         self.assertIn("i32", content)  # int
         self.assertIn("f32", content)  # float
@@ -216,7 +240,7 @@ class AllPrimitives:
     def test_cpp_primitives(self):
         structs, _ = self.parser.parse(self.tmp_file.name)
         output = self.cpp_gen.generate(structs, [])
-        content = output["build/generated/cpp/bindings.h"]
+        content = self.get_file(output, "build/generated/cpp/bindings.h")
         
         self.assertIn("int32_t", content)  # int
         self.assertIn("float", content)  # float
@@ -261,11 +285,19 @@ class MathService:
 
     def tearDown(self):
         os.unlink(self.tmp_file.name)
+        
+    def get_file(self, output, path):
+        # Normalize path separators for Windows
+        norm_path = os.path.normpath(path)
+        for k in output:
+            if os.path.normpath(k) == norm_path:
+                return output[k]
+        raise KeyError(f"Path '{path}' not found in {list(output.keys())}")
 
     def test_python_sync_rpc(self):
         structs, services = self.parser.parse(self.tmp_file.name)
         output = self.py_gen.generate(structs, services)
-        runtime_content = output["build/generated/python/runtime.py"]
+        runtime_content = self.get_file(output, "build/generated/python/runtime.py")
         
         # Check that sync RPC uses wait_for_response=True
         self.assertIn("wait_for_response=True", runtime_content)
@@ -275,7 +307,7 @@ class MathService:
     def test_rust_async_rpc(self):
         structs, services = self.parser.parse(self.tmp_file.name)
         output = self.rust_gen.generate(structs, services)
-        content = output["build/generated/rust/mod.rs"]
+        content = self.get_file(output, "build/generated/rust/mod.rs")
         
         # Check that client methods exist and have correct signatures
         self.assertIn("pub fn add", content)

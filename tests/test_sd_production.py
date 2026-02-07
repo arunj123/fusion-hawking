@@ -17,7 +17,7 @@ class TestSdPacketProduction(unittest.TestCase):
         rt = SomeIpRuntime(None, "test", None)
         rt.interface_ip = "127.0.0.1"
         
-        rt._send_offer(0x1234, 1, 30500)
+        rt._send_offer(0x1234, 1, 1, 0, 30500)
         
         self.assertTrue(mock_sendto.called)
         data = mock_sendto.call_args[0][0]

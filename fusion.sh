@@ -8,13 +8,13 @@ if ! command -v python3 &> /dev/null; then
 fi
 
 # Create Venv
-if [ ! -d ".venv" ]; then
+if [ ! -d ".venv_linux" ]; then
     echo "Creating Python Virtual Environment..."
-    python3 -m venv .venv
+    python3 -m venv .venv_linux
 fi
 
 # Activate
-source .venv/bin/activate
+source .venv_linux/bin/activate
 
 # Install Deps
 if ! pip show pytest &> /dev/null; then

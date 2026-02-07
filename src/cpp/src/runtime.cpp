@@ -54,14 +54,16 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
     sd_addr.sin_port = htons(config.sd.multicast_port);
     if (bind(sd_sock, (struct sockaddr*)&sd_addr, sizeof(sd_addr)) < 0) {
         this->logger->Log(LogLevel::ERR, "Runtime", "Failed to bind SD socket to port " + std::to_string(config.sd.multicast_port));
-        exit(1);
     }
     ip_mreq mreq;
-    mreq.imr_multiaddr.s_addr = inet_addr("224.0.0.1");
+    mreq.imr_multiaddr.s_addr = inet_addr(config.sd.multicast_ip.c_str());
     mreq.imr_interface.s_addr = inet_addr(config.ip.c_str());
     if (setsockopt(sd_sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, (const char*)&mreq, sizeof(mreq)) < 0) {
-        this->logger->Log(LogLevel::ERR, "Runtime", "Critical: Failed to join multicast group 224.0.0.1 on " + config.ip);
-        exit(1);
+        this->logger->Log(LogLevel::WARN, "Runtime", "Failed to join multicast " + config.sd.multicast_ip + " on " + config.ip + ", retrying on INADDR_ANY");
+        mreq.imr_interface.s_addr = htonl(INADDR_ANY);
+        if (setsockopt(sd_sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, (const char*)&mreq, sizeof(mreq)) < 0) {
+            this->logger->Log(LogLevel::ERR, "Runtime", "Critical: Failed to join multicast group " + config.sd.multicast_ip + " even on INADDR_ANY");
+        }
     }
     in_addr if_addr;
     if_addr.s_addr = inet_addr(config.ip.c_str());
@@ -77,12 +79,12 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
     fcntl(sock, F_SETFL, O_NONBLOCK);
 #endif
     running = true;
-    reactor_thread = std::thread(&SomeIpRuntime::Run, this);
+    reactor_thread = std::jthread(&SomeIpRuntime::Run, this);
 }
 
 SomeIpRuntime::~SomeIpRuntime() {
     running = false;
-    if (reactor_thread.joinable()) reactor_thread.join();
+    // jthread automatically joins on destruction
     closesocket(sock);
     closesocket(sd_sock);
 #ifdef _WIN32
@@ -99,13 +101,18 @@ void SomeIpRuntime::offer_service(const std::string& alias, RequestHandler* impl
         instance_id = config.providing[alias].instance_id;
         if (config.providing[alias].port != 0) svc_port = config.providing[alias].port;
     }
+    // Use getters from RequestHandler
+    uint8_t major = impl->get_major_version();
+    uint32_t minor = impl->get_minor_version();
+    
     services[service_id] = impl;
-    offered_services.push_back(std::make_tuple(service_id, instance_id, svc_port));
-    SendOffer(service_id, instance_id, svc_port);
-    this->logger->Log(LogLevel::INFO, "Runtime", "Offered Service '" + alias + "' (0x" + std::to_string(service_id) + ") on port " + std::to_string(svc_port));
+    offered_services.push_back({service_id, instance_id, major, minor, svc_port});
+    SendOffer(service_id, instance_id, major, minor, svc_port);
+    this->logger->Log(LogLevel::INFO, "Runtime", "Offered Service '" + alias + "' (0x" + std::to_string(service_id) + ") v" + std::to_string(major) + "." + std::to_string(minor) + " on port " + std::to_string(svc_port));
 }
 
-bool SomeIpRuntime::wait_for_service(uint16_t service_id, int timeout_ms) {
+bool SomeIpRuntime::wait_for_service(uint16_t service_id) {
+    int timeout_ms = config.sd.request_timeout_ms;
     auto start = std::chrono::steady_clock::now();
     auto timeout = std::chrono::milliseconds(timeout_ms);
     while (std::chrono::steady_clock::now() - start < timeout) {
@@ -124,11 +131,11 @@ bool SomeIpRuntime::wait_for_service(uint16_t service_id, int timeout_ms) {
     return false;
 }
 
-void SomeIpRuntime::SendOffer(uint16_t service_id, uint16_t instance_id, uint16_t port) {
+void SomeIpRuntime::SendOffer(uint16_t service_id, uint16_t instance_id, uint8_t major, uint32_t minor, uint16_t port) {
     std::vector<uint8_t> sd_payload;
     sd_payload.push_back(0x80); sd_payload.push_back(0x00); sd_payload.push_back(0x00); sd_payload.push_back(0x00);
     sd_payload.push_back(0x00); sd_payload.push_back(0x00); sd_payload.push_back(0x00); sd_payload.push_back(16);
-    sd_payload.push_back(0x01); sd_payload.push_back(0x00); sd_payload.push_back(0x00); sd_payload.push_back(0x10);
+    sd_payload.push_back(major); sd_payload.push_back(0x00); sd_payload.push_back(0x00); sd_payload.push_back(0x10);
     sd_payload.push_back((service_id >> 8) & 0xFF); sd_payload.push_back(service_id & 0xFF);
     sd_payload.push_back((instance_id >> 8) & 0xFF); sd_payload.push_back(instance_id & 0xFF);
     sd_payload.push_back(0x01); sd_payload.push_back(0xFF); sd_payload.push_back(0xFF); sd_payload.push_back(0xFF);
@@ -151,7 +158,7 @@ void SomeIpRuntime::SendOffer(uint16_t service_id, uint16_t instance_id, uint16_
     buffer.insert(buffer.end(), sd_payload.begin(), sd_payload.end());
     sockaddr_in dest;
     dest.sin_family = AF_INET;
-    dest.sin_addr.s_addr = inet_addr("224.0.0.1");
+    dest.sin_addr.s_addr = inet_addr(config.sd.multicast_ip.c_str());
     dest.sin_port = htons(config.sd.multicast_port);
     sendto(sd_sock, (const char*)buffer.data(), (int)buffer.size(), 0, (struct sockaddr*)&dest, sizeof(dest));
 }
@@ -206,7 +213,7 @@ void SomeIpRuntime::subscribe_eventgroup(uint16_t service_id, uint16_t instance_
     buffer.insert(buffer.end(), sd_payload.begin(), sd_payload.end());
     sockaddr_in dest;
     dest.sin_family = AF_INET;
-    dest.sin_addr.s_addr = inet_addr("224.0.0.1");
+    dest.sin_addr.s_addr = inet_addr(config.sd.multicast_ip.c_str());
     dest.sin_port = htons(config.sd.multicast_port);
     sendto(sd_sock, (const char*)buffer.data(), (int)buffer.size(), 0, (struct sockaddr*)&dest, sizeof(dest));
     subscriptions[{service_id, eventgroup_id}] = false;
@@ -228,10 +235,10 @@ void SomeIpRuntime::Run() {
     last_offer_time = std::chrono::steady_clock::now();
     while (running) {
         auto now = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_offer_time).count() > 500) {
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_offer_time).count() > config.sd.cycle_offer_ms) {
             last_offer_time = now;
             for (const auto& svc : offered_services) {
-                SendOffer(std::get<0>(svc), std::get<1>(svc), std::get<2>(svc));
+                SendOffer(svc.service_id, svc.instance_id, svc.major_version, svc.minor_version, svc.port);
             }
         }
         sockaddr_in src;
@@ -320,7 +327,7 @@ void SomeIpRuntime::Run() {
                         std::pair<uint16_t, uint16_t> key = {sid, eventgroup_id};
                         bool is_offered = false;
                         for(auto& off : offered_services) {
-                            if (std::get<0>(off) == sid) is_offered = true;
+                            if (off.service_id == sid) is_offered = true;
                         }
                         if (is_offered && has_endpoint) {
                             if (ttl > 0) {
@@ -350,7 +357,7 @@ void SomeIpRuntime::Run() {
                                     abuf.insert(abuf.end(), ack_payload.begin(), ack_payload.end());
                                     sockaddr_in dest = {0};
                                     dest.sin_family = AF_INET;
-                                    dest.sin_addr.s_addr = inet_addr("224.0.0.1");
+                                    dest.sin_addr.s_addr = inet_addr(config.sd.multicast_ip.c_str());
                                     dest.sin_port = htons(config.sd.multicast_port);
                                     sendto(sd_sock, (const char*)abuf.data(), (int)abuf.size(), 0, (struct sockaddr*)&dest, sizeof(dest));
                                 }
@@ -364,8 +371,7 @@ void SomeIpRuntime::Run() {
                 }
             }
         }
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
     }
 }
 
@@ -395,11 +401,12 @@ std::vector<uint8_t> SendRequestGlue(void* rt_ptr, uint16_t service_id, uint16_t
     sockaddr_in target;
     {
          int retries = 0;
-         while (!rt->get_remote_service(service_id, target) && retries < 50) {
+         int max_retries = rt->config.sd.request_timeout_ms / 100;
+         while (!rt->get_remote_service(service_id, target) && retries < max_retries) {
              std::this_thread::sleep_for(std::chrono::milliseconds(100));
              retries++;
          }
-         if (retries >= 50) {
+         if (retries >= max_retries) {
               // Try one last time or just fail
               if (!rt->get_remote_service(service_id, target)) {
                   if(rt->logger) rt->logger->Log(LogLevel::WARN, "Glue", "Service not found 0x" + std::to_string(service_id));
@@ -421,7 +428,7 @@ std::vector<uint8_t> SendRequestGlue(void* rt_ptr, uint16_t service_id, uint16_t
 
     // Wait for response
     std::unique_lock<std::mutex> lock(req->mtx);
-    if (req->cv.wait_for(lock, std::chrono::seconds(2), [&]{ return req->completed; })) {
+    if (req->cv.wait_for(lock, std::chrono::milliseconds(rt->config.sd.request_timeout_ms), [&]{ return req->completed; })) {
          // Completed
          // if(rt->logger) rt->logger->Log(LogLevel::DEBUG, "Glue", "Got Response!");
          std::lock_guard<std::mutex> map_lock(rt->pending_requests_mutex);
