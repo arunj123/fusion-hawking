@@ -317,7 +317,7 @@ class Tester:
             client_bin = client_bin.replace(".exe", "")
 
         if not os.path.exists(server_bin) or not os.path.exists(client_bin):
-            print(f"⚠️ Simple demos not found at {server_bin}")
+            print(f"[WARN] Simple demos not found at {server_bin}")
             return {"simple_demo": "SKIPPED"}
             
         print(f"Starting {server_bin}...")
@@ -343,10 +343,10 @@ class Tester:
                 
                 # Verify
                 if "Success" in output:
-                    print("✅ Simple Demo PASS")
+                    print("[PASS] Simple Demo PASS")
                     return {"simple_demo": "PASS", "steps": [{"name": "Simple UDP Demo", "status": "PASS", "details": "Client received 'Success'"}]}
                 else:
-                    print(f"❌ Simple Demo FAIL: {output}")
+                    print(f"[FAIL] Simple Demo FAIL: {output}")
                     return {"simple_demo": "FAIL", "steps": [{"name": "Simple UDP Demo", "status": "FAIL", "details": "Client did not output 'Success'"}]}
                     
             finally:
@@ -376,7 +376,7 @@ class Tester:
             })
             
             if not found:
-                print(f"\n❌ {description} FAILED. Log '{log_name}':\n{'-'*40}\n{content}\n{'-'*40}\n")
+                print(f"\n[FAIL] {description} FAILED. Log '{log_name}':\n{'-'*40}\n{content}\n{'-'*40}\n")
                 
             return found
 

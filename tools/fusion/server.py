@@ -214,9 +214,9 @@ class ProgressServer:
             self.thread = threading.Thread(target=self.server.serve_forever)
             self.thread.daemon = True
             self.thread.start()
-            print(f"📊 Dashboard Link: http://localhost:{self.port}")
+            print(f"[INFO] Dashboard Link: http://localhost:{self.port}")
         else:
-            print(f"⚠️ Could not start dashboard. Ports {start_port}-{start_port+9} are busy.")
+            print(f"[WARN] Could not start dashboard. Ports {start_port}-{start_port+9} are busy.")
 
     def update(self, data):
         self.data.update(data)

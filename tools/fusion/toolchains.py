@@ -44,14 +44,14 @@ class ToolchainManager:
              except: pass
 
         if not self.status["rust_cov"] and self.status["cargo"]:
-            print("⚠️ cargo-llvm-cov not found. Attempting install...")
+            print("[WARN] cargo-llvm-cov not found. Attempting install...")
             try:
                 # Use --locked to avoid dependency breakage on older toolchains
                 subprocess.run(["cargo", "install", "cargo-llvm-cov", "--locked"], check=True)
                 # Re-check
                 self.status["rust_cov"] = self._check_command("cargo-llvm-cov", "--version")
             except Exception as e:
-                print(f"❌ Failed to install cargo-llvm-cov: {e}")
+                print(f"[ERROR] Failed to install cargo-llvm-cov: {e}")
                 self.status["rust_cov"] = False
             
         return self.status
@@ -81,5 +81,5 @@ class ToolchainManager:
     def print_status(self):
         print("\n--- Toolchain Status ---")
         for tool, present in self.status.items():
-            icon = "✅" if present else "❌"
+            icon = "[v]" if present else "[x]"
             print(f"{icon} {tool}")

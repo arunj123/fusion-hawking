@@ -39,20 +39,20 @@ class DiagramManager:
         """Check and install plantuml package if needed."""
         try:
             import plantuml
-            print("  ✅ plantuml package available")
+            print("  [OK] plantuml package available")
             return True
         except ImportError:
-            print("  📦 Installing plantuml package...")
+            print("  [INFO] Installing plantuml package...")
             try:
                 subprocess.check_call(
                     [sys.executable, "-m", "pip", "install", "plantuml>=0.3.0", "-q"],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL
                 )
-                print("  ✅ plantuml package installed")
+                print("  [OK] plantuml package installed")
                 return True
             except subprocess.CalledProcessError as e:
-                print(f"  ❌ Failed to install plantuml: {e}")
+                print(f"  [ERROR] Failed to install plantuml: {e}")
                 return False
     
     def _get_hash(self, content: str) -> str:
@@ -211,14 +211,14 @@ class DiagramManager:
                 if success and png_file.exists() and png_file.stat().st_size > 0:
                     results[name] = "PASS"
                     hashes[name] = self._get_hash(content)
-                    print(f"    ✅ {name}.png")
+                    print(f"    [OK] {name}.png")
                 else:
                     results[name] = "FAIL"
-                    print(f"    ❌ {name}.png - render failed")
+                    print(f"    [FAIL] {name}.png - render failed")
                     
             except Exception as e:
                 results[name] = f"FAIL: {str(e)}"
-                print(f"    ❌ {name}.png - {e}")
+                print(f"    [ERROR] {name}.png - {e}")
         
         self._save_hashes(hashes)
         return results
@@ -239,19 +239,19 @@ class DiagramManager:
         puml_files = list(self.diagrams_dir.glob("*.puml"))
         
         if not puml_files:
-            print("  ℹ️  No .puml files found in docs/diagrams/")
+            print("  [INFO] No .puml files found in docs/diagrams/")
             return {"diagrams": "SKIP"}
         
-        print(f"  📊 Found {len(puml_files)} diagram source files")
+        print(f"  [INFO] Found {len(puml_files)} diagram source files")
         
         # Check what needs updating
         needs_update = self.get_diagrams_needing_update()
         
         if not needs_update:
-            print("  ✅ All diagrams up to date")
+            print("  [OK] All diagrams up to date")
             return {"diagrams": "PASS"}
         
-        print(f"  🔄 Rendering {len(needs_update)} diagram(s)...")
+        print(f"  [INFO] Rendering {len(needs_update)} diagram(s)...")
         
         # Render changed diagrams
         results = self.render_diagrams(needs_update)

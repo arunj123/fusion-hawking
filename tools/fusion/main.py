@@ -29,10 +29,6 @@ def run_build(root_dir, reporter, builder, tool_status, target, server, skip_cod
     
     if not skip_codegen and target in ["all", "rust", "cpp"]:
         # If running as "build" stage but NOT "all" stage (which handled it), we might need this.
-        # But main.py now handles it in "codegen" block if stage is "all".
-        # If stage is "build", user might expect it?
-        # CI will use --stage build --no-codegen.
-        # Local user using --stage build expects codegen.
         if not builder.generate_bindings(): 
             raise Exception("Bindings Generation Failed")
     
@@ -53,7 +49,7 @@ def run_build(root_dir, reporter, builder, tool_status, target, server, skip_cod
             shutil.copytree(config_src, config_dest, dirs_exist_ok=True)
             print(f"Captured configurations to {config_dest}")
     except Exception as e:
-        print(f"⚠️ Failed to capture configs: {e}")
+        print(f"[WARN] Failed to capture configs: {e}")
     
     return {"build": "PASS"}
 
@@ -164,7 +160,7 @@ def main():
                     try:
                         shutil.rmtree(path)
                     except Exception as e:
-                        print(f"⚠️ Failed to remove {d}: {e}")
+                        print(f"[WARN] Failed to remove {d}: {e}")
             print("Cleanup complete.\n")
 
         # Stage-based execution
@@ -185,10 +181,6 @@ def main():
         
         # BUILD stage
         if stage in ["build", "all"]:
-            # Pass no_codegen logic to run_build if needed, or we handled it above.
-            # But run_build (line 30) called generate_bindings() unconditionally.
-            # We need to modify run_build signature and logic.
-            # Let's pass args.no_codegen to run_build
             build_results = run_build(root_dir, reporter, builder, tool_status, args.target, server, args.no_codegen, args.with_coverage)
             test_results.update(build_results)
         
@@ -198,37 +190,14 @@ def main():
             if server: server.update({"tests": test_results})
             reporter.generate_index({"current_step": "Tests Completed", "overall_status": "RUNNING", "tools": tool_status, "tests": test_results})
         
-        # DEMOS (part of test stage if "test" selected, or explicit "demos" stage, or "all")
-        # NOTE: If stage is "test" we traditionally ran demos too if not skipped.
-        # But for granular CI, we might separate them.
-        # Let's say: if stage="demos", run demos.
-        # If stage="all", run demos (unless skipped).
-        # If stage="test", ideally we only run unit tests now?
-        # The legacy behavior was "test" included demos.
-        # To avoid breaking local behavior: keep demos in "test" if args.stage == "all"?
-        # Actually, let's explicit:
-        # If --stage demos is passed, run demos.
-        # If --stage all is passed, run demos.
-        # If --stage test is passed -> we can choose to NOT run demos if we want strict separation, 
-        # but existing users might expect it.
-        # Let's keep demos under its own block, but enable it if stage in ["demos", "all"] or (stage=="test" and not args.skip_demos) 
-        # Wait, if I split CI, I will use --stage demos.
-        # If I use --stage test locally, I might want demos.
-        
+        # DEMOS
         should_run_demos = False
         if stage == "demos": should_run_demos = True
         if stage == "all" and not args.skip_demos: should_run_demos = True
         # Maintain legacy behavior: --stage test includes demos unless skipped
         if stage == "test" and not args.skip_demos: should_run_demos = True
 
-        if should_run_demos and args.target == "all" or args.stage == "demos": 
-            # Note: args.target == "all" check was preventing single-language tests from running demos?
-            # If I run --target rust --stage test, main.py skipped demos before (line 157 in original).
-            # I'll respect that logic unless stage is explicitly "demos".
-            pass
-
-        # Simplified Logic:
-        if (stage in ["demos", "all"] or (stage == "test" and not args.skip_demos)):
+        if should_run_demos: 
              # Only run if target is all OR stage is explicitly demos
              if args.target == "all" or stage == "demos":
                 test_results = run_demos(reporter, tester, server, test_results, args.demo)
@@ -245,7 +214,7 @@ def main():
         if stage == "docs":
             # Diagrams already run above
             reporter.generate_index({"current_step": "Docs Generated", "overall_status": "SUCCESS", "tools": tool_status, "tests": test_results})
-            print("\n✅ Documentation generated successfully")
+            print("\n[PASS] Documentation generated successfully")
 
         # Finalize
         overall = "SUCCESS"
@@ -266,11 +235,11 @@ def main():
         
         print(f"\nFusion Run Completed: {overall}")
         if overall == "FAILED":
-            print(f"❌ Failed components: {', '.join(failures)}")
+            print(f"[FAIL] Failed components: {', '.join(failures)}")
             if "steps" in test_results:
                 print("\n--- Detailed Results ---")
                 for step in test_results["steps"]:
-                    status_icon = "✅" if step["status"] == "PASS" else "❌"
+                    status_icon = "[v]" if step["status"] == "PASS" else "[x]"
                     print(f"{status_icon} {step['name']}: {step['status']}")
                     if step["status"] == "FAIL":
                         print(f"   Details: {step.get('details', 'No details available')}")
@@ -281,11 +250,11 @@ def main():
             sys.exit(1)
 
     except KeyboardInterrupt:
-        print("\n🛑 Execution Interrupted by User.")
+        print("\n[INFO] Execution Interrupted by User.")
         if server: 
             os._exit(0)
     except Exception as e:
-        print(f"\n❌ Critical Error: {e}")
+        print(f"\n[ERROR] Critical Error: {e}")
         if server: server.update({"overall_status": "FAILED", "error": str(e)})
         sys.exit(1)
         
