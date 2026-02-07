@@ -182,7 +182,11 @@ jobs:
     - name: Install Pytest
       run: pip install pytest
     - name: Run Python Unit Tests
-      run: python -m tools.fusion.main --stage test --target python --no-dashboard
+      env:
+        PYTHONPATH: src/python:build:build/generated/python
+        FUSION_LOG_DIR: logs/unit_python
+      run: |
+        python -m tools.fusion.main test --base-port 0
     - name: Upload Logs
       if: always()
       uses: actions/upload-artifact@v4

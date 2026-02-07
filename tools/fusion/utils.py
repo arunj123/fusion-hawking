@@ -25,6 +25,7 @@ def patch_configs(ip, root_dir, port_offset=0):
     ]
     for rel_path in config_paths:
         path = os.path.join(root_dir, rel_path)
+        print(f"DEBUG: Patching {path}, Exists: {os.path.exists(path)}")
         if not os.path.exists(path):
             continue
         try:
