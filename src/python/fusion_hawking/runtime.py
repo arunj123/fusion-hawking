@@ -3,6 +3,8 @@ import struct
 import threading
 import time
 import select
+import json
+import ipaddress
 from typing import Dict, Tuple, Optional
 from enum import IntEnum
 from .logger import LogLevel, ConsoleLogger, ILogger
@@ -84,61 +86,174 @@ class SomeIpRuntime:
         self.thread = None
         self.last_offer_time = 0
         
-        self.config = self._load_config(config_path, instance_name)
+        self.config, self.endpoints = self._load_config(config_path, instance_name)
         
-        # Determine Bind Port
-        bind_port = 0
+        # Resolve Interface IP from first providing service endpoint as default
+        self.interface_ip = '127.0.0.1'
+        self.interface_ip_v6 = '::1'
+        
         if self.config and 'providing' in self.config:
-            vals = list(self.config['providing'].values())
-            if vals and 'port' in vals[0]:
-                bind_port = vals[0]['port']
+            # Find first v4 and v6 endpoints that are not multicast
+            def is_local_unicast(ip_str):
+                try:
+                    obj = ipaddress.ip_address(ip_str)
+                    return not obj.is_multicast
+                except ValueError:
+                    return False
+
+            for svc in self.config['providing'].values():
+                ep_name = svc.get('endpoint')
+                if ep_name and ep_name in self.endpoints:
+                    ep = self.endpoints[ep_name]
+                    ep_ip = ep.get('ip', '')
+                    if not ep_ip or not is_local_unicast(ep_ip):
+                        continue
+                        
+                    ip_obj = ipaddress.ip_address(ep_ip)
+                    if ip_obj.version == 4:
+                        self.interface_ip = ep_ip
+                    elif ip_obj.version == 6:
+                        self.interface_ip_v6 = ep_ip
+        
+        # Determine networking params from first providing service endpoint
+        bind_port = 0
+        self.protocol = "udp" # Default
+        
+        if self.config and 'providing' in self.config:
+            for svc in self.config['providing'].values():
+                ep_name = svc.get('endpoint')
+                if ep_name and ep_name in self.endpoints:
+                    ep = self.endpoints[ep_name]
+                    self.protocol = ep.get('protocol', 'udp').lower()
+                    bind_port = ep.get('port', 0)
+                    
+                    if ep.get('version') == 4:
+                        self.interface_ip = ep.get('ip', '127.0.0.1')
+                    elif ep.get('version') == 6:
+                        self.interface_ip_v6 = ep.get('ip', '::1')
+                    
+                    if bind_port != 0:
+                        break # Found our primary bind target
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if hasattr(socket, "SO_REUSEPORT"):
+            try: self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            except OSError: pass
+        self.sock_v6 = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+        self.sock_v6.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if hasattr(socket, "SO_REUSEPORT"):
+            try: self.sock_v6.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            except OSError: pass
         try:
             self.sock.bind(('0.0.0.0', bind_port))
+            self.sock_v6.bind(('::', bind_port))
         except Exception:
             self.logger.log(LogLevel.WARN, "Runtime", f"Failed to bind {bind_port}, using ephemeral")
+            self.sock.close()
+            self.sock_v6.close()
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            if hasattr(socket, "SO_REUSEPORT"):
+                try: self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+                except OSError: pass
             self.sock.bind(('0.0.0.0', 0))
+            self.sock_v6 = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+            self.sock_v6.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            if hasattr(socket, "SO_REUSEPORT"):
+                try: self.sock_v6.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+                except OSError: pass
+            self.sock_v6.bind(('::', 0))
             
         self.port = self.sock.getsockname()[1]
-        self.logger.log(LogLevel.INFO, "Runtime", f"Initialized '{instance_name}' on port {self.port}")
+
+        self.tcp_listener = None
+        self.tcp_listener_v6 = None
+        self.tcp_clients = [] # list of (socket, addr)
+        
+        if self.protocol == "tcp":
+            self.tcp_listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.tcp_listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            if hasattr(socket, "SO_REUSEPORT"):
+                try: self.tcp_listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+                except OSError: pass
+            self.tcp_listener.bind(('0.0.0.0', bind_port))
+            self.tcp_listener.listen(5)
+            self.tcp_listener.setblocking(False)
+
+            self.tcp_listener_v6 = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+            self.tcp_listener_v6.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            if hasattr(socket, "SO_REUSEPORT"):
+                try: self.tcp_listener_v6.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+                except OSError: pass
+            self.tcp_listener_v6.bind(('::', bind_port))
+            self.tcp_listener_v6.listen(5)
+            self.tcp_listener_v6.setblocking(False)
+            self.port = self.tcp_listener.getsockname()[1]
+
+        self.logger.log(LogLevel.INFO, "Runtime", f"Initialized '{instance_name}' on port {self.port} ({self.protocol}) [Dual-Stack]")
         
         # SD Socket
         self.sd_pub_port = 30490
         self.sd_multicast_ip = "224.0.0.1"
+        self.sd_multicast_ip_v6 = "FF02::4:C"
+        
         if self.config and 'sd' in self.config:
-            self.sd_pub_port = self.config['sd'].get('multicast_port', 30490)
-            self.sd_multicast_ip = self.config['sd'].get('multicast_ip', "224.0.0.1")
+            sd_cfg = self.config['sd']
+            self.sd_pub_port = sd_cfg.get('multicast_port', 30490)
+            
+            # Resolve SD Multicast Endpoint
+            if 'multicast_endpoint' in sd_cfg:
+                ep_name = sd_cfg['multicast_endpoint']
+                if ep_name in self.endpoints:
+                    self.sd_multicast_ip = self.endpoints[ep_name].get('ip', "224.0.0.1")
+                    self.sd_pub_port = self.endpoints[ep_name].get('port', self.sd_pub_port)
+
+            if 'multicast_endpoint_v6' in sd_cfg:
+                ep_name = sd_cfg['multicast_endpoint_v6']
+                if ep_name in self.endpoints:
+                    self.sd_multicast_ip_v6 = self.endpoints[ep_name].get('ip', "FF02::4:C")
+                    self.sd_pub_port = self.endpoints[ep_name].get('port', self.sd_pub_port)
         
         self.request_timeout = self.config.get('sd', {}).get('request_timeout_ms', 2000) / 1000.0
         self.offer_interval = self.config.get('sd', {}).get('cycle_offer_ms', 500) / 1000.0
 
+        # IPv4 SD
         self.sd_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sd_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         if hasattr(socket, "SO_REUSEPORT"):
-            try:
-                self.sd_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-            except OSError:
-                pass
+            try: self.sd_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            except OSError: pass
         self.sd_sock.bind(('0.0.0.0', self.sd_pub_port))
-        # Get interface IP from config (mandatory)
-        interface_ip = self.config.get('ip', '127.0.0.1') if self.config else '127.0.0.1'
-        # Join Multicast on configured interface
-        self.interface_ip = interface_ip
+        
         mreq = struct.pack("4s4s", socket.inet_aton(self.sd_multicast_ip), socket.inet_aton(self.interface_ip))
         try:
             self.sd_sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
         except OSError:
-            self.logger.log(LogLevel.WARN, "Runtime", f"Failed to join multicast on {self.interface_ip}, retrying on INADDR_ANY")
             mreq = struct.pack("4s4s", socket.inet_aton(self.sd_multicast_ip), socket.inet_aton("0.0.0.0"))
             self.sd_sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-        # Ensure outgoing multicast uses configured interface
         self.sd_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(self.interface_ip))
-        # Enable Multicast Loopback
         self.sd_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1)
+
+        # IPv6 SD
+        self.sd_sock_v6 = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+        self.sd_sock_v6.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if hasattr(socket, "SO_REUSEPORT"):
+            try: self.sd_sock_v6.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            except OSError: pass
+        self.sd_sock_v6.bind(('::', self.sd_pub_port))
         
+        mreq_v6 = struct.pack("16si", socket.inet_pton(socket.AF_INET6, self.sd_multicast_ip_v6), 0)
+        try:
+            self.sd_sock_v6.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq_v6)
+        except OSError as e:
+            self.logger.log(LogLevel.WARN, "SD", f"Failed to join IPv6 Multicast: {e}")
+        self.sd_sock_v6.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_LOOP, 1)
+
         self.sock.setblocking(False)
+        self.sock_v6.setblocking(False)
         self.sd_sock.setblocking(False)
+        self.sd_sock_v6.setblocking(False)
         self.pending_requests: Dict[Tuple[int, int, int], threading.Event] = {} # (sid, meth, sess) -> event
         self.request_results: Dict[Tuple[int, int, int], bytes] = {}
         self.session_manager = SessionIdManager()
@@ -171,25 +286,42 @@ class SomeIpRuntime:
         try:
             with open(path, 'r') as f:
                 data = json.load(f)
-                return data['instances'].get(name, {})
+                return data['instances'].get(name, {}), data.get('endpoints', {})
         except:
-            return {}
+            return {}, {}
 
     def offer_service(self, alias: str, handler: RequestHandler):
         sid = handler.get_service_id()
-        self.services[sid] = handler
-        # Resolve from config if possible
         instance_id = 1
+        endpoint_ip = self.interface_ip
+        endpoint_ip_v6 = self.interface_ip_v6
         port = self.port
+        multicast_ip = None
+        multicast_port = None
+
         if self.config and 'providing' in self.config:
-            cfg = self.config['providing'].get(alias)
-            if cfg:
-                sid = cfg.get('service_id', sid)
-                instance_id = cfg.get('instance_id', 1)
-                port = cfg.get('port', self.port)
-        
-        self.offered_services.append((sid, instance_id, handler.get_major_version(), handler.get_minor_version(), port))
-        self._send_offer(sid, instance_id, handler.get_major_version(), handler.get_minor_version(), port)
+            svc_cfg = self.config['providing'].get(alias)
+            if svc_cfg:
+                sid = svc_cfg.get('service_id', sid)
+                instance_id = svc_cfg.get('instance_id', instance_id)
+                
+                endpoint_name = svc_cfg.get('endpoint')
+                if endpoint_name and endpoint_name in self.endpoints:
+                    ep = self.endpoints[endpoint_name]
+                    endpoint_ip = ep.get('ip', endpoint_ip)
+                    port = ep.get('port', port)
+                    if ep.get('version') == 6:
+                        endpoint_ip_v6 = ep.get('ip', endpoint_ip_v6)
+
+                multicast_name = svc_cfg.get('multicast')
+                if multicast_name and multicast_name in self.endpoints:
+                    m_ep = self.endpoints[multicast_name]
+                    multicast_ip = m_ep.get('ip')
+                    multicast_port = m_ep.get('port')
+
+        self.services[sid] = handler
+        self.offered_services.append((sid, instance_id, handler.get_major_version(), handler.get_minor_version(), port, endpoint_ip, endpoint_ip_v6, multicast_ip, multicast_port))
+        self._send_offer(sid, instance_id, handler.get_major_version(), handler.get_minor_version(), port, endpoint_ip, endpoint_ip_v6, multicast_ip, multicast_port)
         self.logger.log(LogLevel.INFO, "Runtime", f"Offered {alias} (0x{sid:04x}) v{handler.get_major_version()}.{handler.get_minor_version()} on port {port}")
 
     def get_client(self, alias: str, client_cls, timeout: float = None):
@@ -221,7 +353,8 @@ class SomeIpRuntime:
             # Check if service is available
             if service_id in self.remote_services:
                 endpoint = self.remote_services[service_id]
-                self.logger.log(LogLevel.INFO, "Runtime", f"Discovered '{alias}' (0x{service_id:04x}) at {endpoint[0]}:{endpoint[1]}")
+                proto_str = endpoint[2] if len(endpoint) > 2 else "unknown"
+                self.logger.log(LogLevel.INFO, "Runtime", f"Discovered '{alias}' (0x{service_id:04x}) at {endpoint[0]}:{endpoint[1]} via {proto_str}")
                 return endpoint
             
             time.sleep(poll_interval)
@@ -296,20 +429,12 @@ class SomeIpRuntime:
             options_start = entries_end + 4 # Skip Options Len
             
             if entry_type == 0x01: # OfferService
-                # Find Endpoint Option (assuming standard layout with 1 option)
-                # In this simplified parser, we scan options for IPv4Endpoint
-                # Ideally, we look at indices.
-                # Assuming simple 1-1 mapping for demo/test compatibility.
-                # Or just scan *all* options for now because Python Demo is Client-only mostly.
-                
-                # Robust way: parse options into list
                 parsed_opts = []
                 opt_ptr = options_start
                 if len(data) > options_start:
                     try:
                         len_opts = struct.unpack(">I", data[entries_end:entries_end+4])[0]
                         opts_end = options_start + len_opts
-                        
                         while opt_ptr + 3 <= opts_end and opt_ptr < len(data):
                             l = struct.unpack(">H", data[opt_ptr:opt_ptr+2])[0]
                             t = data[opt_ptr+2]
@@ -317,30 +442,31 @@ class SomeIpRuntime:
                                 ip_raw = data[opt_ptr+4:opt_ptr+8]
                                 ip_str = f"{ip_raw[0]}.{ip_raw[1]}.{ip_raw[2]}.{ip_raw[3]}"
                                 p = struct.unpack(">H", data[opt_ptr+10:opt_ptr+12])[0]
-                                parsed_opts.append( (ip_str, p) )
+                                proto_id = data[opt_ptr+9]
+                                proto = "tcp" if proto_id == 0x06 else "udp"
+                                parsed_opts.append( (ip_str, p, proto) )
+                            elif t == 0x06: # IPv6
+                                ip_raw = data[opt_ptr+4:opt_ptr+20]
+                                ip_str = socket.inet_ntop(socket.AF_INET6, ip_raw)
+                                p = struct.unpack(">H", data[opt_ptr+22:opt_ptr+24])[0]
+                                proto_id = data[opt_ptr+21]
+                                proto = "tcp" if proto_id == 0x06 else "udp"
+                                parsed_opts.append( (ip_str, p, proto) )
                             else:
                                 parsed_opts.append(None)
-                            opt_ptr += 2 + l # Length field is 2 bytes, then 'l' bytes of content
+                            opt_ptr += 3 + l # Length is 3 + content
                     except: pass
                     
                 if ttl > 0:
-                    # Resolve endpoint
                     endpoint = None
                     if num_opts_1 > 0 and index1 < len(parsed_opts):
                         endpoint = parsed_opts[index1]
                     
-                    if endpoint and endpoint[0] != '0.0.0.0':
+                    if endpoint and endpoint[0] not in ('0.0.0.0', '::'):
                         self.remote_services[sid] = endpoint
                         self.logger.log(LogLevel.DEBUG, "SD", f"Discovered 0x{sid:04x} at {endpoint[0]}:{endpoint[1]}")
-                        self.logger.log(LogLevel.DEBUG, "SD", f"DEBUG: Added 0x{sid:04x} (Key Type: {type(sid)}). Current Keys: {list(self.remote_services.keys())}")
                         
             elif entry_type == 0x06: # SubscribeEventgroup
-                # Verify if we provide this service? 
-                # For test Mock server, we want to ACK.
-                # We check `self.offered_services`
-                
-                base_endpoint = None
-                 # Parse options same as above
                 parsed_opts = []
                 opt_ptr = options_start
                 if len(data) > options_start:
@@ -354,7 +480,16 @@ class SomeIpRuntime:
                                 ip_raw = data[opt_ptr+4:opt_ptr+8]
                                 ip_str = f"{ip_raw[0]}.{ip_raw[1]}.{ip_raw[2]}.{ip_raw[3]}"
                                 p = struct.unpack(">H", data[opt_ptr+10:opt_ptr+12])[0]
-                                parsed_opts.append( (ip_str, p) )
+                                proto_id = data[opt_ptr+9]
+                                proto = "tcp" if proto_id == 0x06 else "udp"
+                                parsed_opts.append( (ip_str, p, proto) )
+                            elif t == 0x06: # IPv6
+                                ip_raw = data[opt_ptr+4:opt_ptr+20]
+                                ip_str = socket.inet_ntop(socket.AF_INET6, ip_raw)
+                                p = struct.unpack(">H", data[opt_ptr+22:opt_ptr+24])[0]
+                                proto_id = data[opt_ptr+21]
+                                proto = "tcp" if proto_id == 0x06 else "udp"
+                                parsed_opts.append( (ip_str, p, proto) )
                             else:
                                 parsed_opts.append(None)
                             opt_ptr += 3 + l
@@ -367,19 +502,21 @@ class SomeIpRuntime:
                 
                 if is_offered and ttl > 0 and base_endpoint:
                      # Send ACK
-                     # Simplified ACK Packet
                      eventgroup_id = min_ver >> 16
                      ack_payload = bytearray([0x80, 0, 0, 0])
                      ack_payload += struct.pack(">I", 16)
-                     # Entry: Type 0x07 (Ack)
                      ack_payload += struct.pack(">BBBBHHII", 0x07, 0, 0, 0, sid, iid, ttl | (1<<24), min_ver)
-                     ack_payload += struct.pack(">I", 0) # 0 Options
+                     ack_payload += struct.pack(">I", 0) 
                      
                      plen = len(ack_payload) + 8
                      sh = struct.pack(">HHIHH4B", 0xFFFF, 0x8100, plen, 0, 1, 1, 1, 2, 0)
                      
-                     # Send to Multicast (or Unicast if we implemented it properly)
-                     self.sd_sock.sendto(sh + ack_payload, (self.sd_multicast_ip, self.sd_pub_port))
+                     # Detect if source was via IPv6
+                     is_ipv6_src = ":" in base_endpoint[0]
+                     if is_ipv6_src:
+                        self.sd_sock_v6.sendto(sh + ack_payload, (self.sd_multicast_ip_v6, self.sd_pub_port))
+                     else:
+                        self.sd_sock.sendto(sh + ack_payload, (self.sd_multicast_ip, self.sd_pub_port))
                     
             elif entry_type == 0x07: # SubscribeEventgroupAck
                 eventgroup_id = min_ver >> 16
@@ -395,27 +532,38 @@ class SomeIpRuntime:
 
     def subscribe_eventgroup(self, service_id: int, instance_id: int, eventgroup_id: int, ttl: int = 0xFFFFFF):
         """Subscribe to an eventgroup from a remote service."""
+        # Detect if we should use IPv6 for subscription
+        use_v6 = ":" in self.interface_ip_v6
+        
         # Build SubscribeEventgroup entry
         sd_payload = bytearray([0x80, 0, 0, 0])  # Flags
-        sd_payload += struct.pack(">I", 16)       # Entries Len (16 bytes = 1 entry)
+        sd_payload += struct.pack(">I", 16)       # Entries Len
         
-        # Entry: Type=0x06 (SubscribeEventgroup), with our endpoint option
         num_opts_byte = (1 << 4) | 0
         maj_ttl = (0x01 << 24) | (ttl & 0xFFFFFF)
-        minor = eventgroup_id << 16  # eventgroup_id in upper 16 bits
+        minor = eventgroup_id << 16
         sd_payload += struct.pack(">BBBBHHII", 0x06, 0, 0, num_opts_byte, service_id, instance_id, maj_ttl, minor)
         
-        # Options Len (12 bytes for IPv4 endpoint option)
-        sd_payload += struct.pack(">I", 12)
-        
-        # Option IPv4 endpoint (our address for receiving events)
-        sd_payload += struct.pack(">HBB", 9, 0x04, 0)  # Len=9, Type=IPv4, Res
-        sd_payload += struct.pack(">I", struct.unpack(">I", socket.inet_aton(self.interface_ip))[0])
-        sd_payload += struct.pack(">BBH", 0, 0x11, self.port)  # Res, UDP, Port
+        if not use_v6:
+            # Options Len (12 bytes for IPv4 endpoint option)
+            sd_payload += struct.pack(">I", 12)
+            sd_payload += struct.pack(">HBB", 9, 0x04, 0)  # Len=9, Type=IPv4, Res
+            sd_payload += struct.pack(">I", struct.unpack(">I", socket.inet_aton(self.interface_ip))[0])
+            sd_payload += struct.pack(">BBH", 0, 0x11, self.port)  # Res, UDP, Port
+        else:
+            # Options Len (24 bytes for IPv6 endpoint option)
+            sd_payload += struct.pack(">I", 24)
+            sd_payload += struct.pack(">HBB", 21, 0x06, 0) # Len=21, Type=IPv6, Res
+            sd_payload += socket.inet_pton(socket.AF_INET6, self.interface_ip_v6)
+            sd_payload += struct.pack(">BBH", 0, 0x11, self.port) # Res, UDP, Port
         
         payload_len = len(sd_payload) + 8
         someip_header = struct.pack(">HHIHH4B", 0xFFFF, 0x8100, payload_len, 0, 1, 1, 1, 2, 0)
-        self.sd_sock.sendto(someip_header + sd_payload, (self.sd_multicast_ip, self.sd_pub_port))
+        
+        if use_v6:
+            self.sd_sock_v6.sendto(someip_header + sd_payload, (self.sd_multicast_ip_v6, self.sd_pub_port))
+        else:
+            self.sd_sock.sendto(someip_header + sd_payload, (self.sd_multicast_ip, self.sd_pub_port))
         
         self.subscriptions[(service_id, eventgroup_id)] = False
         self.logger.log(LogLevel.DEBUG, "SD", f"Sent SubscribeEventgroup for 0x{service_id:04x}:{eventgroup_id}")
@@ -429,29 +577,85 @@ class SomeIpRuntime:
         """Check if subscription was acknowledged."""
         return self.subscriptions.get((service_id, eventgroup_id), False)
 
-    def _send_offer(self, service_id, instance_id, major, minor, port):
-        # SD Payload Construction (Match C++ logic)
-        sd_payload = bytearray([0x80, 0, 0, 0]) # Flags
-        sd_payload += struct.pack(">I", 16)     # Entries Len (4 bytes)
+    def _send_offer(self, service_id, instance_id, major, minor, port, 
+                    endpoint_ip=None, endpoint_ip_v6=None,
+                    multicast_ip=None, multicast_port=None):
+        if endpoint_ip is None: endpoint_ip = self.interface_ip
+        if endpoint_ip_v6 is None: endpoint_ip_v6 = self.interface_ip_v6
+
+        def is_v4(ip):
+            try: return ipaddress.ip_address(ip).version == 4
+            except: return False
+        def is_v6(ip):
+            try: return ipaddress.ip_address(ip).version == 6
+            except: return False
+
+        # Build IPv4 Offer
+        if is_v4(endpoint_ip):
+            sd_payload_v4 = bytearray([0x80, 0, 0, 0]) 
+            sd_payload_v4 += struct.pack(">I", 16)     
+            
+            num_opts_v4 = 1
+            if multicast_ip and is_v4(multicast_ip):
+                num_opts_v4 += 1
+                
+            num_opts_byte = (num_opts_v4 << 4) | 0
+            maj_ttl = (major << 24) | 0xFFFFFF
+            sd_payload_v4 += struct.pack(">BBBBHHII", 0x01, 0, 0, num_opts_byte, service_id, instance_id, maj_ttl, minor)
+            
+            # Options
+            options_v4 = bytearray()
+            ip_int = struct.unpack(">I", socket.inet_aton(endpoint_ip))[0]
+            proto_id = 0x06 if self.protocol == 'tcp' else 0x11
+            options_v4 += struct.pack(">HBBI BBH", 9, 0x04, 0, ip_int, 0, proto_id, port)
+            
+            if multicast_ip and is_v4(multicast_ip):
+                m_ip_int = struct.unpack(">I", socket.inet_aton(multicast_ip))[0]
+                options_v4 += struct.pack(">HBBI BBH", 9, 0x14, 0, m_ip_int, 0, 0x11, multicast_port or port)
+                
+            sd_payload_v4 += struct.pack(">I", len(options_v4))
+            sd_payload_v4 += options_v4
+            
+            payload_len_v4 = len(sd_payload_v4) + 8
+            header_v4 = struct.pack(">HHIHH4B", 0xFFFF, 0x8100, payload_len_v4, 0, 1, 1, 1, 2, 0)
+            self.sd_sock.sendto(header_v4 + sd_payload_v4, (self.sd_multicast_ip, self.sd_pub_port))
+
+        # Build IPv6 Offer
+        if is_v6(endpoint_ip_v6):
+            sd_payload_v6 = bytearray([0x80, 0, 0, 0])
+            sd_payload_v6 += struct.pack(">I", 16)
+            
+            num_opts_v6 = 1
+            if multicast_ip and is_v6(multicast_ip):
+                num_opts_v6 += 1
+                
+            num_opts_byte_v6 = (num_opts_v6 << 4) | 0
+            maj_ttl = (major << 24) | 0xFFFFFF # Fixed: missing maj_ttl in original v6 block partially
+            sd_payload_v6 += struct.pack(">BBBBHHII", 0x01, 0, 0, num_opts_byte_v6, service_id, instance_id, maj_ttl, minor)
+            
+            options_v6 = bytearray()
+            options_v6 += struct.pack(">HBB", 21, 0x06, 0)
+            options_v6 += socket.inet_pton(socket.AF_INET6, endpoint_ip_v6)
+            proto_id = 0x06 if self.protocol == 'tcp' else 0x11
+            options_v6 += struct.pack(">BBH", 0, proto_id, port)
+            
+            if multicast_ip and is_v6(multicast_ip):
+                options_v6 += struct.pack(">HBB", 21, 0x16, 0)
+                options_v6 += socket.inet_pton(socket.AF_INET6, multicast_ip)
+                options_v6 += struct.pack(">BBH", 0, 0x11, multicast_port or port)
+                
+            sd_payload_v6 += struct.pack(">I", len(options_v6))
+            sd_payload_v6 += options_v6
+
+            payload_len_v6 = len(sd_payload_v6) + 8
+            header_v6 = struct.pack(">HHIHH4B", 0xFFFF, 0x8100, payload_len_v6, 0, 1, 1, 1, 2, 0)
+            self.sd_sock_v6.sendto(header_v6 + sd_payload_v6, (self.sd_multicast_ip_v6, self.sd_pub_port))
+
+        payload_len_v6 = len(sd_payload_v6) + 8
+        header_v6 = struct.pack(">HHIHH4B", 0xFFFF, 0x8100, payload_len_v6, 0, 1, 1, 1, 2, 0)
+        self.sd_sock_v6.sendto(header_v6 + sd_payload_v6, (self.sd_multicast_ip_v6, self.sd_pub_port))
         
-        # Entry (16 bytes)
-        # Type(1), Idx1(1), Idx2(1), NumOpts(1), SvcId(2), InstId(2), Maj/TTL(4), Min(4)
-        num_opts_byte = (1 << 4) | 0
-        maj_ttl = (major << 24) | 0xFFFFFF
-        sd_payload += struct.pack(">BBBBHHII", 0x01, 0, 0, num_opts_byte, service_id, instance_id, maj_ttl, minor)
-        
-        # Options Len (4 bytes)
-        sd_payload += struct.pack(">I", 12)
-        
-        # Option IPv4 (9 bytes)
-        # Len(2), Type(1), Res(1), IP(4), Res(1), Proto(1), Port(2)
-        ip_int = struct.unpack(">I", socket.inet_aton(self.interface_ip))[0]
-        sd_payload += struct.pack(">HBBI BBH", 9, 0x04, 0, ip_int, 0, 0x11, port)
-        
-        payload_len = len(sd_payload) + 8
-        someip_header = struct.pack(">HHIHH4B", 0xFFFF, 0x8100, payload_len, 0, 1, 1, 1, 2, 0)
-        self.sd_sock.sendto(someip_header + sd_payload, (self.sd_multicast_ip, self.sd_pub_port))
-        self.logger.log(LogLevel.DEBUG, "SD", f"Sent Offer for 0x{service_id:04x}")
+        self.logger.log(LogLevel.DEBUG, "SD", f"Sent Dual-Stack Offer for 0x{service_id:04x} [{endpoint_ip}, {endpoint_ip_v6}]")
 
     def send_request(self, service_id, method_id, payload, target_addr, msg_type=0, wait_for_response=False, timeout=2.0):
         # Generate Session ID
@@ -465,7 +669,33 @@ class SomeIpRuntime:
             event = threading.Event()
             self.pending_requests[(service_id, method_id, session_id)] = event
             
-        self.sock.sendto(header + payload, target_addr)
+        # Determine protocol
+        proto = self.protocol
+        if len(target_addr) > 2:
+            proto = target_addr[2]
+            target_addr = (target_addr[0], target_addr[1])
+
+        if proto == "tcp":
+            try:
+                # Detect family
+                family = socket.AF_INET6 if ":" in target_addr[0] else socket.AF_INET
+                with socket.socket(family, socket.SOCK_STREAM) as s:
+                    s.settimeout(timeout)
+                    s.connect(target_addr)
+                    s.sendall(header + payload)
+                    if wait_for_response:
+                        data = s.recv(4096)
+                        if len(data) >= 16:
+                            self.request_results[(service_id, method_id, session_id)] = data[16:]
+                            return self.request_results.pop((service_id, method_id, session_id))
+            except Exception as e:
+                self.logger.log(LogLevel.ERROR, "Runtime", f"TCP Send failed: {e}")
+                return None
+        else:
+            if ":" in target_addr[0]:
+                self.sock_v6.sendto(header + payload, target_addr)
+            else:
+                self.sock.sendto(header + payload, target_addr)
         
         if wait_for_response and event:
             if event.wait(timeout):
@@ -480,63 +710,65 @@ class SomeIpRuntime:
         while self.running:
             # Periodic SD Offers
             now = time.time()
-            if now - self.last_offer_time > self.offer_interval:  # Faster offer interval for quicker discovery
+            if now - self.last_offer_time > self.offer_interval:
                 self.last_offer_time = now
-                for (sid, iid, major, minor, port) in self.offered_services:
-                    self._send_offer(sid, iid, major, minor, port)
+                for (sid, iid, major, minor, port, ep_ip, ep_ip_v6, m_ip, m_port) in self.offered_services:
+                    self._send_offer(sid, iid, major, minor, port, ep_ip, ep_ip_v6, m_ip, m_port)
 
-            readable, _, _ = select.select([self.sock, self.sd_sock], [], [], 0.5)
+            inputs = [self.sock, self.sock_v6, self.sd_sock, self.sd_sock_v6]
+            if self.tcp_listener:
+                inputs.append(self.tcp_listener)
+            if self.tcp_listener_v6:
+                inputs.append(self.tcp_listener_v6)
+            for client_sock, _ in self.tcp_clients:
+                inputs.append(client_sock)
+
+            readable, _, _ = select.select(inputs, [], [], 0.1)
             for s in readable:
+                if s in (self.tcp_listener, self.tcp_listener_v6):
+                    client_sock, addr = s.accept()
+                    client_sock.setblocking(False)
+                    self.tcp_clients.append((client_sock, addr))
+                    self.logger.log(LogLevel.INFO, "Runtime", f"Accepted TCP connection from {addr}")
+                    continue
+
                 try:
-                    data, addr = s.recvfrom(1500)
-                except ConnectionResetError:
-                    # Windows UDP Quirks: Host Unreachable from previous send closes socket on recv
+                    if s in (self.sock, self.sock_v6, self.sd_sock, self.sd_sock_v6):
+                        data, addr = s.recvfrom(1500)
+                    else:
+                        data = s.recv(1500)
+                        addr = next(a for cs, a in self.tcp_clients if cs == s)
+                except (ConnectionResetError, ConnectionAbortedError):
+                    if s not in (self.sock, self.sock_v6, self.sd_sock, self.sd_sock_v6):
+                        self.tcp_clients = [(cs, a) for cs, a in self.tcp_clients if cs != s]
+                        s.close()
                     continue
                 except Exception:
                     continue
 
-                if s == self.sock:
+                if not data:
+                    if s not in (self.sock, self.sock_v6, self.sd_sock, self.sd_sock_v6):
+                        self.tcp_clients = [(cs, a) for cs, a in self.tcp_clients if cs != s]
+                        s.close()
+                    continue
+
+                if s in (self.sock, self.sock_v6) or s in [cs for cs, a in self.tcp_clients]:
                     if len(data) >= 16:
                         sid, mid, length, cid, ssid, pv, iv, mt, rc = struct.unpack(">HHIHH4B", data[:16])
-                        # Only handle Requests (0x00) or Requests No Return (0x01)
                         if mt in (0x00, 0x01) and sid in self.services:
-                            res_payload = self.services[sid].handle({'method_id': mid}, data[16:])
+                            res_payload = self.services[sid].handle({'method_id': mid}, data[16:length+8])
                             if res_payload:
                                 res_header = struct.pack(">HHIHH4B", sid, mid, len(res_payload)+8, cid, ssid, pv, iv, 0x80, 0)
-                                self.sock.sendto(res_header + res_payload, addr)
+                                if s in (self.sock, self.sock_v6):
+                                    s.sendto(res_header + res_payload, addr)
+                                else:
+                                    s.sendall(res_header + res_payload)
                         elif mt == 0x80: # RESPONSE
                             key = (sid, mid, ssid)
                             if key in self.pending_requests:
-                                self.request_results[key] = data[16:]
+                                self.request_results[key] = data[16:length+8]
                                 self.pending_requests.pop(key).set()
-                elif s == self.sd_sock:
-                    # Parse SD using the robust handler
+                elif s in (self.sd_sock, self.sd_sock_v6):
                     if len(data) >= 16:
                         self._handle_sd_packet(data)
 
-    def _wait_for_service(self, service_id: int, alias: str, timeout: float = 5.0) -> Optional[Tuple[str, int]]:
-        """Wait for a service to be discovered via SD, with timeout."""
-        import time
-        start = time.time()
-        poll_interval = 0.1
-        
-        while time.time() - start < timeout:
-            # If we are not running the event loop thread, we must poll manually.
-            # If we are running, the thread handles polling.
-            if not self.running:
-                self._poll_sd()
-            
-            # Check if service is available
-            if service_id in self.remote_services:
-                endpoint = self.remote_services[service_id]
-                self.logger.log(LogLevel.INFO, "Runtime", f"Discovered '{alias}' (0x{service_id:04x}) at {endpoint[0]}:{endpoint[1]}")
-                return endpoint
-            
-            # DEBUG: Print keys periodically
-            if int(time.time() * 10) % 20 == 0:
-                 print(f"DEBUG: Waiting for 0x{service_id:04x} (Type: {type(service_id)}). Available: {list(self.remote_services.keys())} Types: {[type(k) for k in self.remote_services.keys()]}")
-
-            time.sleep(poll_interval)
-        
-        self.logger.log(LogLevel.WARN, "Runtime", f"Timeout waiting for '{alias}' (0x{service_id:04x})")
-        return None

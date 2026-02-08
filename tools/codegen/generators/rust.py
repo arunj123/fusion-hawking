@@ -176,13 +176,13 @@ class RustGenerator(AbstractGenerator):
         lines = []
         lines.append(f"#[allow(dead_code)]")
         lines.append(f"pub struct {svc.name}Client {{")
-        lines.append("    transport: Arc<UdpTransport>,")
+        lines.append("    transport: Arc<dyn SomeIpTransport>,")
         lines.append("    target: SocketAddr,")
         lines.append("}")
         
         lines.append(f"impl fusion_hawking::runtime::ServiceClient for {svc.name}Client {{")
         lines.append(f"    const SERVICE_ID: u16 = {svc.id};")
-        lines.append("    fn new(transport: Arc<UdpTransport>, target: SocketAddr) -> Self { Self { transport, target } }")
+        lines.append("    fn new(transport: Arc<dyn SomeIpTransport>, target: SocketAddr) -> Self { Self { transport, target } }")
         lines.append("}")
         
         lines.append(f"#[allow(dead_code)]")

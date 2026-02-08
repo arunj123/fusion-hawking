@@ -16,29 +16,40 @@ class TestSdPacketProduction(unittest.TestCase):
         # Setup a dummy runtime
         rt = SomeIpRuntime(None, "test", None)
         rt.interface_ip = "127.0.0.1"
+        rt.interface_ip_v6 = "::1"
         
         rt._send_offer(0x1234, 1, 1, 0, 30500)
         
-        self.assertTrue(mock_sendto.called)
-        data = mock_sendto.call_args[0][0]
+        # The runtime sends both IPv4 and IPv6 offers in Dual-Stack mode
+        self.assertGreaterEqual(mock_sendto.call_count, 1)
         
-        # SOME/IP Header (16 bytes)
-        self.assertEqual(len(data), 16 + 40) # 16 Header + 40 SD Payload
+        # Find the IPv4 packet among calls
+        ipv4_call_data = None
+        for args in mock_sendto.call_args_list:
+            data = args[0][0]
+            addr = args[0][1]
+            if addr[0] == rt.sd_multicast_ip:
+                ipv4_call_data = data
+                break
         
-        # SOME/IP-SD Payload starts at 16
-        sd_payload = data[16:]
+        self.assertIsNotNone(ipv4_call_data, "Should have sent an IPv4 offer")
         
-        # Options Length is at index 16 (Header) + 8 (SD Header) + 16 (Entry) = 40?
-        # Offset 16: SD Header (4)
-        # Offset 20: Entries Len (4)
-        # Offset 24: Entry (16)
-        # Offset 40: Options Len (4)
+        # 16 bytes SOME/IP Header + SD Payload
+        # SD Payload: Flags(4) + EntriesLen(4) + Entry(16) + OptionsLen(4) + Option(12) = 40 bytes
+        self.assertEqual(len(ipv4_call_data), 16 + 40)
+        
+        sd_payload = ipv4_call_data[16:]
+        
+        # Entries Len is at offset 4
+        entries_len = struct.unpack(">I", sd_payload[4:8])[0]
+        self.assertEqual(entries_len, 16)
+        
+        # Options Len is at offset 8 (SD Header) + 16 (Entry) = 24
         options_len = struct.unpack(">I", sd_payload[24:28])[0]
         self.assertEqual(options_len, 12, "Options Len should be exactly 12 for one IPv4 option")
         
-        # Option structure check
-        # Offset 28: Option Len (2)
-        # Offset 30: Option Type (1)
+        # Option Header: Len(2) + Type(1) + Res(1) = 4 bytes.
+        # Position: 24 (OptionsLen) + 4 = 28
         opt_len_field = struct.unpack(">H", sd_payload[28:30])[0]
         self.assertEqual(opt_len_field, 9, "Option Length field should be 9 (bytes after Type)")
         

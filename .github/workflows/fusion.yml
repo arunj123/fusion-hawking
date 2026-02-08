@@ -212,7 +212,8 @@ jobs:
         FUSION_LOG_DIR: logs/unit_python
       # Note: No --clean here
       run: |
-        python -m tools.fusion.main --stage test --target python --base-port 300 --no-dashboard
+        # Ensure we can bind to ports on Linux
+        python -m tools.fusion.main --stage test --target python --base-port 400 --no-dashboard
     - name: Upload Logs
       if: always()
       uses: actions/upload-artifact@v4

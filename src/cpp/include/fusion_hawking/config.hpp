@@ -14,7 +14,16 @@ struct ServiceConfig {
     uint16_t instance_id = 1;
     uint8_t major_version = 1;
     uint32_t minor_version = 0;
-    uint16_t port = 0;
+    std::string endpoint;
+    std::string multicast;
+};
+
+struct EndpointConfig {
+    std::string interface;
+    std::string ip;
+    int version = 4;
+    int port = 0;
+    std::string protocol = "udp";
 };
 
 struct ClientConfig {
@@ -22,13 +31,10 @@ struct ClientConfig {
     uint16_t instance_id = 1;
     uint8_t major_version = 1;
     uint32_t minor_version = 0;
-    std::string static_ip;
-    uint16_t static_port = 0;
+    std::string endpoint;
 };
 
 struct SdConfig {
-    uint16_t multicast_port = 30490;
-    std::string multicast_ip = "224.0.0.1";
     uint32_t cycle_offer_ms = 500;
     uint32_t request_response_delay_ms = 50;
     uint32_t request_timeout_ms = 2000;
@@ -36,10 +42,16 @@ struct SdConfig {
 
 struct InstanceConfig {
     std::string ip;
+    std::string ip_v6;
     int ip_version = 4;
     std::map<std::string, ServiceConfig> providing;
     std::map<std::string, ClientConfig> required;
+    std::map<std::string, EndpointConfig> endpoints;
     SdConfig sd;
+    
+    // Config helpers
+    std::string sd_multicast_endpoint;
+    std::string sd_multicast_endpoint_v6;
 };
 
 class ConfigLoader {
@@ -52,6 +64,19 @@ public:
         std::stringstream buffer;
         buffer << f.rdbuf();
         std::string json = buffer.str();
+
+        // 1. Parse Endpoints (Global)
+        size_t endp_pos = json.find("\"endpoints\"");
+        if (endp_pos != std::string::npos) {
+             size_t e_start = json.find("{", endp_pos);
+             size_t e_end = e_start + 1; int e_depth = 1;
+             while (e_depth > 0 && e_end < json.length()) {
+                 if (json[e_end] == '{') e_depth++;
+                 else if (json[e_end] == '}') e_depth--;
+                 e_end++;
+             }
+             ParseEndpoints(json.substr(e_start, e_end - e_start), config.endpoints);
+        }
 
         size_t inst_pos = json.find("\"" + instance_name + "\"");
         if (inst_pos == std::string::npos) return config;
@@ -93,26 +118,26 @@ public:
 
         size_t sd_pos = block.find("\"sd\"");
         if (sd_pos != std::string::npos) {
-            size_t s_start = block.find("{", sd_pos);
-            size_t s_end = s_start + 1; int s_depth = 1;
-            while (s_depth > 0 && s_end < block.length()) {
-                if (block[s_end] == '{') s_depth++;
-                else if (block[s_end] == '}') s_depth--;
-                s_end++;
+            size_t sd_start = block.find("{", sd_pos);
+            int sd_depth = 1; size_t sd_end = sd_start + 1;
+            while (sd_depth > 0 && sd_end < block.length()) {
+                if (block[sd_end] == '{') sd_depth++;
+                else if (block[sd_end] == '}') sd_depth--;
+                sd_end++;
             }
-            std::string sd_block = block.substr(s_start, s_end - s_start);
-            config.sd.multicast_port = ExtractInt(sd_block, "multicast_port");
-            config.sd.multicast_ip = ExtractString(sd_block, "multicast_ip");
+            std::string sd_block = block.substr(sd_start, sd_end - sd_start);
+            config.sd_multicast_endpoint = ExtractString(sd_block, "multicast_endpoint");
+            config.sd_multicast_endpoint_v6 = ExtractString(sd_block, "multicast_endpoint_v6");
             int cycle = ExtractInt(sd_block, "cycle_offer_ms"); if (cycle > 0) config.sd.cycle_offer_ms = cycle;
             int delay = ExtractInt(sd_block, "request_response_delay_ms"); if (delay > 0) config.sd.request_response_delay_ms = delay;
             int timeout = ExtractInt(sd_block, "request_timeout_ms"); if (timeout > 0) config.sd.request_timeout_ms = timeout;
         }
         
-        if (config.sd.multicast_port == 0) config.sd.multicast_port = 30490;
-        if (config.sd.multicast_ip.empty()) config.sd.multicast_ip = "224.0.0.1";
-        
         config.ip = ExtractString(block, "ip");
         if (config.ip.empty()) config.ip = "127.0.0.1";
+        
+        config.ip_v6 = ExtractString(block, "ip_v6");
+        if (config.ip_v6.empty()) config.ip_v6 = "::1";
         
         config.ip_version = ExtractInt(block, "ip_version");
         if (config.ip_version == 0) config.ip_version = 4;
@@ -144,7 +169,8 @@ private:
             cfg.instance_id = ExtractInt(val, "instance_id");
             cfg.major_version = ExtractInt(val, "major_version");
             cfg.minor_version = ExtractInt(val, "minor_version");
-            cfg.port = ExtractInt(val, "port");
+            cfg.endpoint = ExtractString(val, "endpoint");
+            cfg.multicast = ExtractString(val, "multicast");
             map[key] = cfg;
             pos = obj_end;
         }
@@ -172,8 +198,35 @@ private:
             cfg.instance_id = ExtractInt(val, "instance_id");
             cfg.major_version = ExtractInt(val, "major_version");
             cfg.minor_version = ExtractInt(val, "minor_version");
-            cfg.static_ip = ExtractString(val, "static_ip");
-            cfg.static_port = ExtractInt(val, "static_port");
+            cfg.endpoint = ExtractString(val, "endpoint");
+            map[key] = cfg;
+            pos = obj_end;
+        }
+    }
+
+    static void ParseEndpoints(const std::string& json, std::map<std::string, EndpointConfig>& map) {
+        size_t pos = 0;
+        while ((pos = json.find("\"", pos)) != std::string::npos) {
+            size_t key_end = json.find("\"", pos + 1);
+            if (key_end == std::string::npos) break;
+            std::string key = json.substr(pos + 1, key_end - pos - 1);
+            
+            size_t obj_start = json.find("{", key_end);
+            if (obj_start == std::string::npos) break;
+            size_t obj_end = obj_start + 1; int depth = 1;
+            while (depth > 0 && obj_end < json.length()) {
+                if (json[obj_end] == '{') depth++;
+                else if (json[obj_end] == '}') depth--;
+                obj_end++;
+            }
+            
+            std::string val = json.substr(obj_start, obj_end - obj_start);
+            EndpointConfig cfg;
+            cfg.ip = ExtractString(val, "ip");
+            cfg.interface = ExtractString(val, "interface");
+            cfg.version = ExtractInt(val, "version");
+            cfg.port = ExtractInt(val, "port");
+            std::string proto = ExtractString(val, "protocol"); if (!proto.empty()) cfg.protocol = proto;
             map[key] = cfg;
             pos = obj_end;
         }
@@ -189,6 +242,17 @@ private:
         try { return std::stoi(num, nullptr, 0); } catch(...) { return 0; }
     }
     
+    static bool ExtractBool(const std::string& json, const std::string& key) {
+        size_t key_pos = json.find("\"" + key + "\"");
+        if (key_pos == std::string::npos) return false;
+        size_t colon_pos = json.find(":", key_pos);
+        if (colon_pos == std::string::npos) return false;
+        size_t val_start = json.find_first_not_of(" \t\n\r", colon_pos + 1);
+        if (val_start == std::string::npos) return false;
+        if (json.substr(val_start, 4) == "true") return true;
+        return false;
+    }
+
     static std::string ExtractString(const std::string& json, const std::string& key) {
         size_t pos = json.find("\"" + key + "\"");
         if (pos == std::string::npos) return "";

@@ -14,4 +14,7 @@ pub trait SomeIpTransport: Send + Sync {
     
     /// Get the local socket address.
     fn local_addr(&self) -> Result<SocketAddr>;
+
+    /// Set non-blocking mode.
+    fn set_nonblocking(&self, nonblocking: bool) -> Result<()>;
 }

@@ -81,6 +81,27 @@ private:
     SomeIpRuntime* runtime;
 };
 
+// --- Math Service Implementation ---
+class MathServiceImpl : public MathServiceStub {
+    std::shared_ptr<ILogger> logger;
+    int instance_id;
+public:
+    MathServiceImpl(std::shared_ptr<ILogger> logger, int instance_id) : logger(logger), instance_id(instance_id) {}
+    
+    virtual MathServiceAddResponse Add(MathServiceAddRequest req) override {
+        if (logger) logger->Log(LogLevel::INFO, "MathService", "[" + std::to_string(instance_id) + "] Add(" + std::to_string(req.a) + ", " + std::to_string(req.b) + ")");
+        MathServiceAddResponse res;
+        res.result = req.a + req.b;
+        return res;
+    }
+    
+    virtual MathServiceSubResponse Sub(MathServiceSubRequest req) override {
+        MathServiceSubResponse res;
+        res.result = req.a - req.b;
+        return res;
+    }
+};
+
 int main() {
     auto logger = std::make_shared<ConsoleLogger>();
     logger->Log(LogLevel::INFO, "Main", "Starting C++ Demo (Core Library)");
@@ -93,6 +114,9 @@ int main() {
 
     SensorServiceImpl sensor_svc(&rt);
     rt.offer_service("sensor-service", &sensor_svc);
+    
+    MathServiceImpl math_svc(logger, 2);
+    rt.offer_service("math-service", &math_svc);
     
     std::this_thread::sleep_for(std::chrono::seconds(2));
     std::shared_ptr<MathServiceClient> client = nullptr;

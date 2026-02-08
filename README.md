@@ -12,7 +12,7 @@ A lightweight, dependency-free SOME/IP library implemented in Rust, adhering to 
 - **Cross-Language Support**:
     - **Rust**: Native implementation with fully async-compatible SD machine.
     - **Python**: generated bindings and runtime with Event support.
-    - **C++**: High-performance runtime with modern C++14 support.
+    - **C++**: High-performance runtime with modern C++23 support.
 - **IDL Compiler**: Python-based tool (`tools/codegen`) to generate code from simple Python dataclasses. Supports recursive types and synchronous RPC. See [IDL Documentation](docs/IDL.md).
 
 ## Prerequisites
@@ -21,6 +21,7 @@ The `fusion` tool will verify these for you, but you need:
 - **Rust**: Latest Stable (install via `rustup`).
 - **Python**: Python 3.8+.
 - **C++ Compiler**: CMake 3.10+ and MSVC/GCC.
+- **Linux/WSL dependencies**: `sudo apt install build-essential cmake python3-venv lcov libssl-dev`.
 
 **Note**: The tool automatically attempts to install missing components like `cargo-llvm-cov` and `llvm-tools-preview`.
 

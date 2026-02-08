@@ -7,7 +7,6 @@ use crate::runtime::config::SdConfig;
 use std::net::{SocketAddr, Ipv4Addr};
 use std::collections::HashMap;
 use std::time::{Instant, Duration, SystemTime, UNIX_EPOCH};
-use std::io::ErrorKind;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ServicePhase {
@@ -109,8 +108,10 @@ pub struct RemoteService {
 }
 
 pub struct ServiceDiscovery {
-    transport: UdpTransport,
-    multicast_group: SocketAddr,
+    transport_v4: UdpTransport,
+    transport_v6: UdpTransport,
+    multicast_group_v4: SocketAddr,
+    multicast_group_v6: SocketAddr,
     pub(crate) local_services: HashMap<(u16, u16), LocalService>, // (ServiceId, InstanceId) -> Service
     pub(crate) remote_services: HashMap<(u16, u16), RemoteService>,
     // Event subscriptions: (ServiceId, EventgroupId) -> list of subscriber endpoints
@@ -118,30 +119,69 @@ pub struct ServiceDiscovery {
     // Pending subscription requests: (ServiceId, EventgroupId) -> callback/flag
     pub(crate) pending_subscriptions: HashMap<(u16, u16), bool>,
     pub local_ip: Ipv4Addr,
+    pub local_ip_v6: std::net::Ipv6Addr,
 }
 
 impl ServiceDiscovery {
-    pub fn new(transport: UdpTransport, multicast_group: SocketAddr, local_ip: Ipv4Addr) -> Self {
-        // Try to set non-blocking
-        let _ = transport.set_nonblocking(true);
+    pub fn new(transport_v4: UdpTransport, transport_v6: UdpTransport, local_ip: Ipv4Addr, local_ip_v6: std::net::Ipv6Addr) -> Self {
+        let _ = transport_v4.set_nonblocking(true);
+        let _ = transport_v6.set_nonblocking(true);
         
+        let multicast_group_v4: SocketAddr = "224.0.0.1:30490".parse().unwrap();
+        let multicast_group_v6: SocketAddr = "[FF02::4:C]:30490".parse().unwrap();
+
         ServiceDiscovery {
-            transport,
-            multicast_group,
+            transport_v4,
+            transport_v6,
+            multicast_group_v4,
+            multicast_group_v6,
             local_services: HashMap::new(),
             remote_services: HashMap::new(),
             subscriptions: HashMap::new(),
             pending_subscriptions: HashMap::new(),
             local_ip,
+            local_ip_v6,
         }
     }
 
-    pub fn offer_service(&mut self, service_id: u16, instance_id: u16, major: u8, minor: u32, port: u16, proto: u8) {
+    pub fn offer_service(&mut self, service_id: u16, instance_id: u16, major: u8, minor: u32, port: u16, proto: u8, multicast: Option<(std::net::IpAddr, u16)>) {
+        let mut options = vec![
+            SdOption::Ipv4Endpoint {
+                address: self.local_ip,
+                transport_proto: proto,
+                port,
+            },
+            SdOption::Ipv6Endpoint {
+                address: self.local_ip_v6,
+                transport_proto: proto,
+                port,
+            },
+        ];
+
+        if let Some((mcast_ip, mcast_port)) = multicast {
+            match mcast_ip {
+                std::net::IpAddr::V4(addr) => {
+                    options.push(SdOption::Ipv4Multicast {
+                        address: addr,
+                        transport_proto: 0x11, // Always UDP for multicast
+                        port: mcast_port,
+                    });
+                },
+                std::net::IpAddr::V6(addr) => {
+                    options.push(SdOption::Ipv6Multicast {
+                        address: addr,
+                        transport_proto: 0x11,
+                        port: mcast_port,
+                    });
+                }
+            }
+        }
+
         let entry = SdEntry {
             entry_type: EntryType::OfferService,
             index_1: 0,
             index_2: 0,
-            number_of_opts_1: 0,
+            number_of_opts_1: options.len() as u8,
             number_of_opts_2: 0,
             service_id,
             instance_id,
@@ -150,14 +190,7 @@ impl ServiceDiscovery {
             minor_version: minor,
         };
 
-        // Use configured local IP instead of hardcoded 127.0.0.1
-        let option = SdOption::Ipv4Endpoint {
-            address: self.local_ip,
-            transport_proto: proto,
-            port,
-        };
-
-        let mut service = LocalService::new(entry, vec![option]);
+        let mut service = LocalService::new(entry, options);
         
         // Start phase: Initial Wait
         service.transition_to_initial_wait();
@@ -189,12 +222,29 @@ impl ServiceDiscovery {
         self.remote_services.get(&(service_id, instance_id))
     }
     
-    pub fn get_service(&self, service_id: u16) -> Option<SocketAddr> {
-        for ((sid, _), remote) in &self.remote_services {
-            if *sid == service_id {
+    pub fn get_service(&self, service_id: u16, instance_id: u16) -> Option<(SocketAddr, u8)> {
+        // [PRS_SOMEIPSD_00282] If instance_id is 0xFFFF, return first matching service_id
+        if instance_id == 0xFFFF {
+            for ((sid, _), remote) in &self.remote_services {
+                if *sid == service_id {
+                     for opt in &remote.endpoint {
+                         if let SdOption::Ipv4Endpoint { address, port, transport_proto } = opt {
+                             return Some((SocketAddr::new(std::net::IpAddr::V4(*address), *port), *transport_proto));
+                         }
+                         if let SdOption::Ipv6Endpoint { address, port, transport_proto } = opt {
+                             return Some((SocketAddr::new(std::net::IpAddr::V6(*address), *port), *transport_proto));
+                         }
+                     }
+                }
+            }
+        } else {
+            if let Some(remote) = self.remote_services.get(&(service_id, instance_id)) {
                  for opt in &remote.endpoint {
-                     if let SdOption::Ipv4Endpoint { address, port, .. } = opt {
-                         return Some(SocketAddr::new(std::net::IpAddr::V4(*address), *port));
+                     if let SdOption::Ipv4Endpoint { address, port, transport_proto } = opt {
+                         return Some((SocketAddr::new(std::net::IpAddr::V4(*address), *port), *transport_proto));
+                     }
+                     if let SdOption::Ipv6Endpoint { address, port, transport_proto } = opt {
+                         return Some((SocketAddr::new(std::net::IpAddr::V6(*address), *port), *transport_proto));
                      }
                  }
             }
@@ -205,30 +255,32 @@ impl ServiceDiscovery {
     /// Subscribe to an eventgroup from a remote service.
     /// Sends a SubscribeEventgroup entry and waits for SubscribeEventgroupAck.
     pub fn subscribe_eventgroup(&mut self, service_id: u16, instance_id: u16, eventgroup_id: u16, ttl: u32, port: u16) {
-        // Build SubscribeEventgroup entry
-        // Note: For eventgroup entries, minor_version field is repurposed as (eventgroup_id << 16 | counter)
         let entry = SdEntry {
             entry_type: EntryType::SubscribeEventgroup,
             index_1: 0,
             index_2: 0,
-            number_of_opts_1: 1,  // We'll include our endpoint option
+            number_of_opts_1: 2,  
             number_of_opts_2: 0,
             service_id,
             instance_id,
             major_version: 0x01,
             ttl,
-            minor_version: (eventgroup_id as u32) << 16,  // eventgroup_id in upper 16 bits
+            minor_version: (eventgroup_id as u32) << 16,
         };
 
-        // Include our local endpoint so the server knows where to send events
-        let option = SdOption::Ipv4Endpoint {
+        let opt_v4 = SdOption::Ipv4Endpoint {
             address: self.local_ip,
             transport_proto: 0x11, // UDP
             port,
         };
+        let opt_v6 = SdOption::Ipv6Endpoint {
+            address: self.local_ip_v6,
+            transport_proto: 0x11,
+            port,
+        };
 
         self.pending_subscriptions.insert((service_id, eventgroup_id), false);
-        let _ = self.send_packet(entry, vec![option]);
+        let _ = self.send_packet(entry, vec![opt_v4, opt_v6]);
     }
 
     /// Unsubscribe from an eventgroup (sends SubscribeEventgroup with TTL=0).
@@ -306,41 +358,33 @@ impl ServiceDiscovery {
         }
 
         // 2. Process Incoming
-        // Read until WouldBlock
-        loop {
-            let mut buf = [0u8; 1500]; // Max MTUish
-            match self.transport.receive(&mut buf) {
-                Ok((len, _addr)) => {
-                     // Parse SOME/IP Header (16 bytes)
-                     if len < 16 { continue; }
-                     // ... Validation ...
-                     
-                     // Helper to parse header?
-                     // Let's trust it's SD for now.
-                     // Payload starts at 16.
-                     if len > 16 {
-                        let mut payload_reader = &buf[16..len];
-                        match SdPacket::deserialize(&mut payload_reader) {
-                            Ok(packet) => {
-                                // self.logger is not easily accessible here without self.
-                                // But SdMachine is part of SomeIpRuntime.
-                                // Actually, let's just use println for now.
-                                // println!("[SD] Received packet with {} entries", packet.entries.len());
-                                self.handle_incoming_packet(packet);
-                            }
-                            Err(_e) => {
-                                // Silent fail for now
-                            }
-                        }
-                     }
-                }
-                Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-                    break;
-                }
-                Err(_) => {
-                    break;
+        let mut incoming_packets = Vec::new();
+
+        // Separate transport polling to avoid borrow conflict
+        {
+            let mut buf = [0u8; 1500];
+            // Poll IPv4
+            while let Ok((len, _addr)) = self.transport_v4.receive(&mut buf) {
+                if len > 16 {
+                    let mut payload_reader = &buf[16..len];
+                    if let Ok(packet) = SdPacket::deserialize(&mut payload_reader) {
+                        incoming_packets.push(packet);
+                    }
                 }
             }
+            // Poll IPv6
+            while let Ok((len, _addr)) = self.transport_v6.receive(&mut buf) {
+                if len > 16 {
+                    let mut payload_reader = &buf[16..len];
+                    if let Ok(packet) = SdPacket::deserialize(&mut payload_reader) {
+                        incoming_packets.push(packet);
+                    }
+                }
+            }
+        }
+
+        for packet in incoming_packets {
+            self.handle_incoming_packet(packet);
         }
     }
 
@@ -354,11 +398,10 @@ impl ServiceDiscovery {
         let mut payload = Vec::new();
         packet.serialize(&mut payload)?;
         
-        // SD Header
         let header = SomeIpHeader::new(
             0xFFFF, 0x8100, 
             0x0000, 0x0001, 
-            0x02, // Notification 
+            0x02, 
             payload.len() as u32
         );
         
@@ -366,7 +409,9 @@ impl ServiceDiscovery {
         message.extend_from_slice(&header.serialize());
         message.extend_from_slice(&payload);
         
-        self.transport.send(&message, Some(self.multicast_group))?;
+        // Send on both V4 and V6
+        let _ = self.transport_v4.send(&message, Some(self.multicast_group_v4));
+        let _ = self.transport_v6.send(&message, Some(self.multicast_group_v6));
         Ok(())
     }
 
@@ -450,14 +495,22 @@ impl ServiceDiscovery {
                         
                         if end_idx <= packet.options.len() {
                             for i in start_idx..end_idx {
-                                if let SdOption::Ipv4Endpoint { address, port, .. } = &packet.options[i] {
-                                    let subscriber_addr = SocketAddr::new(std::net::IpAddr::V4(*address), *port);
-                                    
+                                let subscriber_addr = match &packet.options[i] {
+                                    SdOption::Ipv4Endpoint { address, port, .. } => {
+                                        Some(SocketAddr::new(std::net::IpAddr::V4(*address), *port))
+                                    }
+                                    SdOption::Ipv6Endpoint { address, port, .. } => {
+                                        Some(SocketAddr::new(std::net::IpAddr::V6(*address), *port))
+                                    }
+                                    _ => None
+                                };
+
+                                if let Some(addr) = subscriber_addr {
                                     // Add to subscriptions
                                     self.subscriptions
                                         .entry((entry.service_id, eventgroup_id))
                                         .or_insert_with(Vec::new)
-                                        .push(subscriber_addr);
+                                        .push(addr);
                                     
                                     // Send SubscribeEventgroupAck
                                     let ack_entry = SdEntry {
@@ -498,6 +551,7 @@ impl ServiceDiscovery {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::Ipv6Addr;
 
     fn create_dummy_entry() -> SdEntry {
         SdEntry {
@@ -536,10 +590,11 @@ mod tests {
 
     #[test]
     fn test_service_discovery_find() {
-        let multicast: SocketAddr = "224.0.0.1:30490".parse().unwrap();
-        let transport = UdpTransport::new("0.0.0.0:0".parse().unwrap()).unwrap();
+        let transport_v4 = UdpTransport::new("0.0.0.0:0".parse().unwrap()).unwrap();
+        let transport_v6 = UdpTransport::new("[::]:0".parse().unwrap()).unwrap();
         let local_ip = Ipv4Addr::new(127, 0, 0, 1);
-        let mut sd = ServiceDiscovery::new(transport, multicast, local_ip);
+        let local_ip_v6 = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1);
+        let mut sd = ServiceDiscovery::new(transport_v4, transport_v6, local_ip, local_ip_v6);
 
         let remote = RemoteService {
             service_id: 0x5678,
@@ -550,13 +605,6 @@ mod tests {
             last_seen: Instant::now(),
             ttl: 10,
         };
-
-        // Accessing private field logic - wait, remote_services is private?
-        // machine.rs definition: pub struct ServiceDiscovery { remote_services: HashMap ... }
-        // Line 98: remote_services: HashMap <...>, // Private by default.
-        // I cannot access it from tests module? 
-        // "mod tests" is a child module, it can access private items of parent.
-        // Yes, "use super::*;" allows access to private items.
         
         sd.remote_services.insert((0x5678, 1), remote);
 
@@ -602,10 +650,11 @@ mod tests {
 
     #[test]
     fn test_ttl_expiry_removes_service() {
-        let multicast: SocketAddr = "224.0.0.1:30490".parse().unwrap();
-        let transport = UdpTransport::new("0.0.0.0:0".parse().unwrap()).unwrap();
+        let transport_v4 = UdpTransport::new("0.0.0.0:0".parse().unwrap()).unwrap();
+        let transport_v6 = UdpTransport::new("[::]:0".parse().unwrap()).unwrap();
         let local_ip = Ipv4Addr::new(127, 0, 0, 1);
-        let mut sd = ServiceDiscovery::new(transport, multicast, local_ip);
+        let local_ip_v6 = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1);
+        let mut sd = ServiceDiscovery::new(transport_v4, transport_v6, local_ip, local_ip_v6);
         
         // Add a remote service
         let remote = RemoteService {

@@ -8,7 +8,7 @@ fn main() {
 
     // 1. Provider
     let _provider_handle = thread::spawn(|| {
-        let multicast_group: SocketAddr = "224.0.0.1:30490".parse().unwrap();
+        let _multicast_group: SocketAddr = "224.0.0.1:30490".parse().unwrap();
         // Bind to a distinct port for sending (e.g., 50000) but we need to receive on 30490?
         // Multicast requires REUSEADDR. 
         // Our UdpTransport doesn't configure REUSEADDR by default?
@@ -31,16 +31,15 @@ fn main() {
         // Or one binds to 30490, acts as listener.
         // In SOME/IP, everyone listens on 30490 for multicast.
         
-        let bind_addr: SocketAddr = "0.0.0.0:0".parse().unwrap(); // Ephemeral for sending
-        let transport = UdpTransport::new(bind_addr).unwrap();
-        // Note: Sending FROM ephemeral is allowed.
-        // But we won't receive multicast unless we join loopback? or specific interface.
+        let transport_v4 = UdpTransport::new("0.0.0.0:0".parse().unwrap()).unwrap();
+        let transport_v6 = UdpTransport::new("[::]:0".parse().unwrap()).unwrap();
         
         let local_ip = Ipv4Addr::new(127, 0, 0, 1);
-        let mut sd = ServiceDiscovery::new(transport, multicast_group, local_ip);
+        let local_ip_v6 = "::1".parse().unwrap();
+        let mut sd = ServiceDiscovery::new(transport_v4, transport_v6, local_ip, local_ip_v6);
         
         println!("Provider offering Service 0x1234");
-        sd.offer_service(0x1234, 1, 1, 0, 30501, 0x11); // TCP/UDP? 0x11 UDP
+        sd.offer_service(0x1234, 1, 1, 0, 30501, 0x11, None); // TCP/UDP? 0x11 UDP
         
         loop {
             sd.poll();
@@ -50,45 +49,16 @@ fn main() {
 
     // 2. Consumer
     let consumer_handle = thread::spawn(|| {
-        let multicast_group: SocketAddr = "224.0.0.1:30490".parse().unwrap();
+        let transport_v4 = UdpTransport::new_multicast("0.0.0.0:30490".parse().unwrap()).unwrap();
+        let transport_v6 = UdpTransport::new_multicast("[::]:30490".parse().unwrap()).unwrap();
         
-        // Consumer needs to LISTEN on Multicast Group.
-        // Effectively bind "0.0.0.0:30490".
-        // And Join Multicast Group.
-        // UdpTransport logic:
-        // bind("0.0.0.0:30490")
-        // join_multicast_v4(224.0.0.1, 0.0.0.0)
-        
-        // Our current UdpTransport treats 'bind_addr' as bind.
-        // It does NOT have join_multicast logic exposed.
-        // We need to add join_multicast to UdpTransport?
-        // Or assume the user does it?
-        // UdpTransport is very basic.
-        
-        // Let's rely on standard UdpSocket via UdpTransport... but UdpTransport hides the socket.
-        // I should have verified this "Integration with Transport" earlier!
-        
-        // Hack:
-        // For this demo, Consumer runs on 30490.
-        
-        let bind_addr: SocketAddr = "0.0.0.0:30490".parse().unwrap();
-        let transport = match UdpTransport::new(bind_addr) {
-            Ok(t) => t,
-            Err(e) => {
-                println!("Consumer failed to bind 30490: {}", e);
-                return;
-            }
-        };
-        
-        // Need to join multicast!
-        if let std::net::IpAddr::V4(ref maddr) = multicast_group.ip() {
-            // Interface 0.0.0.0 (any)
-            let interface = Ipv4Addr::new(0, 0, 0, 0);
-            transport.join_multicast_v4(maddr, &interface).expect("Failed to join multicast");
-        }
+        // Join multicast!
+        transport_v4.join_multicast_v4(&"224.0.0.1".parse().unwrap(), &Ipv4Addr::new(0,0,0,0)).expect("Failed to join v4 multicast");
+        transport_v6.join_multicast_v6(&"FF02::4:C".parse().unwrap(), 0).expect("Failed to join v6 multicast");
         
         let local_ip = Ipv4Addr::new(127, 0, 0, 1);
-        let mut sd = ServiceDiscovery::new(transport, multicast_group, local_ip);
+        let local_ip_v6 = "::1".parse().unwrap();
+        let mut sd = ServiceDiscovery::new(transport_v4, transport_v6, local_ip, local_ip_v6);
         
         loop {
             sd.poll();

@@ -5,7 +5,7 @@ pub mod generated {
 use generated::{
     MathServiceProvider, MathServiceServer,
     ComplexTypeServiceProvider, ComplexTypeServiceServer,
-    StringServiceClient, SortServiceClient, DiagnosticServiceClient,
+    MathServiceClient, StringServiceClient, SortServiceClient, DiagnosticServiceClient,
     DeviceInfo, SystemStatus
 };
 use std::sync::Arc;
@@ -84,6 +84,14 @@ fn main() {
     rt.subscribe_eventgroup(SortServiceClient::SERVICE_ID, 1, 1, 100);
 
     while running.load(Ordering::Relaxed) {
+        if let Some(c) = rt.get_client::<MathServiceClient>("math-client-v2") {
+             let _ = c.add(10, 20);
+        }
+        
+        if let Some(c) = rt.get_client::<MathServiceClient>("math-client-v1-inst2") {
+             let _ = c.add(100, 200);
+        }
+
         if let Some(c) = rt.get_client::<StringServiceClient>("string-client") {
              let _ = c.reverse("Rust App".to_string());
         }

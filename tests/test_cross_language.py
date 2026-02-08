@@ -153,10 +153,24 @@ def test_python_rpc_to_rust(processes):
     # Pattern update: Log format is "[MathService] Math.Add"
     assert wait_for_log_pattern(get_log_path("rust_integration.log"), "[MathService] Math.Add"), "Python->Rust RPC failed: Rust service didn't log request"
 
+def test_rust_to_cpp_math_inst2(processes):
+    """Verify Rust client calls C++ MathService (Instance 2)"""
+    # Rust sends Add(100, 200) to math-client-v1-inst2
+    # C++ logs "[2] Add(100, 200)"
+    assert wait_for_log_pattern(get_log_path("cpp_integration.log"), "[2] Add(100, 200)"), "Rust->C++ Math Inst 2 RPC failed"
+
+def test_rust_to_python_math_inst3(processes):
+    """Verify Rust client calls Python MathService (Instance 3)"""
+    # Rust sends Add(10, 20) to math-client-v2
+    # Python logs "[3] Add(10, 20)"
+    assert wait_for_log_pattern(get_log_path("python_integration.log"), "[3] Add(10, 20)"), "Rust->Python Math Inst 3 RPC failed"
+
 def test_cpp_rpc_to_math(processes):
-    """Verify C++ client calls MathService (Rust or Python)"""
-    # C++ logs: "Math.Add Result: 30"
+    """Verify C++ client calls MathService (Rust Instance 1)"""
+    # C++ logs: "Math.Add Result:"
+    # This should go to Rust Inst 1 based on config
     assert wait_for_log_pattern(get_log_path("cpp_integration.log"), "Math.Add Result:"), "C++->Math RPC failed"
+    assert wait_for_log_pattern(get_log_path("rust_integration.log"), "Math.Add"), "C++->Rust Math Inst 1 failed"
 
 def test_cpp_event_updates(processes):
     """Verify C++ SortService updates trigger events"""

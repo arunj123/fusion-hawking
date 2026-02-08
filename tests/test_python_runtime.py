@@ -160,7 +160,7 @@ class TestPythonRuntime(unittest.TestCase):
         
     def test_get_client(self):
         # Inject service discovery
-        self.runtime.remote_services[4097] = ('127.0.0.1', 12345)
+        self.runtime.remote_services[4097] = ('127.0.0.1', 12345, 'udp')
         client = self.runtime.get_client("math-client", MathServiceClient)
         self.assertIsInstance(client, MathServiceClient)
         self.assertEqual(client.runtime, self.runtime)

@@ -2,6 +2,15 @@ use serde::Deserialize;
 use std::collections::HashMap;
 
 #[derive(Debug, Deserialize, Clone)]
+pub struct EndpointConfig {
+    pub interface: String,
+    pub ip: String,
+    pub version: u8,
+    pub port: u16,
+    pub protocol: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct MulticastConfig {
     pub ip: String,
     pub port: u16,
@@ -14,9 +23,8 @@ pub struct ServiceConfig {
     pub major_version: u8,
     #[serde(default)]
     pub minor_version: u32,
-    pub port: Option<u16>,
-    pub protocol: Option<String>,
-    pub multicast: Option<MulticastConfig>,
+    pub endpoint: String,
+    pub multicast: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -24,20 +32,15 @@ pub struct ClientConfig {
     pub service_id: u16,
     pub instance_id: u16,
     pub major_version: u8,
-    pub static_ip: Option<String>,
-    pub static_port: Option<u16>,
+    pub endpoint: Option<String>,
 }
 
 /// Service Discovery Configuration
 /// All timing values are in milliseconds unless otherwise specified
 #[derive(Debug, Deserialize, Clone)]
 pub struct SdConfig {
-    /// Multicast IP for SD messages (default: 224.0.0.1)
-    #[serde(default = "default_sd_multicast_ip")]
-    pub multicast_ip: String,
-    /// Multicast port for SD messages (default: 30490)
-    #[serde(default = "default_sd_multicast_port")]
-    pub multicast_port: u16,
+    pub multicast_endpoint: Option<String>,
+    pub multicast_endpoint_v6: Option<String>,
     /// Minimum initial delay before first offer (ms, default: 10)
     #[serde(default = "default_initial_delay_min")]
     pub initial_delay_min_ms: u64,
@@ -70,8 +73,8 @@ pub struct SdConfig {
 impl Default for SdConfig {
     fn default() -> Self {
         SdConfig {
-            multicast_ip: default_sd_multicast_ip(),
-            multicast_port: default_sd_multicast_port(),
+            multicast_endpoint: None,
+            multicast_endpoint_v6: None,
             initial_delay_min_ms: default_initial_delay_min(),
             initial_delay_max_ms: default_initial_delay_max(),
             repetition_base_delay_ms: default_repetition_base_delay(),
@@ -85,8 +88,6 @@ impl Default for SdConfig {
     }
 }
 
-fn default_sd_multicast_ip() -> String { "224.0.0.1".to_string() }
-fn default_sd_multicast_port() -> u16 { 30490 }
 fn default_initial_delay_min() -> u64 { 10 }
 fn default_initial_delay_max() -> u64 { 100 }
 fn default_repetition_base_delay() -> u64 { 100 }
@@ -99,9 +100,6 @@ fn default_request_timeout() -> u64 { 2000 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct InstanceConfig {
-    pub ip: String,
-    #[serde(default = "default_ip_version")]
-    pub ip_version: u8,
     #[serde(default)]
     pub providing: HashMap<String, ServiceConfig>,
     #[serde(default)]
@@ -111,9 +109,9 @@ pub struct InstanceConfig {
     pub sd: SdConfig,
 }
 
-fn default_ip_version() -> u8 { 4 }
-
 #[derive(Debug, Deserialize, Clone)]
 pub struct SystemConfig {
+    #[serde(default)]
+    pub endpoints: HashMap<String, EndpointConfig>,
     pub instances: HashMap<String, InstanceConfig>,
 }

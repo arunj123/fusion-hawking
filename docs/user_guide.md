@@ -60,18 +60,36 @@ Applications load a shared `config.json` that defines the network topology:
 
 ```json
 {
+  "endpoints": {
+    "math_ep": {
+      "interface": "eth0",
+      "ip": "127.0.0.1",
+      "port": 30509,
+      "protocol": "udp"
+    },
+    "sd_mcast": {
+      "ip": "224.0.0.1",
+      "port": 30490,
+      "protocol": "udp"
+    }
+  },
   "instances": {
     "my_instance": {
-      "ip": "127.0.0.1",
       "providing": {
         "math-service": {
           "service_id": 4097,
-          "port": 30509,
-          "protocol": "udp"
+          "instance_id": 1,
+          "endpoint": "math_ep"
         }
       },
       "required": {
-        "string-service": { "service_id": 4098 }
+        "string-service": { 
+          "service_id": 4098,
+          "endpoint": "math_ep" 
+        }
+      },
+      "sd": {
+        "multicast_endpoint": "sd_mcast"
       }
     }
   }

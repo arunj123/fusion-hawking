@@ -2,6 +2,7 @@
 **/target/
 **/build/
 **/build_linux/
+**/build_cpp_debug/
 **/build_cpp/
 **/bin/
 **/obj/

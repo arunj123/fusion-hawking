@@ -8,7 +8,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')
 sys.path.insert(0, os.path.join(ROOT, 'build', 'generated', 'python'))
 sys.path.insert(0, os.path.join(ROOT, 'src', 'python'))
 
-from runtime import SomeIpRuntime, StringServiceStub, StringServiceClient, MathServiceClient, DiagnosticServiceStub, ComplexTypeServiceClient, SortServiceClient, LogLevel
+from runtime import SomeIpRuntime, StringServiceStub, StringServiceClient, MathServiceClient, MathServiceStub, DiagnosticServiceStub, ComplexTypeServiceClient, SortServiceClient, LogLevel
 from bindings import *
 
 
@@ -27,6 +27,16 @@ class DiagImpl(DiagnosticServiceStub):
     def run_self_test(self, level):
         return True
 
+class MathImpl(MathServiceStub):
+    def __init__(self, logger, instance_id):
+        self.logger = logger
+        self.instance_id = instance_id
+    def add(self, a, b):
+        self.logger.log(LogLevel.INFO, "MathService", f"[{self.instance_id}] Add({a}, {b})")
+        return a + b
+    def sub(self, a, b):
+        return a - b
+
 def main():
     # Load config from parent directory (as this is a sub-project demo)
     config_path = os.path.join(os.path.dirname(__file__), "..", "config.json")
@@ -36,6 +46,7 @@ def main():
     
     rt.offer_service("string-service", StringImpl(rt.logger))
     rt.offer_service("diagnostic-service", DiagImpl())
+    rt.offer_service("math-service", MathImpl(rt.logger, 3))
     
     time.sleep(2)
     

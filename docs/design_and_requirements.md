@@ -21,21 +21,27 @@ A single `config.json` defines the distributed system topology. All runtimes loa
 
 ```json
 {
+  "endpoints": {
+    "app_ep": {
+      "interface": "eth0",
+      "ip": "127.0.0.1",
+      "port": 30509,
+      "protocol": "udp"
+    },
+    "sd_mcast": {
+      "ip": "224.0.0.1",
+      "port": 30490
+    }
+  },
   "instances": {
     "app_instance_name": {
-      "ip": "127.0.0.1",
       "providing": {
         "service_alias": {
           "service_id": "0x1234",
           "instance_id": 1,
           "major_version": 1,
           "minor_version": 0,
-          "port": 30509,
-          "protocol": "udp",
-          "multicast": {
-            "ip": "224.0.0.1",
-            "port": 30490
-          }
+          "endpoint": "app_ep"
         }
       },
       "required": {
@@ -43,9 +49,11 @@ A single `config.json` defines the distributed system topology. All runtimes loa
           "service_id": "0x5678",
           "instance_id": 1,
           "major_version": 1,
-          "static_ip": "127.0.0.1",
-          "static_port": 30510
+          "endpoint": "app_ep"
         }
+      },
+      "sd": {
+        "multicast_endpoint": "sd_mcast"
       }
     }
   }

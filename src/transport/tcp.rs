@@ -44,6 +44,71 @@ impl SomeIpTransport for TcpTransport {
     fn local_addr(&self) -> Result<SocketAddr> {
         self.stream.local_addr()
     }
+
+    fn set_nonblocking(&self, nonblocking: bool) -> Result<()> {
+        self.stream.set_nonblocking(nonblocking)
+    }
+}
+
+/// A wrapper for TcpServer that implements SomeIpTransport trait
+/// to be used in the SomeIpRuntime.
+pub struct TcpServerTransport {
+    server: Mutex<TcpServer>,
+}
+
+impl TcpServerTransport {
+    pub fn new(server: TcpServer) -> Self {
+        TcpServerTransport {
+            server: Mutex::new(server),
+        }
+    }
+}
+
+use std::sync::Mutex;
+
+impl SomeIpTransport for TcpServerTransport {
+    fn send(&self, data: &[u8], destination: Option<SocketAddr>) -> Result<usize> {
+        let mut server = self.server.lock().unwrap();
+        if let Some(dest) = destination {
+            server.send_to(data, &dest)
+        } else {
+            // For TCP server without destination, we don't know who to send to
+            Err(std::io::Error::new(ErrorKind::InvalidInput, "TCP Server requires a destination address"))
+        }
+    }
+
+    fn receive(&self, buffer: &mut [u8]) -> Result<(usize, SocketAddr)> {
+        let mut server = self.server.lock().unwrap();
+        
+        // 1. Accept any waiting connections
+        let _ = server.poll_accept();
+        
+        // 2. Poll all connections for data
+        let clients = server.connected_clients();
+        for addr in clients {
+            match server.receive_from(buffer, &addr) {
+                Ok(len) if len > 0 => return Ok((len, addr)),
+                Ok(_) => continue, // EOF or 0 bytes
+                Err(e) if e.kind() == ErrorKind::WouldBlock => continue,
+                Err(_) => {
+                    server.disconnect(&addr);
+                    continue;
+                }
+            }
+        }
+        
+        Err(std::io::Error::new(ErrorKind::WouldBlock, "No data available"))
+    }
+
+    fn local_addr(&self) -> Result<SocketAddr> {
+        let server = self.server.lock().unwrap();
+        server.local_addr()
+    }
+
+    fn set_nonblocking(&self, nonblocking: bool) -> Result<()> {
+        let server = self.server.lock().unwrap();
+        server.set_nonblocking(nonblocking)
+    }
 }
 
 /// TCP server for accepting SOME/IP connections

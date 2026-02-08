@@ -2,7 +2,7 @@ import pytest
 import time
 import threading
 from fusion_hawking import SomeIpRuntime
-from generated.python.bindings import SortServiceSortAscRequest, SortServiceOnSortCompletedEvent
+from bindings import SortServiceSortAscRequest, SortServiceOnSortCompletedEvent
 
 def test_event_subscription():
     """

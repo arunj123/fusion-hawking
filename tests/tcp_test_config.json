@@ -1,38 +1,43 @@
 {
     "endpoints": {
-        "test_ep": {
-            "interface": "eth0",
-            "ip": "127.0.0.1",
-            "port": 30500,
-            "version": 4,
-            "protocol": "udp"
-        },
-        "sd_multicast": {
+        "sd_multicast_v4": {
             "interface": "eth0",
             "ip": "224.0.0.1",
             "port": 30490,
             "version": 4,
             "protocol": "udp"
+        },
+        "server_tcp": {
+            "ip": "127.0.0.1",
+            "port": 31000,
+            "version": 4,
+            "protocol": "tcp"
         }
     },
     "instances": {
-        "test_instance": {
+        "tcp_server": {
             "providing": {
                 "math-service": {
                     "service_id": 4097,
                     "instance_id": 1,
-                    "endpoint": "test_ep"
+                    "endpoint": "server_tcp"
                 }
             },
+            "sd": {
+                "multicast_endpoint": "sd_multicast_v4",
+                "cycle_offer_ms": 100
+            }
+        },
+        "tcp_client": {
             "required": {
                 "math-client": {
                     "service_id": 4097,
                     "instance_id": 1,
-                    "endpoint": "test_ep"
+                    "endpoint": "server_tcp"
                 }
             },
             "sd": {
-                "multicast_endpoint": "sd_multicast"
+                "multicast_endpoint": "sd_multicast_v4"
             }
         }
     }
