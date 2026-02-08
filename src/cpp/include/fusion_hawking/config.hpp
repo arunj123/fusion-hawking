@@ -236,8 +236,9 @@ private:
         size_t pos = json.find("\"" + key + "\"");
         if (pos == std::string::npos) return 0;
         size_t colon = json.find(":", pos);
-        size_t val_start = json.find_first_not_of(" \t\n\r", colon + 1);
-        size_t val_end = json.find_first_of(",}", val_start);
+        size_t val_start = json.find_first_not_of(" \t\n\r\"", colon + 1);
+        size_t val_end = json.find_first_of(",} \t\n\r\"", val_start);
+        if (val_end == std::string::npos) val_end = json.length();
         std::string num = json.substr(val_start, val_end - val_start);
         try { return std::stoi(num, nullptr, 0); } catch(...) { return 0; }
     }
@@ -247,7 +248,7 @@ private:
         if (key_pos == std::string::npos) return false;
         size_t colon_pos = json.find(":", key_pos);
         if (colon_pos == std::string::npos) return false;
-        size_t val_start = json.find_first_not_of(" \t\n\r", colon_pos + 1);
+        size_t val_start = json.find_first_not_of(" \t\n\r\"", colon_pos + 1);
         if (val_start == std::string::npos) return false;
         if (json.substr(val_start, 4) == "true") return true;
         return false;
@@ -258,7 +259,9 @@ private:
         if (pos == std::string::npos) return "";
         size_t colon = json.find(":", pos);
         size_t quote_start = json.find("\"", colon);
+        if (quote_start == std::string::npos) return "";
         size_t quote_end = json.find("\"", quote_start + 1);
+        if (quote_end == std::string::npos) return "";
         return json.substr(quote_start + 1, quote_end - quote_start - 1);
     }
 };

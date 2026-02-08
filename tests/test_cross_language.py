@@ -136,6 +136,20 @@ def wait_for_log_pattern(logfile, pattern, timeout=15):
         time.sleep(0.5)
     return False
 
+# Add project root to path to import tools
+sys.path.append(PROJECT_ROOT)
+from tools.fusion.utils import get_ipv6, patch_configs
+
+def setup_module(module):
+    """Patch configuration to use loopback for safe local testing"""
+    print("DEBUG: Patching configs to force loopback for tests...")
+    patch_configs(ip_v4="127.0.0.1", root_dir=PROJECT_ROOT, ip_v6="::1")
+
+def has_ipv6():
+    """Check if we have a usable IPv6 address (global or local unique)"""
+    return get_ipv6() is not None
+
+@pytest.mark.skipif(not has_ipv6(), reason="System lacks global IPv6 capability")
 def test_rust_rpc_to_python(processes):
     """Verify Rust client calls Python StringService"""
     # Rust sends "Hello Python" to StringService.Reverse
@@ -159,8 +173,10 @@ def test_rust_to_cpp_math_inst2(processes):
     # C++ logs "[2] Add(100, 200)"
     assert wait_for_log_pattern(get_log_path("cpp_integration.log"), "[2] Add(100, 200)"), "Rust->C++ Math Inst 2 RPC failed"
 
+@pytest.mark.skipif(not has_ipv6(), reason="System lacks global IPv6 capability")
 def test_rust_to_python_math_inst3(processes):
     """Verify Rust client calls Python MathService (Instance 3)"""
+    # Configured on 'python_tcp' (IPv6)
     # Rust sends Add(10, 20) to math-client-v2
     # Python logs "[3] Add(10, 20)"
     assert wait_for_log_pattern(get_log_path("python_integration.log"), "[3] Add(10, 20)"), "Rust->Python Math Inst 3 RPC failed"

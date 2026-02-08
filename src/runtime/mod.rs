@@ -267,9 +267,12 @@ impl SomeIpRuntime {
                                 .cloned()
                                 .expect("No local UDP v4 transport available")
                         } else {
-                            self.udp_transports.iter().find(|t| t.local_addr().map(|a| a.is_ipv6()).unwrap_or(false))
-                                .cloned()
-                                .expect("No local UDP v6 transport available")
+                            if let Some(t) = self.udp_transports.iter().find(|t| t.local_addr().map(|a| a.is_ipv6()).unwrap_or(false)) {
+                                t.clone()
+                            } else {
+                                self.logger.log(LogLevel::Error, "Runtime", "No local UDP v6 transport available for discovered v6 service");
+                                return None;
+                            }
                         }
                     };
                     

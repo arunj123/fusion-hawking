@@ -22,6 +22,7 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
     else this->logger = std::make_shared<ConsoleLogger>();
     this->logger->Log(LogLevel::INFO, "Runtime", "Loading config from " + config_path);
     config = ConfigLoader::Load(config_path, instance_name);
+    
     port = 0;
     protocol = "udp";
     if (!config.providing.empty()) {
@@ -30,16 +31,20 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
              const auto& ep = config.endpoints.at(first_svc.endpoint);
              port = ep.port;
              protocol = ep.protocol;
+             for (char &c : protocol) c = std::tolower(c);
         }
-        // ensure lowercase
-        for (char &c : protocol) c = std::tolower(c);
     }
+
 #ifdef _WIN32
     WSADATA wsaData;
     WSAStartup(MAKEWORD(2, 2), &wsaData);
 #endif
-    // --- Transport Socket Initialization ---
+
+    int reuse = 1;
+
+    // --- Transport Socket Initialization (UDP) ---
     sock = socket(AF_INET, SOCK_DGRAM, 0);
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse));
     sockaddr_in addr = {0};
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -56,6 +61,7 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
     if (sock_v6 != INVALID_SOCKET) {
         int v6only = 1;
         setsockopt(sock_v6, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&v6only, sizeof(v6only));
+        setsockopt(sock_v6, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse));
         sockaddr_in6 addr6 = {0};
         addr6.sin6_family = AF_INET6;
         addr6.sin6_addr = in6addr_any;
@@ -65,17 +71,16 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
         }
     }
 
-    // --- TCP Listener Initialization ---
+    // --- TCP Listener Initialization (if needed) ---
     if (protocol == "tcp") {
         tcp_listener = socket(AF_INET, SOCK_STREAM, 0);
-        int opt = 1;
-        setsockopt(tcp_listener, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
+        setsockopt(tcp_listener, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse));
         sockaddr_in t_addr = {0};
         t_addr.sin_family = AF_INET;
         t_addr.sin_addr.s_addr = htonl(INADDR_ANY);
         t_addr.sin_port = htons(this->port);
         if (bind(tcp_listener, (struct sockaddr*)&t_addr, sizeof(t_addr)) == SOCKET_ERROR) {
-            this->logger->Log(LogLevel::WARN, "Runtime", "Failed to bind TCP listener (IPv4)");
+             this->logger->Log(LogLevel::WARN, "Runtime", "Failed to bind TCP listener (IPv4)");
         }
         listen(tcp_listener, 5);
 
@@ -83,7 +88,7 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
         if (tcp_listener_v6 != INVALID_SOCKET) {
             int v6only = 1;
             setsockopt(tcp_listener_v6, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&v6only, sizeof(v6only));
-            setsockopt(tcp_listener_v6, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
+            setsockopt(tcp_listener_v6, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse));
             sockaddr_in6 t_addr6 = {0};
             t_addr6.sin6_family = AF_INET6;
             t_addr6.sin6_addr = in6addr_any;
@@ -102,11 +107,8 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
         this->sd_multicast_port = ep.port;
         this->sd_multicast_ip = ep.ip;
     }
-    uint16_t sd_v4_port = this->sd_multicast_port;
-    std::string sd_v4_mcast = this->sd_multicast_ip;
-
+    
     sd_sock = socket(AF_INET, SOCK_DGRAM, 0);
-    int reuse = 1;
     setsockopt(sd_sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse));
 #ifdef SO_REUSEPORT
     setsockopt(sd_sock, SOL_SOCKET, SO_REUSEPORT, (const char*)&reuse, sizeof(reuse));
@@ -114,12 +116,12 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
     sockaddr_in sd_addr = {0};
     sd_addr.sin_family = AF_INET;
     sd_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    sd_addr.sin_port = htons(sd_v4_port);
+    sd_addr.sin_port = htons(this->sd_multicast_port);
     if (bind(sd_sock, (struct sockaddr*)&sd_addr, sizeof(sd_addr)) < 0) {
-        this->logger->Log(LogLevel::ERR, "Runtime", "Failed to bind SD socket (IPv4) to port " + std::to_string(sd_v4_port));
+        this->logger->Log(LogLevel::ERR, "Runtime", "Failed to bind SD socket (IPv4) to port " + std::to_string(this->sd_multicast_port));
     }
     ip_mreq mreq;
-    mreq.imr_multiaddr.s_addr = inet_addr(sd_v4_mcast.c_str());
+    mreq.imr_multiaddr.s_addr = inet_addr(this->sd_multicast_ip.c_str());
     mreq.imr_interface.s_addr = inet_addr(config.ip.c_str());
     if (setsockopt(sd_sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, (const char*)&mreq, sizeof(mreq)) < 0) {
         mreq.imr_interface.s_addr = htonl(INADDR_ANY);
@@ -136,9 +138,7 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
         this->sd_multicast_port_v6 = ep.port;
         this->sd_multicast_ip_v6 = ep.ip;
     }
-    uint16_t sd_v6_port = this->sd_multicast_port_v6;
-    std::string sd_v6_mcast = this->sd_multicast_ip_v6;
-
+    
     sd_sock_v6 = socket(AF_INET6, SOCK_DGRAM, 0);
     if (sd_sock_v6 != INVALID_SOCKET) {
         int v6only = 1;
@@ -150,54 +150,37 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
         sockaddr_in6 sd_addr6 = {0};
         sd_addr6.sin6_family = AF_INET6;
         sd_addr6.sin6_addr = in6addr_any;
-        sd_addr6.sin6_port = htons(sd_v6_port);
+        sd_addr6.sin6_port = htons(this->sd_multicast_port_v6);
         if (bind(sd_sock_v6, (struct sockaddr*)&sd_addr6, sizeof(sd_addr6)) < 0) {
-            this->logger->Log(LogLevel::ERR, "Runtime", "Failed to bind SD socket (IPv6) to port " + std::to_string(sd_v6_port));
+            this->logger->Log(LogLevel::ERR, "Runtime", "Failed to bind SD socket (IPv6) to port " + std::to_string(this->sd_multicast_port_v6));
         }
         
         ipv6_mreq mreq6;
-        inet_pton(AF_INET6, sd_v6_mcast.c_str(), &mreq6.ipv6mr_multiaddr);
+        inet_pton(AF_INET6, this->sd_multicast_ip_v6.c_str(), &mreq6.ipv6mr_multiaddr);
         mreq6.ipv6mr_interface = 0; // Default interface
         if (setsockopt(sd_sock_v6, IPPROTO_IPV6, IPV6_JOIN_GROUP, (const char*)&mreq6, sizeof(mreq6)) < 0) {
-            this->logger->Log(LogLevel::WARN, "Runtime", "Failed to join IPv6 multicast group " + sd_v6_mcast);
+            this->logger->Log(LogLevel::WARN, "Runtime", "Failed to join IPv6 multicast group " + this->sd_multicast_ip_v6);
         }
-        setsockopt(sd_sock_v6, IPPROTO_IPV6, IPV6_MULTICAST_LOOP, (const char*)&loop, sizeof(loop));
+        setsockopt(sd_sock_v6, IPPROTO_IPV6, IP_MULTICAST_LOOP, (const char*)&loop, sizeof(loop));
     }
 
+    // --- Set Non-Blocking ---
 #ifdef _WIN32
-    unsigned long mode = 1;
-    if (sd_sock != INVALID_SOCKET) ioctlsocket(sd_sock, FIONBIO, &mode);
-    if (sd_sock_v6 != INVALID_SOCKET) ioctlsocket(sd_sock_v6, FIONBIO, &mode);
-    if (sock != INVALID_SOCKET) ioctlsocket(sock, FIONBIO, &mode);
-    if (sock_v6 != INVALID_SOCKET) ioctlsocket(sock_v6, FIONBIO, &mode);
+    unsigned long n_mode = 1;
+    if (sd_sock != INVALID_SOCKET) ioctlsocket(sd_sock, FIONBIO, &n_mode);
+    if (sd_sock_v6 != INVALID_SOCKET) ioctlsocket(sd_sock_v6, FIONBIO, &n_mode);
+    if (sock != INVALID_SOCKET) ioctlsocket(sock, FIONBIO, &n_mode);
+    if (sock_v6 != INVALID_SOCKET) ioctlsocket(sock_v6, FIONBIO, &n_mode);
+    if (tcp_listener != INVALID_SOCKET) ioctlsocket(tcp_listener, FIONBIO, &n_mode);
+    if (tcp_listener_v6 != INVALID_SOCKET) ioctlsocket(tcp_listener_v6, FIONBIO, &n_mode);
 #else
     if (sd_sock != INVALID_SOCKET) fcntl(sd_sock, F_SETFL, O_NONBLOCK);
     if (sd_sock_v6 != INVALID_SOCKET) fcntl(sd_sock_v6, F_SETFL, O_NONBLOCK);
     if (sock != INVALID_SOCKET) fcntl(sock, F_SETFL, O_NONBLOCK);
     if (sock_v6 != INVALID_SOCKET) fcntl(sock_v6, F_SETFL, O_NONBLOCK);
+    if (tcp_listener != INVALID_SOCKET) fcntl(tcp_listener, F_SETFL, O_NONBLOCK);
+    if (tcp_listener_v6 != INVALID_SOCKET) fcntl(tcp_listener_v6, F_SETFL, O_NONBLOCK);
 #endif
-
-    if (protocol == "tcp") {
-        tcp_listener = socket(AF_INET, SOCK_STREAM, 0);
-        setsockopt(tcp_listener, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse));
-        sockaddr_in tcp_addr = {0};
-        tcp_addr.sin_family = AF_INET;
-        tcp_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-        tcp_addr.sin_port = htons(port);
-        if (bind(tcp_listener, (struct sockaddr*)&tcp_addr, sizeof(tcp_addr)) == SOCKET_ERROR) {
-            tcp_addr.sin_port = 0;
-            bind(tcp_listener, (struct sockaddr*)&tcp_addr, sizeof(tcp_addr));
-        }
-        listen(tcp_listener, 5);
-#ifdef _WIN32
-        ioctlsocket(tcp_listener, FIONBIO, &mode);
-#else
-        fcntl(tcp_listener, F_SETFL, O_NONBLOCK);
-#endif
-        int tcp_addrlen = sizeof(tcp_addr);
-        getsockname(tcp_listener, (struct sockaddr*)&tcp_addr, (SOCKLEN_T*)&tcp_addrlen);
-        this->port = ntohs(tcp_addr.sin_port);
-    }
 
     this->logger->Log(LogLevel::INFO, "Runtime", "Initialized " + instance_name + " on port " + std::to_string(this->port) + " (" + protocol + ")");
     running = true;
@@ -624,9 +607,30 @@ void SomeIpRuntime::process_sd_packet(const char* buf, int bytes, sockaddr_stora
 
         if (type == 0x01) { // Offer
             if (has_endpoint && ttl > 0) {
-                 this->logger->Log(LogLevel::DEBUG, "SD", "Discovered Service " + std::to_string(sid) + ":" + std::to_string(iid));
-                 std::lock_guard<std::mutex> lock(remote_services_mutex);
-                 remote_services[{sid, iid}] = endpoint;
+                 bool changed = true;
+                 {
+                     std::lock_guard<std::mutex> lock(remote_services_mutex);
+                     if (remote_services.count({sid, iid})) {
+                         const auto& existing = remote_services[{sid, iid}];
+                         if (existing.ss_family == endpoint.ss_family) {
+                             if (existing.ss_family == AF_INET) {
+                                  if (memcmp(&((sockaddr_in*)&existing)->sin_addr, &((sockaddr_in*)&endpoint)->sin_addr, 4) == 0 &&
+                                      ((sockaddr_in*)&existing)->sin_port == ((sockaddr_in*)&endpoint)->sin_port) {
+                                      changed = false;
+                                  }
+                             } else if (existing.ss_family == AF_INET6) {
+                                  if (memcmp(&((sockaddr_in6*)&existing)->sin6_addr, &((sockaddr_in6*)&endpoint)->sin6_addr, 16) == 0 &&
+                                      ((sockaddr_in6*)&existing)->sin6_port == ((sockaddr_in6*)&endpoint)->sin6_port) {
+                                      changed = false;
+                                  }
+                             }
+                         }
+                     }
+                     if (changed) remote_services[{sid, iid}] = endpoint;
+                 }
+                 if (changed) {
+                     this->logger->Log(LogLevel::DEBUG, "SD", "Discovered Service " + std::to_string(sid) + ":" + std::to_string(iid));
+                 }
             }
         } else if (type == 0x01 && ttl == 0) { // Stop Offer
              std::lock_guard<std::mutex> lock(remote_services_mutex);

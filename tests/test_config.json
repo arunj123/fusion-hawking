@@ -1,15 +1,15 @@
 {
     "endpoints": {
         "test_ep": {
-            "interface": "eth0",
+            "interface": "lo",
             "ip": "127.0.0.1",
             "port": 30500,
             "version": 4,
             "protocol": "udp"
         },
         "sd_multicast": {
-            "interface": "eth0",
-            "ip": "224.0.0.1",
+            "interface": "lo",
+            "ip": "239.255.0.1",
             "port": 30490,
             "version": 4,
             "protocol": "udp"

@@ -83,31 +83,39 @@ def get_local_ip():
 def get_ipv6():
     return get_network_info()['ipv6']
 
-def patch_configs(ip_v4, root_dir, port_offset=0):
+def patch_configs(ip_v4, root_dir, port_offset=0, ip_v6=None):
     """
     Update config files with detected local IPs and apply port offset.
     Arguments:
         ip_v4: Explicit IPv4 address (usually from get_local_ip, but can be passed in)
         root_dir: Project root
         port_offset: Port offset
+        ip_v6: Explicit IPv6 address (optional, overrides detection)
     """
     config_paths = [
         "examples/integrated_apps/config.json",
-        "examples/automotive_pubsub/config.json"
+        "examples/automotive_pubsub/config.json",
+        "tests/tcp_test_config.json",
+        "tests/test_config.json"
     ]
     
     # Resolve network info
     net_info = get_network_info()
     detected_ipv4 = net_info['ipv4']
-    detected_ipv6 = net_info['ipv6']
+    detect_ipv6 = net_info['ipv6']
+    
+    # Use passed IPv6 if provided, else use detected
+    detected_ipv6 = ip_v6 if ip_v6 else detect_ipv6
+    
     detected_iface = net_info['interface']
     
     # Use the passed IP if it matches detected, or if we are falling back to loopback
+    # Use the passed IP if it matches detected, or if we are falling back to loopback
     target_iface = None
-    if ip_v4 and ip_v4 == detected_ipv4:
-        target_iface = detected_iface
-    elif ip_v4 == '127.0.0.1' and detected_iface == 'lo':
+    if ip_v4 == '127.0.0.1':
         target_iface = 'lo'
+    elif ip_v4 and ip_v4 == detected_ipv4:
+        target_iface = detected_iface
     elif ip_v4 and not detected_ipv4:
          # If we forced an IP but detection failed (maybe loopback fallback), try to use detected interface if it looks like loopback
          if detected_iface == 'lo':
@@ -129,8 +137,8 @@ def patch_configs(ip_v4, root_dir, port_offset=0):
                 try:
                     obj = ipaddress.ip_address(ip_str)
                     if obj.is_multicast: return False
-                    if obj.is_loopback: return False # Generally keep loopback unless specific override?
-                    # Original logic was: allow patching anything not multicast
+                    # Allow patching loopback (we want to replace 127.0.0.1 with real IP for testing)
+                    # if obj.is_loopback: return False 
                     return True
                 except ValueError:
                     return False
@@ -147,8 +155,17 @@ def patch_configs(ip_v4, root_dir, port_offset=0):
                         
                         # Decide whether to patch IPv4 or IPv6
                         if is_v6:
+                            # If we have a detected IPv6, use it
                             if detected_ipv6 and should_patch_ip(current_ip):
                                 ep_cfg["ip"] = detected_ipv6
+                                modified = True
+                            # If no global IPv6 but system supports it (has_ipv6), maybe fallback to loopback ::1?
+                            elif socket.has_ipv6 and should_patch_ip(current_ip):
+                                # Only patch if we are 100% sure we want to run locally
+                                # For now, let's use ::1 if no global v6 is found, 
+                                # implying we are in a contained env (like GitHub runner?)
+                                # specific logic: if original is not localhost, make it localhost
+                                ep_cfg["ip"] = "::1" 
                                 modified = True
                         elif should_patch_ip(current_ip):
                             # Default IPv4
@@ -157,10 +174,17 @@ def patch_configs(ip_v4, root_dir, port_offset=0):
                                 ep_cfg["ip"] = ip_v4
                                 modified = True
                         
-                        # Interface Patching (only if we have a valid interface and it's not v6-only or similar restriction?)
-                        if target_iface and "interface" in ep_cfg:
-                            ep_cfg["interface"] = target_iface
-                            modified = True
+                        # Interface Patching (only if we have a valid interface)
+                        if "interface" in ep_cfg:
+                             patched_ip = ep_cfg.get("ip")
+                             # If we patched to localhost (v4 or v6), force interface to lo
+                             if patched_ip == "127.0.0.1" or patched_ip == "::1":
+                                 ep_cfg["interface"] = "lo"
+                                 modified = True
+                             elif target_iface:
+                                 # Otherwise use the main interface detected
+                                 ep_cfg["interface"] = target_iface
+                                 modified = True
                         
                     # Port Offset
                     if "port" in ep_cfg and isinstance(ep_cfg["port"], int):

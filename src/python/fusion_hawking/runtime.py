@@ -463,8 +463,14 @@ class SomeIpRuntime:
                         endpoint = parsed_opts[index1]
                     
                     if endpoint and endpoint[0] not in ('0.0.0.0', '::'):
-                        self.remote_services[sid] = endpoint
-                        self.logger.log(LogLevel.DEBUG, "SD", f"Discovered 0x{sid:04x} at {endpoint[0]}:{endpoint[1]}")
+                        changed = True
+                        if sid in self.remote_services:
+                             if self.remote_services[sid] == endpoint:
+                                 changed = False
+                        
+                        if changed:
+                            self.remote_services[sid] = endpoint
+                            self.logger.log(LogLevel.DEBUG, "SD", f"Discovered 0x{sid:04x} at {endpoint[0]}:{endpoint[1]}")
                         
             elif entry_type == 0x06: # SubscribeEventgroup
                 parsed_opts = []
