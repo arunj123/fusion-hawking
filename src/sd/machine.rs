@@ -471,7 +471,6 @@ impl ServiceDiscovery {
                         // but actually, we should probably pass a logger or just rely on runtime to log.
                         // For now, let's keep it silent but ensure it's correct.
                         // Actually, I'll add a println that will show up in the captured output if any.
-                        println!("[SD] Discovered Service 0x{:04x}:{}", entry.service_id, entry.instance_id);
                         self.remote_services.insert((entry.service_id, entry.instance_id), remote);
                     }
                 },

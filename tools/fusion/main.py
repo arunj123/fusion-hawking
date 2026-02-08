@@ -13,6 +13,19 @@ from tools.fusion.utils import get_local_ip, patch_configs
 from tools.fusion.diagrams import DiagramManager
 
 
+def merge_results(base, new):
+    """Helper to merge test result dicts, specifically extending 'steps' list."""
+    if not new: return base
+    steps = base.get("steps", [])
+    new_steps = new.pop("steps", [])
+    base.update(new)
+    if new_steps:
+        base["steps"] = steps + new_steps
+    else:
+        base["steps"] = steps
+    return base
+
+
 def run_diagrams(root_dir, reporter, server):
     """Stage: Generate PlantUML diagrams"""
     if server: server.update({"current_step": "Generating Diagrams"})
@@ -59,17 +72,20 @@ def run_test(reporter, tester, target, server):
     if server: server.update({"current_step": "Testing"})
     print("\n=== Testing ===")
     
-    test_results = {}
+    test_results = {"steps": []}
     
     if target == "all":
         test_results = tester.run_unit_tests()
     else:
         if target == "rust":
             test_results["rust"] = tester._run_rust_tests()
+            test_results["steps"].append({"name": "Rust Unit Tests", "status": test_results["rust"], "details": "Ran target specific rust tests"})
         elif target == "python":
-            test_results.update(tester._run_python_tests())
+            py_res = tester._run_python_tests()
+            merge_results(test_results, py_res)
         elif target == "cpp":
             test_results["cpp"] = tester._run_cpp_tests()
+            test_results["steps"].append({"name": "C++ Unit Tests", "status": test_results["cpp"], "details": "Ran target specific cpp tests"})
     
     return test_results
 
@@ -79,7 +95,7 @@ def run_demos(reporter, tester, server, test_results, demo_filter):
     if server: server.update({"current_step": "Running Demos"})
     print("\n=== Demos ===")
     demo_results = tester.run_demos(demo_filter)
-    test_results.update(demo_results)
+    merge_results(test_results, demo_results)
     return test_results
 
 
@@ -88,7 +104,7 @@ def run_coverage(reporter, cover, server, test_results, target):
     if server: server.update({"current_step": "Coverage"})
     print("\n=== Coverage ===")
     cov_results = cover.run_coverage(target)
-    test_results.update(cov_results)
+    merge_results(test_results, cov_results)
     return test_results
 
 
@@ -252,13 +268,14 @@ def main():
         print(f"\nFusion Run Completed: {overall}")
         if overall == "FAILED":
             print(f"[FAIL] Failed components: {', '.join(failures)}")
-            if "steps" in test_results:
-                print("\n--- Detailed Results ---")
-                for step in test_results["steps"]:
-                    status_icon = "[v]" if step["status"] == "PASS" else "[x]"
-                    print(f"{status_icon} {step['name']}: {step['status']}")
-                    if step["status"] == "FAIL":
-                        print(f"   Details: {step.get('details', 'No details available')}")
+        
+        if "steps" in test_results and test_results["steps"]:
+            print("\n--- Detailed Results ---")
+            for step in test_results["steps"]:
+                status_icon = "[v]" if step["status"] == "PASS" else "[x]"
+                print(f"{status_icon} {step['name']}: {step['status']}")
+                if step["status"] == "FAIL":
+                    print(f"   Details: {step.get('details', 'No details available')}")
         
         print(f"Report: file://{os.path.join(reporter.log_dir, 'index.html')}")
 

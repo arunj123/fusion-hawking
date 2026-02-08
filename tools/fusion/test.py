@@ -47,13 +47,37 @@ class Tester:
 
     def run_unit_tests(self):
         print("\n--- Running Unit Tests ---")
-        results = {}
+        results = {"steps": []}
+        
+        # Rust
         print("  Running Rust tests...")
-        results["rust"] = self._run_rust_tests()
+        rust_status = self._run_rust_tests()
+        results["rust"] = rust_status
+        results["steps"].append({
+            "name": "Rust Unit Tests",
+            "status": rust_status,
+            "log": "test_rust",
+            "details": "Ran 'cargo test' for core runtime"
+        })
+
+        # Python
         print("  Running Python tests...")
-        results.update(self._run_python_tests())
+        py_results = self._run_python_tests()
+        py_steps = py_results.pop("steps", [])
+        results.update(py_results)
+        results["steps"].extend(py_steps)
+
+        # C++
         print("  Running C++ tests...")
-        results["cpp"] = self._run_cpp_tests()
+        cpp_status = self._run_cpp_tests()
+        results["cpp"] = cpp_status
+        results["steps"].append({
+            "name": "C++ Unit Tests",
+            "status": cpp_status,
+            "log": "test_cpp",
+            "details": "Ran 'cpp_test' binary"
+        })
+
         print(f"  Unit test results: {results}")
         return results
 
@@ -65,7 +89,7 @@ class Tester:
             return "FAIL"
 
     def _run_python_tests(self):
-        results = {}
+        results = {"steps": []}
         # Python
         env = os.environ.copy()
         env["PYTHONPATH"] = os.pathsep.join(["src/python", "build", "build/generated/python"])
@@ -76,20 +100,28 @@ class Tester:
              py_cmd = ["python", "-m", "unittest", "discover", "tests"]
              f.write(f"=== FUSION UNIT TEST ===\nCommand: {' '.join(py_cmd)}\nPWD: {os.getcwd()}\nEnvironment [PYTHONPATH]: {env['PYTHONPATH']}\n========================\n\n")
              f.flush()
-             if subprocess.call(py_cmd, stdout=f, stderr=subprocess.STDOUT, env=env) == 0:
-                 results["python_unittest"] = "PASS"
-             else:
-                 results["python_unittest"] = "FAIL"
+             status = "PASS" if subprocess.call(py_cmd, stdout=f, stderr=subprocess.STDOUT, env=env) == 0 else "FAIL"
+             results["python_unittest"] = status
+             results["steps"].append({
+                 "name": "Python Unit Tests",
+                 "status": status,
+                 "log": "test_python_unittest",
+                 "details": "Discovered and ran tests in /tests directory"
+             })
 
         # 2. Codegen Tests
         with open(self.reporter.get_log_path("test_codegen"), "w") as f:
              codegen_cmd = ["python", "-m", "unittest", "tools.codegen.tests.test_codegen", "-v"]
              f.write(f"=== FUSION CODEGEN UNIT TEST ===\nCommand: {' '.join(codegen_cmd)}\nPWD: {os.getcwd()}\n================================\n\n")
              f.flush()
-             if subprocess.call(codegen_cmd, stdout=f, stderr=subprocess.STDOUT, env=env) == 0:
-                 results["python_codegen"] = "PASS"
-             else:
-                 results["python_codegen"] = "FAIL"
+             status = "PASS" if subprocess.call(codegen_cmd, stdout=f, stderr=subprocess.STDOUT, env=env) == 0 else "FAIL"
+             results["python_codegen"] = status
+             results["steps"].append({
+                 "name": "Python Codegen Tests",
+                 "status": status,
+                 "log": "test_codegen",
+                 "details": "Verified Python bindings generation"
+             })
 
         # 3. Pytest (Cross Language)
         with open(self.reporter.get_log_path("test_python_pytest"), "w") as f:
@@ -99,15 +131,15 @@ class Tester:
                  f.write(f"=== FUSION PYTEST ===\nCommand: {' '.join(pytest_cmd)}\nPWD: {os.getcwd()}\nEnvironment [PYTHONPATH]: {env['PYTHONPATH']}\n=====================\n\n")
                  f.flush()
                  if subprocess.call(pytest_cmd, stdout=f, stderr=subprocess.STDOUT, env=env) == 0:
-                     results["python_integration"] = "PASS"
+                     status = "PASS"
                  else:
-                     results["python_integration"] = "FAIL"
+                     status = "FAIL"
                      # Dump log for CI visibility
                      print(f"\n--- FAILURE LOG: python_integration ---")
                      with open(self.reporter.get_log_path("test_python_pytest"), "r") as log_f:
                          print(log_f.read())
                      print(f"--- END LOG ---")
- 
+  
                      # Dump application-specific integration logs
                      for app_log in ["cpp_integration.log", "rust_integration.log", "python_integration.log"]:
                          log_path = os.path.join(env["FUSION_LOG_DIR"], app_log)
@@ -119,8 +151,16 @@ class Tester:
                              except Exception as e:
                                  print(f"Error reading {app_log}: {e}")
                              print(f"--- END COMPONENT LOG ---")
-             except:
-                 results["python_integration"] = "SKIPPED (pytest missing)"
+                 
+                 results["python_integration"] = status
+                 results["steps"].append({
+                     "name": "Cross-Language Integration Tests (Pytest)",
+                     "status": status,
+                     "log": "test_python_pytest",
+                     "details": "Ran test_cross_language.py"
+                 })
+             except Exception as e:
+                 results["python_integration"] = f"SKIPPED (pytest error: {e})"
         return results
 
     def _run_cpp_tests(self):

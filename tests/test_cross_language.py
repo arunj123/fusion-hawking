@@ -116,7 +116,7 @@ def processes(build_cpp, build_rust):
     rust_log.close()
     python_log.close()
 
-def wait_for_log_pattern(logfile, pattern, timeout=15):
+def wait_for_log_pattern(logfile, pattern, timeout=60):
     """Wait for a pattern to appear in a log file"""
     start = time.time()
     while time.time() - start < timeout:

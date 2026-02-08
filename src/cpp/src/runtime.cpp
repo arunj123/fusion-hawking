@@ -265,7 +265,9 @@ bool SomeIpRuntime::wait_for_service(uint16_t service_id, uint16_t instance_id) 
                     inet_ntop(AF_INET6, &((sockaddr_in6*)&addr)->sin6_addr, ip_str, INET6_ADDRSTRLEN);
                     out_port = ntohs(((sockaddr_in6*)&addr)->sin6_port);
                 }
-                this->logger->Log(LogLevel::INFO, "Runtime", "Discovered service " + std::to_string(service_id) + " instance " + std::to_string(instance_id) + " at " + std::string(ip_str) + ":" + std::to_string(out_port));
+                if (remote_services.find(key) == remote_services.end() || remote_services[key].ss_family != addr.ss_family) {
+                    this->logger->Log(LogLevel::DEBUG, "Runtime", "Discovered service " + std::to_string(service_id) + " instance " + std::to_string(instance_id) + " at " + std::string(ip_str) + ":" + std::to_string(out_port));
+                }
                 return true;
             }
         }

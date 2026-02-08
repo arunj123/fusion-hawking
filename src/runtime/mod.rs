@@ -123,6 +123,25 @@ impl SomeIpRuntime {
                 logger.log(LogLevel::Info, "Runtime", &format!("Bound {} transport on {}", protocol, addr));
             }
         }
+        
+        // Ensure we always have at least one UDP transport for both families to handle requests/responses
+        let has_v4 = udp_transports.iter().any(|t| t.local_addr().map(|a| a.is_ipv4()).unwrap_or(false));
+        let has_v6 = udp_transports.iter().any(|t| t.local_addr().map(|a| a.is_ipv6()).unwrap_or(false));
+
+        if !has_v4 {
+            let addr: SocketAddr = "0.0.0.0:0".parse().unwrap();
+            let transport = Arc::new(UdpTransport::new(addr).expect("Failed to bind fallback UDP v4"));
+            transport.set_nonblocking(true).unwrap();
+            udp_transports.push(transport);
+            logger.log(LogLevel::Debug, "Runtime", "Bound fallback UDP v4 transport");
+        }
+        if !has_v6 {
+            let addr: SocketAddr = "[::]:0".parse().unwrap();
+            let transport = Arc::new(UdpTransport::new(addr).expect("Failed to bind fallback UDP v6"));
+            transport.set_nonblocking(true).unwrap();
+            udp_transports.push(transport);
+            logger.log(LogLevel::Debug, "Runtime", "Bound fallback UDP v6 transport");
+        }
 
         // Initialize SD
         let sd_v4_endpoint = instance_config.sd.multicast_endpoint.as_ref()
