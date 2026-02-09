@@ -4,48 +4,48 @@
             "interface": "lo",
             "ip": "127.0.0.1",
             "version": 4,
-            "port": 30501,
+            "port": 30701,
             "protocol": "udp"
         },
         "rust_tcp": {
             "interface": "lo",
             "ip": "::1",
             "version": 6,
-            "port": 30502,
+            "port": 30702,
             "protocol": "tcp"
         },
         "python_tcp": {
             "interface": "lo",
             "ip": "::1",
             "version": 6,
-            "port": 30510,
+            "port": 30710,
             "protocol": "tcp"
         },
         "python_v4_tcp": {
             "interface": "lo",
             "ip": "127.0.0.1",
             "version": 4,
-            "port": 30510,
+            "port": 30710,
             "protocol": "tcp"
         },
         "cpp_udp": {
             "interface": "lo",
             "ip": "127.0.0.1",
             "version": 4,
-            "port": 30512,
+            "port": 30712,
             "protocol": "udp"
         },
         "sd_multicast_v4": {
             "interface": "lo",
             "ip": "224.0.0.1",
-            "port": 30490,
+            "port": 30690,
             "version": 4,
             "protocol": "udp"
         },
         "sd_multicast_v6": {
             "interface": "lo",
             "ip": "FF02::4:C",
-            "port": 30490,
+            "port": 30690,
             "version": 6,
             "protocol": "udp"
         }

@@ -11,7 +11,7 @@ def test_event_subscription():
     but using Runtime is better integration test).
     """
     # 1. Start Server Runtime (simulating C++ app)
-    server_runtime = SomeIpRuntime("examples/config.json", "cpp_app_instance")
+    server_runtime = SomeIpRuntime("tests/test_config.json", "cpp_app_instance")
     
     # We need to manually offer the service since we don't have the full C++ impl here.
     # But wait, Python runtime doesn't have "offer_service" fully exposed for Generic RequestHandlers easily without subclasses.

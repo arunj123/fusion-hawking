@@ -45,9 +45,9 @@ class SomeIpRuntime {
     InstanceConfig config;
     std::shared_ptr<ILogger> logger;
     
-    std::string sd_multicast_ip = "224.0.0.1";
+    std::string sd_multicast_ip = "";
     uint16_t sd_multicast_port = 30490;
-    std::string sd_multicast_ip_v6 = "FF02::4:C";
+    std::string sd_multicast_ip_v6 = "";
     uint16_t sd_multicast_port_v6 = 30490;
 
 public:

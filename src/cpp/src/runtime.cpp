@@ -23,15 +23,38 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
     this->logger->Log(LogLevel::INFO, "Runtime", "Loading config from " + config_path);
     config = ConfigLoader::Load(config_path, instance_name);
     
-    port = 0;
-    protocol = "udp";
+    std::string interface_name;
     if (!config.providing.empty()) {
         const auto& first_svc = config.providing.begin()->second;
         if (!first_svc.endpoint.empty() && config.endpoints.count(first_svc.endpoint)) {
              const auto& ep = config.endpoints.at(first_svc.endpoint);
              port = ep.port;
+             interface_name = ep.iface;
              protocol = ep.protocol;
              for (char &c : protocol) c = std::tolower(c);
+        }
+    }
+
+    if (interface_name.empty()) {
+        this->logger->Log(LogLevel::ERR, "Runtime", "Mandatory configuration 'interface' missing for main service endpoint.");
+    }
+
+    // Auto-detect Interface IP from endpoints if default
+    for (const auto& [name, svc] : config.providing) {
+        if (!svc.endpoint.empty() && config.endpoints.count(svc.endpoint)) {
+             const auto& ep = config.endpoints.at(svc.endpoint);
+             
+             // Infer IPv4
+             if (config.ip == "127.0.0.1" && ep.version == 4 && !ep.ip.empty() && ep.ip != "127.0.0.1" && ep.ip != "0.0.0.0") {
+                 config.ip = ep.ip;
+                 this->logger->Log(LogLevel::INFO, "Runtime", "Auto-detected IPv4 Interface: " + config.ip);
+             }
+             
+             // Infer IPv6
+             if (config.ip_v6 == "::1" && ep.version == 6 && !ep.ip.empty() && ep.ip != "::1") {
+                 config.ip_v6 = ep.ip;
+                 this->logger->Log(LogLevel::INFO, "Runtime", "Auto-detected IPv6 Interface: " + config.ip_v6);
+             }
         }
     }
 
@@ -45,6 +68,18 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
     // --- Transport Socket Initialization (UDP) ---
     sock = socket(AF_INET, SOCK_DGRAM, 0);
     setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse));
+    
+    // Bind to Interface (User Request)
+    if (!interface_name.empty()) {
+#ifdef SO_BINDTODEVICE
+        if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, interface_name.c_str(), interface_name.size()) < 0) {
+             this->logger->Log(LogLevel::WARN, "Runtime", "Failed to bind IPv4 socket to interface " + interface_name);
+        }
+#else
+        this->logger->Log(LogLevel::WARN, "Runtime", "Binding to interface '" + interface_name + "' is not supported on this platform.");
+#endif
+    }
+
     sockaddr_in addr = {0};
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -62,6 +97,15 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
         int v6only = 1;
         setsockopt(sock_v6, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&v6only, sizeof(v6only));
         setsockopt(sock_v6, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse));
+        
+        if (!interface_name.empty()) {
+#ifdef SO_BINDTODEVICE
+            if (setsockopt(sock_v6, SOL_SOCKET, SO_BINDTODEVICE, interface_name.c_str(), interface_name.size()) < 0) {
+                 this->logger->Log(LogLevel::WARN, "Runtime", "Failed to bind IPv6 socket to interface " + interface_name);
+            }
+#endif
+        }
+
         sockaddr_in6 addr6 = {0};
         addr6.sin6_family = AF_INET6;
         addr6.sin6_addr = in6addr_any;
@@ -75,6 +119,13 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
     if (protocol == "tcp") {
         tcp_listener = socket(AF_INET, SOCK_STREAM, 0);
         setsockopt(tcp_listener, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse));
+        
+        if (!interface_name.empty()) {
+#ifdef SO_BINDTODEVICE
+            setsockopt(tcp_listener, SOL_SOCKET, SO_BINDTODEVICE, interface_name.c_str(), interface_name.size());
+#endif
+        }
+
         sockaddr_in t_addr = {0};
         t_addr.sin_family = AF_INET;
         t_addr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -89,6 +140,13 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
             int v6only = 1;
             setsockopt(tcp_listener_v6, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&v6only, sizeof(v6only));
             setsockopt(tcp_listener_v6, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse));
+            
+            if (!interface_name.empty()) {
+#ifdef SO_BINDTODEVICE
+                setsockopt(tcp_listener_v6, SOL_SOCKET, SO_BINDTODEVICE, interface_name.c_str(), interface_name.size());
+#endif
+            }
+
             sockaddr_in6 t_addr6 = {0};
             t_addr6.sin6_family = AF_INET6;
             t_addr6.sin6_addr = in6addr_any;
@@ -102,10 +160,21 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
     }
 
     // --- Service Discovery Socket Initialization ---
+    std::string sd_interface;
     if (!config.sd_multicast_endpoint.empty() && config.endpoints.count(config.sd_multicast_endpoint)) {
         const auto& ep = config.endpoints.at(config.sd_multicast_endpoint);
         this->sd_multicast_port = ep.port;
         this->sd_multicast_ip = ep.ip;
+        sd_interface = ep.iface;
+    }
+    
+    if (sd_interface.empty()) {
+         this->logger->Log(LogLevel::ERR, "Runtime", "Mandatory configuration 'interface' missing for SD Endpoint.");
+    }
+
+    if (this->sd_multicast_ip.empty()) {
+        this->logger->Log(LogLevel::ERR, "Runtime", "SD Multicast IPv4 IP not configured. SD will fail.");
+        // We continue but the bind/setsockopt will fail later, which is "returning fail" in spirit of this C++ impl
     }
     
     sd_sock = socket(AF_INET, SOCK_DGRAM, 0);
@@ -113,6 +182,17 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
 #ifdef SO_REUSEPORT
     setsockopt(sd_sock, SOL_SOCKET, SO_REUSEPORT, (const char*)&reuse, sizeof(reuse));
 #endif
+
+    if (!sd_interface.empty()) {
+#ifdef SO_BINDTODEVICE
+        if (setsockopt(sd_sock, SOL_SOCKET, SO_BINDTODEVICE, sd_interface.c_str(), sd_interface.size()) < 0) {
+             this->logger->Log(LogLevel::WARN, "Runtime", "Failed to bind SD socket to interface " + sd_interface);
+        }
+#else
+        this->logger->Log(LogLevel::WARN, "Runtime", "Binding SD socket to interface '" + sd_interface + "' is not supported on this platform.");
+#endif
+    }
+
     sockaddr_in sd_addr = {0};
     sd_addr.sin_family = AF_INET;
     sd_addr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -137,6 +217,11 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
         const auto& ep = config.endpoints.at(config.sd_multicast_endpoint_v6);
         this->sd_multicast_port_v6 = ep.port;
         this->sd_multicast_ip_v6 = ep.ip;
+        // Assume check above covered generic "missing interface" 
+    }
+
+    if (this->sd_multicast_ip_v6.empty()) {
+        this->logger->Log(LogLevel::WARN, "Runtime", "SD Multicast IPv6 IP not configured.");
     }
     
     sd_sock_v6 = socket(AF_INET6, SOCK_DGRAM, 0);
@@ -147,6 +232,13 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
 #ifdef SO_REUSEPORT
         setsockopt(sd_sock_v6, SOL_SOCKET, SO_REUSEPORT, (const char*)&reuse, sizeof(reuse));
 #endif
+        
+        if (!sd_interface.empty()) {
+#ifdef SO_BINDTODEVICE
+            setsockopt(sd_sock_v6, SOL_SOCKET, SO_BINDTODEVICE, sd_interface.c_str(), sd_interface.size());
+#endif
+        }
+
         sockaddr_in6 sd_addr6 = {0};
         sd_addr6.sin6_family = AF_INET6;
         sd_addr6.sin6_addr = in6addr_any;

@@ -35,10 +35,12 @@ def get_network_info():
         info['ipv6'] = s.getsockname()[0]
         s.close()
     except Exception:
-        # Fallback for local testing if no global IPv6
+        # Fallback: check if loopback is available for local testing
         try:
-             # Try link-local detection if needed, but often not useful for config
-             pass
+            s = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+            s.connect(('::1', 1))
+            info['ipv6'] = s.getsockname()[0]
+            s.close()
         except:
              pass
 
@@ -159,12 +161,8 @@ def patch_configs(ip_v4, root_dir, port_offset=0, ip_v6=None):
                             if detected_ipv6 and should_patch_ip(current_ip):
                                 ep_cfg["ip"] = detected_ipv6
                                 modified = True
-                            # If no global IPv6 but system supports it (has_ipv6), maybe fallback to loopback ::1?
+                            # Fallback to local loopback if has_ipv6() (even if no global addr)
                             elif socket.has_ipv6 and should_patch_ip(current_ip):
-                                # Only patch if we are 100% sure we want to run locally
-                                # For now, let's use ::1 if no global v6 is found, 
-                                # implying we are in a contained env (like GitHub runner?)
-                                # specific logic: if original is not localhost, make it localhost
                                 ep_cfg["ip"] = "::1" 
                                 modified = True
                         elif should_patch_ip(current_ip):
@@ -174,17 +172,21 @@ def patch_configs(ip_v4, root_dir, port_offset=0, ip_v6=None):
                                 ep_cfg["ip"] = ip_v4
                                 modified = True
                         
-                        # Interface Patching (only if we have a valid interface)
-                        if "interface" in ep_cfg:
-                             patched_ip = ep_cfg.get("ip")
-                             # If we patched to localhost (v4 or v6), force interface to lo
-                             if patched_ip == "127.0.0.1" or patched_ip == "::1":
-                                 ep_cfg["interface"] = "lo"
-                                 modified = True
-                             elif target_iface:
-                                 # Otherwise use the main interface detected
-                                 ep_cfg["interface"] = target_iface
-                                 modified = True
+                        # Interface Patching (Mandatory)
+                        # Interface Patching (Mandatory)
+                        final_ip = ep_cfg.get("ip")
+                        
+                        if target_iface:
+                             ep_cfg["interface"] = target_iface
+                             modified = True
+                        elif final_ip == "127.0.0.1" or final_ip == "::1" or final_ip == "localhost":
+                             ep_cfg["interface"] = "lo"
+                             modified = True
+                        elif "interface" not in ep_cfg or not ep_cfg["interface"]:
+                             # Fallback if no target interface but we need one (e.g. Windows)
+                             # Set a placeholder to satisfy mandatory config
+                             ep_cfg["interface"] = "eth0"
+                             modified = True
                         
                     # Port Offset
                     if "port" in ep_cfg and isinstance(ep_cfg["port"], int):

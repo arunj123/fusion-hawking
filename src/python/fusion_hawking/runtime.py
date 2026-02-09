@@ -124,6 +124,11 @@ class SomeIpRuntime:
                 ep_name = svc.get('endpoint')
                 if ep_name and ep_name in self.endpoints:
                     ep = self.endpoints[ep_name]
+                    
+                    if 'interface' not in ep or not ep['interface']:
+                        raise ValueError(f"Mandatory configuration 'interface' missing for endpoint '{ep_name}'")
+                    self.logger.log(LogLevel.WARN, "Runtime", f"Binding to interface '{ep['interface']}' is not supported on this platform.")
+
                     self.protocol = ep.get('protocol', 'udp').lower()
                     bind_port = ep.get('port', 0)
                     
@@ -195,8 +200,8 @@ class SomeIpRuntime:
         
         # SD Socket
         self.sd_pub_port = 30490
-        self.sd_multicast_ip = "224.0.0.1"
-        self.sd_multicast_ip_v6 = "FF02::4:C"
+        self.sd_multicast_ip = None
+        self.sd_multicast_ip_v6 = None
         
         if self.config and 'sd' in self.config:
             sd_cfg = self.config['sd']
@@ -206,14 +211,26 @@ class SomeIpRuntime:
             if 'multicast_endpoint' in sd_cfg:
                 ep_name = sd_cfg['multicast_endpoint']
                 if ep_name in self.endpoints:
-                    self.sd_multicast_ip = self.endpoints[ep_name].get('ip', "224.0.0.1")
-                    self.sd_pub_port = self.endpoints[ep_name].get('port', self.sd_pub_port)
+                    ep = self.endpoints[ep_name]
+                    if 'interface' not in ep or not ep['interface']:
+                         raise ValueError(f"Mandatory configuration 'interface' missing for SD Endpoint '{ep_name}'")
+                    self.logger.log(LogLevel.WARN, "Runtime", f"Binding SD socket (v4) to interface '{ep['interface']}' is not supported.")
+
+                    self.sd_multicast_ip = ep.get('ip', "224.0.0.1")
+                    self.sd_pub_port = ep.get('port', self.sd_pub_port)
 
             if 'multicast_endpoint_v6' in sd_cfg:
                 ep_name = sd_cfg['multicast_endpoint_v6']
                 if ep_name in self.endpoints:
-                    self.sd_multicast_ip_v6 = self.endpoints[ep_name].get('ip', "FF02::4:C")
-                    self.sd_pub_port = self.endpoints[ep_name].get('port', self.sd_pub_port)
+                    ep = self.endpoints[ep_name]
+                    if 'interface' not in ep or not ep['interface']:
+                         raise ValueError(f"Mandatory configuration 'interface' missing for SD Endpoint '{ep_name}'")
+                    
+                    self.sd_multicast_ip_v6 = ep.get('ip')
+                    self.sd_pub_port = ep.get('port', self.sd_pub_port)
+        
+        if not self.sd_multicast_ip:
+            raise ValueError("SD Multicast IPv4 IP not configured in instances/sd.")
         
         self.request_timeout = self.config.get('sd', {}).get('request_timeout_ms', 2000) / 1000.0
         self.offer_interval = self.config.get('sd', {}).get('cycle_offer_ms', 500) / 1000.0
@@ -243,12 +260,18 @@ class SomeIpRuntime:
             except OSError: pass
         self.sd_sock_v6.bind(('::', self.sd_pub_port))
         
-        mreq_v6 = struct.pack("16si", socket.inet_pton(socket.AF_INET6, self.sd_multicast_ip_v6), 0)
+        if self.sd_multicast_ip_v6:
+            try:
+                mreq_v6 = struct.pack("16si", socket.inet_pton(socket.AF_INET6, self.sd_multicast_ip_v6), 0)
+                self.sd_sock_v6.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq_v6)
+            except OSError as e:
+                self.logger.log(LogLevel.WARN, "SD", f"Failed to join IPv6 Multicast: {e}")
+        else:
+             self.logger.log(LogLevel.WARN, "SD", "IPv6 Multicast IP not configured, skipping join.")
+        
         try:
-            self.sd_sock_v6.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq_v6)
-        except OSError as e:
-            self.logger.log(LogLevel.WARN, "SD", f"Failed to join IPv6 Multicast: {e}")
-        self.sd_sock_v6.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_LOOP, 1)
+            self.sd_sock_v6.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_LOOP, 1)
+        except OSError: pass
 
         self.sock.setblocking(False)
         self.sock_v6.setblocking(False)
@@ -287,7 +310,8 @@ class SomeIpRuntime:
             with open(path, 'r') as f:
                 data = json.load(f)
                 return data['instances'].get(name, {}), data.get('endpoints', {})
-        except:
+        except Exception as e:
+            print(f"Config Load Error ({path}): {e}")
             return {}, {}
 
     def offer_service(self, alias: str, handler: RequestHandler):
@@ -519,9 +543,9 @@ class SomeIpRuntime:
                      
                      # Detect if source was via IPv6
                      is_ipv6_src = ":" in base_endpoint[0]
-                     if is_ipv6_src:
+                     if is_ipv6_src and self.sd_multicast_ip_v6:
                         self.sd_sock_v6.sendto(sh + ack_payload, (self.sd_multicast_ip_v6, self.sd_pub_port))
-                     else:
+                     elif not is_ipv6_src and self.sd_multicast_ip:
                         self.sd_sock.sendto(sh + ack_payload, (self.sd_multicast_ip, self.sd_pub_port))
                     
             elif entry_type == 0x07: # SubscribeEventgroupAck
@@ -566,10 +590,12 @@ class SomeIpRuntime:
         payload_len = len(sd_payload) + 8
         someip_header = struct.pack(">HHIHH4B", 0xFFFF, 0x8100, payload_len, 0, 1, 1, 1, 2, 0)
         
-        if use_v6:
+        if use_v6 and self.sd_multicast_ip_v6:
             self.sd_sock_v6.sendto(someip_header + sd_payload, (self.sd_multicast_ip_v6, self.sd_pub_port))
-        else:
+        elif self.sd_multicast_ip:
             self.sd_sock.sendto(someip_header + sd_payload, (self.sd_multicast_ip, self.sd_pub_port))
+        else:
+            self.logger.log(LogLevel.ERR, "SD", "Cannot send SubscribeEventgroup: SD Multicast IP not configured.")
         
         self.subscriptions[(service_id, eventgroup_id)] = False
         self.logger.log(LogLevel.DEBUG, "SD", f"Sent SubscribeEventgroup for 0x{service_id:04x}:{eventgroup_id}")
@@ -655,11 +681,8 @@ class SomeIpRuntime:
 
             payload_len_v6 = len(sd_payload_v6) + 8
             header_v6 = struct.pack(">HHIHH4B", 0xFFFF, 0x8100, payload_len_v6, 0, 1, 1, 1, 2, 0)
-            self.sd_sock_v6.sendto(header_v6 + sd_payload_v6, (self.sd_multicast_ip_v6, self.sd_pub_port))
-
-        payload_len_v6 = len(sd_payload_v6) + 8
-        header_v6 = struct.pack(">HHIHH4B", 0xFFFF, 0x8100, payload_len_v6, 0, 1, 1, 1, 2, 0)
-        self.sd_sock_v6.sendto(header_v6 + sd_payload_v6, (self.sd_multicast_ip_v6, self.sd_pub_port))
+            if self.sd_multicast_ip_v6:
+                self.sd_sock_v6.sendto(header_v6 + sd_payload_v6, (self.sd_multicast_ip_v6, self.sd_pub_port))
         
         self.logger.log(LogLevel.DEBUG, "SD", f"Sent Dual-Stack Offer for 0x{service_id:04x} [{endpoint_ip}, {endpoint_ip_v6}]")
 

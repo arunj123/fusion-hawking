@@ -3,14 +3,14 @@
         "test_ep": {
             "interface": "lo",
             "ip": "127.0.0.1",
-            "port": 30500,
+            "port": 30700,
             "version": 4,
             "protocol": "udp"
         },
         "sd_multicast": {
             "interface": "lo",
             "ip": "239.255.0.1",
-            "port": 30490,
+            "port": 30690,
             "version": 4,
             "protocol": "udp"
         }
@@ -27,6 +27,29 @@
             "required": {
                 "math-client": {
                     "service_id": 4097,
+                    "instance_id": 1,
+                    "endpoint": "test_ep"
+                }
+            },
+            "sd": {
+                "multicast_endpoint": "sd_multicast"
+            }
+        },
+        "python_test_client": {
+            "required": {
+                "sort-service": {
+                    "service_id": 12289,
+                    "instance_id": 1
+                }
+            },
+            "sd": {
+                "multicast_endpoint": "sd_multicast"
+            }
+        },
+        "cpp_app_instance": {
+            "providing": {
+                "sort-service": {
+                    "service_id": 12289,
                     "instance_id": 1,
                     "endpoint": "test_ep"
                 }

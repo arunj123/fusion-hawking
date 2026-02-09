@@ -8,6 +8,8 @@ use std::net::{SocketAddr, Ipv4Addr};
 use std::collections::HashMap;
 use std::time::{Instant, Duration, SystemTime, UNIX_EPOCH};
 
+pub const DEFAULT_SD_PORT: u16 = 30490;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ServicePhase {
     /// [PRS_SOMEIPSD_00011] Down Phase
@@ -123,13 +125,12 @@ pub struct ServiceDiscovery {
 }
 
 impl ServiceDiscovery {
-    pub fn new(transport_v4: UdpTransport, transport_v6: UdpTransport, local_ip: Ipv4Addr, local_ip_v6: std::net::Ipv6Addr) -> Self {
+    pub fn new(transport_v4: UdpTransport, transport_v6: UdpTransport, 
+               local_ip: Ipv4Addr, local_ip_v6: std::net::Ipv6Addr,
+               multicast_group_v4: SocketAddr, multicast_group_v6: SocketAddr) -> Self {
         let _ = transport_v4.set_nonblocking(true);
         let _ = transport_v6.set_nonblocking(true);
         
-        let multicast_group_v4: SocketAddr = "224.0.0.1:30490".parse().unwrap();
-        let multicast_group_v6: SocketAddr = "[FF02::4:C]:30490".parse().unwrap();
-
         ServiceDiscovery {
             transport_v4,
             transport_v6,
@@ -254,7 +255,7 @@ impl ServiceDiscovery {
 
     /// Subscribe to an eventgroup from a remote service.
     /// Sends a SubscribeEventgroup entry and waits for SubscribeEventgroupAck.
-    pub fn subscribe_eventgroup(&mut self, service_id: u16, instance_id: u16, eventgroup_id: u16, ttl: u32, port: u16) {
+    pub fn subscribe_eventgroup(&mut self, service_id: u16, instance_id: u16, eventgroup_id: u16, ttl: u32, port_v4: u16, port_v6: u16) {
         let entry = SdEntry {
             entry_type: EntryType::SubscribeEventgroup,
             index_1: 0,
@@ -271,12 +272,12 @@ impl ServiceDiscovery {
         let opt_v4 = SdOption::Ipv4Endpoint {
             address: self.local_ip,
             transport_proto: 0x11, // UDP
-            port,
+            port: port_v4,
         };
         let opt_v6 = SdOption::Ipv6Endpoint {
             address: self.local_ip_v6,
             transport_proto: 0x11,
-            port,
+            port: port_v6,
         };
 
         self.pending_subscriptions.insert((service_id, eventgroup_id), false);
@@ -285,7 +286,7 @@ impl ServiceDiscovery {
 
     /// Unsubscribe from an eventgroup (sends SubscribeEventgroup with TTL=0).
     pub fn unsubscribe_eventgroup(&mut self, service_id: u16, instance_id: u16, eventgroup_id: u16) {
-        self.subscribe_eventgroup(service_id, instance_id, eventgroup_id, 0, 0);
+        self.subscribe_eventgroup(service_id, instance_id, eventgroup_id, 0, 0, 0);
         self.pending_subscriptions.remove(&(service_id, eventgroup_id));
     }
 
@@ -467,10 +468,8 @@ impl ServiceDiscovery {
                             ttl: entry.ttl,
                         };
                         
-                        // Note: SD machine doesn't have a logger, so we'll just use println for debugging
-                        // but actually, we should probably pass a logger or just rely on runtime to log.
-                        // For now, let's keep it silent but ensure it's correct.
-                        // Actually, I'll add a println that will show up in the captured output if any.
+
+                        
                         self.remote_services.insert((entry.service_id, entry.instance_id), remote);
                     }
                 },
@@ -593,7 +592,9 @@ mod tests {
         let transport_v6 = UdpTransport::new("[::]:0".parse().unwrap()).unwrap();
         let local_ip = Ipv4Addr::new(127, 0, 0, 1);
         let local_ip_v6 = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1);
-        let mut sd = ServiceDiscovery::new(transport_v4, transport_v6, local_ip, local_ip_v6);
+        let m_v4: std::net::SocketAddr = "127.0.0.1:30490".parse().unwrap();
+        let m_v6: std::net::SocketAddr = "[::1]:30490".parse().unwrap();
+        let mut sd = ServiceDiscovery::new(transport_v4, transport_v6, local_ip, local_ip_v6, m_v4, m_v6);
 
         let remote = RemoteService {
             service_id: 0x5678,
@@ -653,7 +654,9 @@ mod tests {
         let transport_v6 = UdpTransport::new("[::]:0".parse().unwrap()).unwrap();
         let local_ip = Ipv4Addr::new(127, 0, 0, 1);
         let local_ip_v6 = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1);
-        let mut sd = ServiceDiscovery::new(transport_v4, transport_v6, local_ip, local_ip_v6);
+        let m_v4: std::net::SocketAddr = "127.0.0.1:30490".parse().unwrap();
+        let m_v6: std::net::SocketAddr = "[::1]:30490".parse().unwrap();
+        let mut sd = ServiceDiscovery::new(transport_v4, transport_v6, local_ip, local_ip_v6, m_v4, m_v6);
         
         // Add a remote service
         let remote = RemoteService {

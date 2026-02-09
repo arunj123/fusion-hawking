@@ -3,28 +3,28 @@
         "sd_multicast_v4": {
             "interface": "lo",
             "ip": "224.0.0.1",
-            "port": 30490,
+            "port": 30690,
             "version": 4,
             "protocol": "udp"
         },
         "event_multicast": {
             "interface": "lo",
             "ip": "225.0.0.1",
-            "port": 30495,
+            "port": 30695,
             "version": 4,
             "protocol": "udp"
         },
         "radar_ep": {
             "interface": "lo",
             "ip": "127.0.0.1",
-            "port": 30601,
+            "port": 30801,
             "version": 4,
             "protocol": "udp"
         },
         "fusion_ep": {
             "interface": "lo",
             "ip": "127.0.0.1",
-            "port": 30602,
+            "port": 30802,
             "version": 4,
             "protocol": "udp"
         }

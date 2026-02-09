@@ -19,7 +19,7 @@ struct ServiceConfig {
 };
 
 struct EndpointConfig {
-    std::string interface;
+    std::string iface;
     std::string ip;
     int version = 4;
     int port = 0;
@@ -223,7 +223,7 @@ private:
             std::string val = json.substr(obj_start, obj_end - obj_start);
             EndpointConfig cfg;
             cfg.ip = ExtractString(val, "ip");
-            cfg.interface = ExtractString(val, "interface");
+            cfg.iface = ExtractString(val, "interface");
             cfg.version = ExtractInt(val, "version");
             cfg.port = ExtractInt(val, "port");
             std::string proto = ExtractString(val, "protocol"); if (!proto.empty()) cfg.protocol = proto;

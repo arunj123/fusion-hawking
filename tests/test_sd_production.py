@@ -10,8 +10,14 @@ from fusion_hawking.runtime import SomeIpRuntime
 
 class TestSdPacketProduction(unittest.TestCase):
     from unittest.mock import patch
+    @patch('fusion_hawking.runtime.SomeIpRuntime._load_config')
     @patch('socket.socket.sendto')
-    def test_python_offer_layout(self, mock_sendto):
+    def test_python_offer_layout(self, mock_sendto, mock_load_config):
+        # Mock config to satisfy runtime init checks
+        mock_load_config.return_value = (
+            { "sd": { "multicast_endpoint": "sd-mcast" } }, 
+            { "sd-mcast": { "ip": "224.0.0.1", "port": 30490, "version": 4, "interface": "lo" } }
+        )
         """Verify the binary layout of an offer produced by the Python runtime."""
         # Setup a dummy runtime
         rt = SomeIpRuntime(None, "test", None)

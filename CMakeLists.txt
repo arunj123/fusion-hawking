@@ -33,11 +33,7 @@ if(WIN32)
 endif()
 
 # 3. Integrated App Demo (Required for CI Artifacts)
-add_executable(cpp_app examples/integrated_apps/cpp_app/main.cpp)
-target_link_libraries(cpp_app fusion_hawking_cpp)
-if(WIN32)
-    target_compile_definitions(cpp_app PRIVATE _WINSOCK_DEPRECATED_NO_WARNINGS)
-endif()
+add_subdirectory(examples/integrated_apps/cpp_app)
 
 # 3. C++ Unit Test
 add_executable(cpp_test tests/cpp_test.cpp)

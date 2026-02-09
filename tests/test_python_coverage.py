@@ -36,7 +36,7 @@ class TestSessionIdManager(unittest.TestCase):
 
 class TestRuntimeDetailed(unittest.TestCase):
     def setUp(self):
-        self.runtime = SomeIpRuntime(None, "test_instance")
+        self.runtime = SomeIpRuntime("tests/test_config.json", "test_instance")
         self.runtime.logger = MagicMock()
         # Mock sockets to prevent network activity
         # Close actual sockets created by init before mocking to avoid ResourceWarning

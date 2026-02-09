@@ -214,9 +214,13 @@ class Tester:
             
             procs = []
             
+            # Keep track of files to close
+            log_files = []
+            
             try:
                 # Rust Standalone Demo
                 f_rust = open(rust_log, "w")
+                log_files.append(f_rust)
                 rust_env = os.environ.copy()
                 rust_env["RUST_LOG"] = "debug"
                 rust_cmd = ["cargo", "run"]
@@ -234,6 +238,7 @@ class Tester:
                     os.path.join(os.getcwd(), "build/generated/python")
                 ])
                 f_py = open(py_log, "w")
+                log_files.append(f_py)
                 # Run the script within its directory
                 py_cmd = ["python", "-u", "main.py"]
                 f_py.write(f"=== FUSION TEST RUNNER ===\nCommand: {' '.join(py_cmd)}\nPWD: {os.path.join(os.getcwd(), 'examples/integrated_apps/python_app')}\n==========================\n\n")
@@ -247,6 +252,7 @@ class Tester:
                     # Convert to absolute path since we change CWD
                     abs_cpp_exe = os.path.abspath(cpp_exe)
                     f_cpp = open(cpp_log, "w")
+                    log_files.append(f_cpp)
                     cpp_cmd = [abs_cpp_exe]
                     f_cpp.write(f"=== FUSION TEST RUNNER ===\nCommand: {abs_cpp_exe}\nPWD: {os.path.join(os.getcwd(), 'examples/integrated_apps/cpp_app')}\n==========================\n\n")
                     f_cpp.flush()
@@ -258,10 +264,28 @@ class Tester:
                 time.sleep(20)
                 
             finally:
+                # 1. Terminate processes gracefully
+                print("  Stopping demos...")
                 for p in procs:
-                    p.kill() # Force kill
+                    try:
+                        p.terminate()
+                    except:
+                        pass
+                
+                # 2. Wait for them to exit
+                for p in procs:
+                    try:
+                        p.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        # 3. Force kill if they don't exit
+                        p.kill()
+                
+                # 4. Explicitly close log files to flush buffers
+                for f in log_files:
+                    f.close()
                 
             print("  Verifying Integrated Apps logs...")
+            time.sleep(1) # Extra buffer for OS file system
             results = self._verify_demos(rust_log, py_log, cpp_log, results)
             
             # If failed, dump logs

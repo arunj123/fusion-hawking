@@ -145,6 +145,12 @@ def main():
     
     # Patch configs with local IP and Port Offset
     local_ip = get_local_ip()
+    
+    # Force loopback in GitHub Actions (internal networking is often unreliable for UDP SD)
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        print("[INFO] CI detected: forcing loopback (127.0.0.1) for stability")
+        local_ip = "127.0.0.1"
+        
     patch_configs(local_ip, root_dir, args.base_port)
     
     if server: server.update({"tools": tool_status})

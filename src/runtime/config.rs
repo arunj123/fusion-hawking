@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct EndpointConfig {
-    pub interface: String,
+    pub interface: Option<String>,
     pub ip: String,
     pub version: u8,
     pub port: u16,

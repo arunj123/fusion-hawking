@@ -80,6 +80,16 @@ fn main() {
     thread::sleep(Duration::from_secs(2));
     
     // Client Work
+    // Wait for the service to be available before subscribing to avoid race conditions
+    let mut sort_client_ready = false;
+    while !sort_client_ready {
+        if rt.get_client::<SortServiceClient>("sort-client").is_some() {
+            sort_client_ready = true;
+        } else {
+            thread::sleep(Duration::from_millis(200));
+        }
+    }
+
     // Subscribe using constants
     rt.subscribe_eventgroup(SortServiceClient::SERVICE_ID, 1, 1, 100);
 

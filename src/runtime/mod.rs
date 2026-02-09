@@ -40,7 +40,7 @@ use std::thread;
 use std::time::Duration;
 use std::sync::atomic::{AtomicBool, Ordering};
 use crate::transport::{UdpTransport, SomeIpTransport};
-use crate::sd::machine::ServiceDiscovery;
+use crate::sd::machine::{ServiceDiscovery, DEFAULT_SD_PORT};
 use crate::codec::SomeIpHeader;
 
 pub trait RequestHandler: Send + Sync {
@@ -98,6 +98,13 @@ impl SomeIpRuntime {
             let port = endpoint.port;
             let protocol = endpoint.protocol.to_lowercase();
             
+            if endpoint.interface.is_none() || endpoint.interface.as_ref().unwrap().is_empty() {
+                panic!("Mandatory configuration 'interface' missing for endpoint '{}'", endpoint_name);
+            }
+            if let Some(iface) = &endpoint.interface {
+                logger.log(LogLevel::Warn, "Runtime", &format!("Binding to interface '{}' is not supported on this platform.", iface));
+            }
+            
             let key = (endpoint.ip.clone(), port, protocol.clone());
             if !bound_endpoints.contains_key(&key) {
                 let addr: SocketAddr = if endpoint.version == 6 {
@@ -150,11 +157,25 @@ impl SomeIpRuntime {
         let sd_v6_endpoint = instance_config.sd.multicast_endpoint_v6.as_ref()
             .and_then(|name| endpoints.get(name));
 
-        let sd_v4_ip = sd_v4_endpoint.map(|e| e.ip.clone()).unwrap_or_else(|| "224.0.0.1".to_string());
-        let sd_v4_port = sd_v4_endpoint.map(|e| e.port).unwrap_or(30490);
+        let sd_v4_ip = sd_v4_endpoint.map(|e| e.ip.clone()).expect("SD Multicast IPv4 endpoint config missing");
+        let sd_v4_port = sd_v4_endpoint.map(|e| e.port).unwrap_or(DEFAULT_SD_PORT);
 
-        let sd_v6_ip = sd_v6_endpoint.map(|e| e.ip.clone()).unwrap_or_else(|| "ff02::4:c".to_string());
-        let sd_v6_port = sd_v6_endpoint.map(|e| e.port).unwrap_or(30490);
+        let sd_v6_ip = sd_v6_endpoint.map(|e| e.ip.clone()).expect("SD Multicast IPv6 endpoint config missing");
+        let sd_v6_port = sd_v6_endpoint.map(|e| e.port).unwrap_or(DEFAULT_SD_PORT);
+
+        // SD Interface Validation
+        if let Some(ep) = sd_v4_endpoint {
+            if ep.interface.is_none() || ep.interface.as_ref().unwrap().is_empty() {
+                 logger.log(LogLevel::Error, "Runtime", "Mandatory configuration 'interface' missing for SD Endpoint (v4).");
+            } else {
+                 logger.log(LogLevel::Warn, "Runtime", &format!("Binding SD socket (v4) to interface '{}' is not supported.", ep.interface.as_ref().unwrap()));
+            }
+        }
+        if let Some(ep) = sd_v6_endpoint {
+             if ep.interface.is_none() || ep.interface.as_ref().unwrap().is_empty() {
+                 logger.log(LogLevel::Error, "Runtime", "Mandatory configuration 'interface' missing for SD Endpoint (v6).");
+             }
+        }
 
         let sd_bind_v4: SocketAddr = format!("0.0.0.0:{}", sd_v4_port).parse().unwrap();
         let sd_transport_v4 = UdpTransport::new_multicast(sd_bind_v4).expect("Failed to bind SD v4 transport");
@@ -172,11 +193,18 @@ impl SomeIpRuntime {
             }).unwrap_or("0.0.0.0".parse().unwrap());
         
         let _ = sd_transport_v4.join_multicast_v4(&multicast_ip_v4, &interface_ip_v4);
+        let _ = sd_transport_v4.set_multicast_if_v4(&interface_ip_v4);
+        let _ = sd_transport_v4.set_multicast_loop_v4(true);
         
         let multicast_ip_v6: std::net::Ipv6Addr = sd_v6_ip.parse().expect("Invalid SD Multicast IP v6");
         let _ = sd_transport_v6.join_multicast_v6(&multicast_ip_v6, 0);
+        let _ = sd_transport_v6.set_multicast_loop_v6(true);
 
-        let sd = ServiceDiscovery::new(sd_transport_v4, sd_transport_v6, interface_ip_v4, "::".parse().unwrap());
+        let multicast_group_v4: SocketAddr = (multicast_ip_v4, sd_v4_port).into();
+        let multicast_group_v6: SocketAddr = (multicast_ip_v6, sd_v6_port).into();
+
+        let sd = ServiceDiscovery::new(sd_transport_v4, sd_transport_v6, interface_ip_v4, "::".parse().unwrap(),
+                                       multicast_group_v4, multicast_group_v6);
 
         Arc::new(Self {
             udp_transports,
@@ -199,7 +227,11 @@ impl SomeIpRuntime {
         
         let sd_transport_v4 = UdpTransport::new("0.0.0.0:0".parse().unwrap()).expect("Failed to bind SD v4 transport");
         let sd_transport_v6 = UdpTransport::new("[::]:0".parse().unwrap()).expect("Failed to bind SD v6 transport");
-        let sd = ServiceDiscovery::new(sd_transport_v4, sd_transport_v6, "127.0.0.1".parse().unwrap(), "::1".parse().unwrap());
+        let m_v4: SocketAddr = format!("{}:{}", "127.0.0.1", DEFAULT_SD_PORT).parse().unwrap();
+        let m_v6: SocketAddr = format!("[{}]:{}", "::1", DEFAULT_SD_PORT).parse().unwrap();
+        let sd = ServiceDiscovery::new(sd_transport_v4, sd_transport_v6, 
+                                       "127.0.0.1".parse().unwrap(), "::1".parse().unwrap(),
+                                       m_v4, m_v6);
         
         let addr_v4: SocketAddr = format!("0.0.0.0:{}", port).parse().unwrap();
         let addr_v6: SocketAddr = format!("[::]:{}", port).parse().unwrap();
@@ -311,9 +343,10 @@ impl SomeIpRuntime {
 
     pub fn subscribe_eventgroup(&self, service_id: u16, instance_id: u16, eventgroup_id: u16, ttl: u32) {
         let mut sd = self.sd.lock().unwrap();
-        let local_port = self.get_transport_v4().local_addr().unwrap().port();
-        sd.subscribe_eventgroup(service_id, instance_id, eventgroup_id, ttl, local_port);
-        self.logger.log(LogLevel::Info, "Runtime", &format!("Subscribing to Service 0x{:04x} EventGroup {}", service_id, eventgroup_id));
+        let port_v4 = self.get_transport_v4().local_addr().unwrap().port();
+        let port_v6 = self.get_transport_v6().local_addr().unwrap().port();
+        sd.subscribe_eventgroup(service_id, instance_id, eventgroup_id, ttl, port_v4, port_v6);
+        self.logger.log(LogLevel::Info, "Runtime", &format!("Subscribing to Service 0x{:04x} EventGroup {} (v4: {}, v6: {})", service_id, eventgroup_id, port_v4, port_v6));
     }
 
     pub fn offer_service(&self, alias: &str, instance: Box<dyn RequestHandler>) {

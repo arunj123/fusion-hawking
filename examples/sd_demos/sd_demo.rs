@@ -36,7 +36,9 @@ fn main() {
         
         let local_ip = Ipv4Addr::new(127, 0, 0, 1);
         let local_ip_v6 = "::1".parse().unwrap();
-        let mut sd = ServiceDiscovery::new(transport_v4, transport_v6, local_ip, local_ip_v6);
+        let m_v4: SocketAddr = "224.0.0.1:30490".parse().unwrap();
+        let m_v6: SocketAddr = "[FF02::4:C]:30490".parse().unwrap();
+        let mut sd = ServiceDiscovery::new(transport_v4, transport_v6, local_ip, local_ip_v6, m_v4, m_v6);
         
         println!("Provider offering Service 0x1234");
         sd.offer_service(0x1234, 1, 1, 0, 30501, 0x11, None); // TCP/UDP? 0x11 UDP
@@ -58,7 +60,9 @@ fn main() {
         
         let local_ip = Ipv4Addr::new(127, 0, 0, 1);
         let local_ip_v6 = "::1".parse().unwrap();
-        let mut sd = ServiceDiscovery::new(transport_v4, transport_v6, local_ip, local_ip_v6);
+        let m_v4: SocketAddr = "224.0.0.1:30490".parse().unwrap();
+        let m_v6: SocketAddr = "[FF02::4:C]:30490".parse().unwrap();
+        let mut sd = ServiceDiscovery::new(transport_v4, transport_v6, local_ip, local_ip_v6, m_v4, m_v6);
         
         loop {
             sd.poll();

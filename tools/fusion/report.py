@@ -27,16 +27,37 @@ class Reporter:
         self.generate_index({})
 
     def _update_symlink(self):
-        if os.path.exists(self.latest_link):
-            if os.path.islink(self.latest_link) or os.path.isfile(self.latest_link):
-                os.remove(self.latest_link)
-            elif os.path.isdir(self.latest_link):
-                try: os.rmdir(self.latest_link)
-                except: pass
+        # Aggressively remove existing 'latest' regardless of type
+        if os.path.lexists(self.latest_link):
+            try:
+                if os.name == 'nt':
+                    # On Windows, 'rmdir' is needed for junctions, 'del' for files/symlinks
+                    subprocess.run(['cmd', '/c', 'rmdir', '/q', '/s', self.latest_link], capture_output=True)
+                    if os.path.lexists(self.latest_link):
+                        subprocess.run(['cmd', '/c', 'del', '/f', '/q', self.latest_link], capture_output=True)
+                else:
+                    if os.path.isdir(self.latest_link) and not os.path.islink(self.latest_link):
+                        shutil.rmtree(self.latest_link)
+                    else:
+                        os.remove(self.latest_link)
+            except:
+                pass
+                
         try:
+            # Try symlink first (works if Developer Mode is on)
             os.symlink(self.timestamp, self.latest_link, target_is_directory=True)
         except OSError:
-            pass
+            # Fallback for Windows: Junction
+            if os.name == 'nt':
+                import subprocess
+                try:
+                    # Junction target must be relative to the junction location or absolute
+                    # Using absolute path for junction is often more reliable on Windows
+                    abs_target = os.path.join(self.root_dir, "logs", self.timestamp)
+                    subprocess.run(['cmd', '/c', 'mklink', '/J', self.latest_link, abs_target], 
+                                   capture_output=True)
+                except:
+                    pass
 
     def get_log_path(self, name):
         # Categorize logs specific to subfolders for cleaner explorer

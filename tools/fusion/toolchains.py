@@ -14,7 +14,9 @@ class ToolchainManager:
             "python": True, # Running in it
             "pip": True,
             "opencppcoverage": False,
-            "rust_cov": False
+            "rust_cov": False,
+            "lcov": False,
+            "genhtml": False
         }
 
     def check_all(self):
@@ -53,6 +55,11 @@ class ToolchainManager:
             except Exception as e:
                 print(f"[ERROR] Failed to install cargo-llvm-cov: {e}")
                 self.status["rust_cov"] = False
+        
+        # Linux specific coverage tools
+        if sys.platform != "win32":
+            self.status["lcov"] = self._check_command("lcov", "--version")
+            self.status["genhtml"] = self._check_command("genhtml", "--version")
             
         return self.status
 

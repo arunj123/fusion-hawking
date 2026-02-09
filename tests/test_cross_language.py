@@ -10,22 +10,43 @@ import shutil
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # C++ Demo is now in its own sub-build
 CPP_DEMO_DIR = os.path.join(PROJECT_ROOT, "examples", "integrated_apps", "cpp_app")
-# Check build artifact location first (Nested and Root)
+# Check build artifact location first (Nested, Root, and deep sub-build)
 ARTIFACT_BUILD_PATH_NESTED = os.path.join(PROJECT_ROOT, "build", "examples", "integrated_apps", "cpp_app", "cpp_app")
 ARTIFACT_BUILD_PATH_ROOT = os.path.join(PROJECT_ROOT, "build", "cpp_app")
-LOCAL_BUILD_PATH = os.path.join(CPP_DEMO_DIR, "build", "cpp_app")
+LOCAL_BUILD_PATH = os.path.join(CPP_DEMO_DIR, "build", "Release", "cpp_app.exe")
+# Deeply nested path found in MSVC build
+DEEP_BUILD_PATH = os.path.join(CPP_DEMO_DIR, "build", "fusion_hawking_core", "examples", "integrated_apps", "cpp_app", "Release", "cpp_app.exe")
 
 if os.name == 'nt':
     ARTIFACT_BUILD_PATH_NESTED += ".exe"
-    ARTIFACT_BUILD_PATH_ROOT = os.path.join(PROJECT_ROOT, "build", "Release", "cpp_app.exe")
-    LOCAL_BUILD_PATH = os.path.join(CPP_DEMO_DIR, "build", "Release", "cpp_app.exe")
+    # Root might also have a Release folder if built via main script
+    if not os.path.exists(ARTIFACT_BUILD_PATH_ROOT + ".exe"):
+        ARTIFACT_BUILD_PATH_ROOT = os.path.join(PROJECT_ROOT, "build", "Release", "cpp_app.exe")
+    else:
+        ARTIFACT_BUILD_PATH_ROOT += ".exe"
 
-if os.path.exists(ARTIFACT_BUILD_PATH_ROOT):
-    CPP_EXE = ARTIFACT_BUILD_PATH_ROOT
-elif os.path.exists(ARTIFACT_BUILD_PATH_NESTED):
-    CPP_EXE = ARTIFACT_BUILD_PATH_NESTED
-else:
-    CPP_EXE = LOCAL_BUILD_PATH
+def find_cpp_exe():
+    """Find the C++ executable, accounting for various build layouts"""
+    # Check default locations
+    candidates = [
+        ARTIFACT_BUILD_PATH_ROOT,
+        ARTIFACT_BUILD_PATH_NESTED,
+        DEEP_BUILD_PATH,
+        LOCAL_BUILD_PATH
+    ]
+    
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+            
+    # Fallback: Walk the build config to find it
+    for root, dirs, files in os.walk(os.path.join(CPP_DEMO_DIR, "build")):
+        if "cpp_app.exe" in files:
+            return os.path.join(root, "cpp_app.exe")
+            
+    return LOCAL_BUILD_PATH # Default fallback
+
+CPP_EXE = find_cpp_exe()
 
 # Log Directory setup
 LOG_DIR = os.environ.get("FUSION_LOG_DIR", os.getcwd())
@@ -60,8 +81,16 @@ def processes(build_cpp, build_rust):
     # 1. Start C++ App (Client of Rust, Provider for others)
     cpp_log_path = get_log_path("cpp_integration.log")
     cpp_log = open(cpp_log_path, "w")
+    # Resolve CPP_EXE dynamically after build
+    cpp_exe_path = find_cpp_exe()
+    if not os.path.exists(cpp_exe_path):
+        print(f"WARNING: C++ EXE not found at {cpp_exe_path}. Searching...")
+        # Try one more search in case of race?
+        time.sleep(1)
+        cpp_exe_path = find_cpp_exe()
+        
     cpp_proc = subprocess.Popen(
-        [os.path.abspath(CPP_EXE)], 
+        [os.path.abspath(cpp_exe_path)], 
         stdout=cpp_log, 
         stderr=subprocess.STDOUT,
         cwd=CPP_DEMO_DIR
