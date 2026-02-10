@@ -8,11 +8,11 @@
             "protocol": "udp"
         },
         "server_tcp": {
-            "ip": "172.26.144.124",
+            "ip": "127.0.0.1",
             "port": 0,
             "version": 4,
             "protocol": "tcp",
-            "interface": "eth0"
+            "interface": "lo"
         }
     },
     "instances": {

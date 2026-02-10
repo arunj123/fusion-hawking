@@ -17,23 +17,27 @@ struct Worker {
 
 impl Worker {
     fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Message>>>) -> Worker {
-        let thread = thread::spawn(move || loop {
-            let message = receiver.lock().unwrap().recv();
-            match message {
-                Ok(Message::NewJob(job)) => {
-                    // println!("Worker {} got a job; executing.", id);
-                    job();
+        // Use a larger stack size (2 MiB) to accommodate LLVM coverage instrumentation
+        // overhead, which can cause STATUS_STACK_BUFFER_OVERRUN with the default stack.
+        let thread = thread::Builder::new()
+            .name(format!("pool-worker-{}", id))
+            .stack_size(2 * 1024 * 1024)
+            .spawn(move || loop {
+                let message = receiver.lock().unwrap().recv();
+                match message {
+                    Ok(Message::NewJob(job)) => {
+                        job();
+                    }
+                    Ok(Message::Terminate) => {
+                        break;
+                    }
+                    Err(_) => {
+                        // Channel disconnected
+                        break;
+                    }
                 }
-                Ok(Message::Terminate) => {
-                    // println!("Worker {} was told to terminate.", id);
-                    break;
-                }
-                Err(_) => {
-                    // Channel disconnected
-                    break;
-                }
-            }
-        });
+            })
+            .expect("failed to spawn worker thread");
 
         Worker {
             _id: id,

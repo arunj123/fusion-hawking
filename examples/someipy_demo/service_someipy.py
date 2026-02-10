@@ -72,14 +72,10 @@ async def main():
 
     print(f"[someipy Service] Connecting to daemon on {interface_ip}...")
     try:
-        # For Windows, we might need to specify TCP if the daemon is on WSL or another process
-        # someipy defaults to UNIX domain sockets on Linux, but uses TCP/IP on Windows for daemon comms
-        if os.name == 'nt':
-             someipy_daemon = await connect_to_someipy_daemon(
-                {"use_tcp": True, "tcp_host": interface_ip, "tcp_port": 30500}
-            )
-        else:
-            someipy_daemon = await connect_to_someipy_daemon()
+        # Always use TCP to connect to the daemon since start_daemon.py starts with use_tcp=True
+        someipy_daemon = await connect_to_someipy_daemon(
+            {"use_tcp": True, "tcp_host": interface_ip, "tcp_port": 30500}
+        )
     except Exception as e:
         print(f"[someipy Service] Failed to connect to daemon: {e}")
         print("[someipy Service] Make sure someipyd.py is running!")

@@ -10,13 +10,16 @@
 #pragma comment(lib, "iphlpapi.lib")
 #define SOCKLEN_T int
 #define closesocket closesocket
+#define GET_SOCKET_ERROR() WSAGetLastError()
 #else
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <net/if.h>
+#include <errno.h>
 #define closesocket close
 #define SOCKLEN_T socklen_t
+#define GET_SOCKET_ERROR() errno
 #endif
 
 namespace fusion_hawking {
@@ -189,7 +192,7 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
         t_addr.sin_addr.s_addr = inet_addr(this->config.ip.c_str());
         t_addr.sin_port = htons(this->port);
         if (bind(tcp_listener, (struct sockaddr*)&t_addr, sizeof(t_addr)) == SOCKET_ERROR) {
-             this->logger->Log(LogLevel::WARN, "Runtime", "Failed to bind TCP listener (IPv4) err=" + std::to_string(WSAGetLastError()));
+             this->logger->Log(LogLevel::WARN, "Runtime", "Failed to bind TCP listener (IPv4) err=" + std::to_string(GET_SOCKET_ERROR()));
         }
         listen(tcp_listener, 5);
 
@@ -319,7 +322,7 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
         
         if (if_index != 0) {
             if (setsockopt(sd_sock_v6, IPPROTO_IPV6, IPV6_MULTICAST_IF, (const char*)&if_index, sizeof(if_index)) < 0) {
-                this->logger->Log(LogLevel::WARN, "Runtime", "Failed to set IPV6_MULTICAST_IF to index " + std::to_string(if_index) + " err=" + std::to_string(WSAGetLastError()));
+                this->logger->Log(LogLevel::WARN, "Runtime", "Failed to set IPV6_MULTICAST_IF to index " + std::to_string(if_index) + " err=" + std::to_string(GET_SOCKET_ERROR()));
             }
         }
         
@@ -327,7 +330,7 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
         inet_pton(AF_INET6, this->sd_multicast_ip_v6.c_str(), &mreq6.ipv6mr_multiaddr);
         mreq6.ipv6mr_interface = if_index; 
         if (setsockopt(sd_sock_v6, IPPROTO_IPV6, IPV6_JOIN_GROUP, (const char*)&mreq6, sizeof(mreq6)) < 0) {
-            this->logger->Log(LogLevel::WARN, "Runtime", "Failed to join IPv6 multicast group " + this->sd_multicast_ip_v6 + " err=" + std::to_string(WSAGetLastError()));
+            this->logger->Log(LogLevel::WARN, "Runtime", "Failed to join IPv6 multicast group " + this->sd_multicast_ip_v6 + " err=" + std::to_string(GET_SOCKET_ERROR()));
         }
 
         int hops = (int)config.sd.multicast_hops;
@@ -566,7 +569,7 @@ void SomeIpRuntime::SendOffer(uint16_t service_id, uint16_t instance_id, uint8_t
         dest.sin6_scope_id = this->sd_if_index;
         int ret = sendto(sd_sock_v6, (const char*)buffer.data(), (int)buffer.size(), 0, (struct sockaddr*)&dest, sizeof(dest));
         if (ret < 0) {
-            this->logger->Log(LogLevel::WARN, "SD", "Failed to send IPv6 Offer for service " + std::to_string(service_id) + " err=" + std::to_string(WSAGetLastError()));
+            this->logger->Log(LogLevel::WARN, "SD", "Failed to send IPv6 Offer for service " + std::to_string(service_id) + " err=" + std::to_string(GET_SOCKET_ERROR()));
         } else {
             this->logger->Log(LogLevel::DEBUG, "SD", "Sent IPv6 Offer for service " + std::to_string(service_id));
         }

@@ -2,6 +2,7 @@ import subprocess
 import os
 import time
 import threading
+import json
 
 class Tester:
     def __init__(self, reporter, builder):
@@ -333,6 +334,27 @@ class Tester:
         
         demo_dir = "examples/someipy_demo"
         procs = []
+        
+        # The someipy demo runs entirely on loopback. patch_configs sets the
+        # SD multicast interface to the detected NIC (e.g. 'eth0'), but the
+        # C++ runtime resolves interface names to OS indices for multicast.
+        # On WSL, eth0 (index 2) routes multicast away from loopback.
+        # Force SD multicast interface to 'lo' so the C++ client can discover
+        # the loopback-only someipy service.
+        try:
+            cfg_path = os.path.join(demo_dir, "client_config.json")
+            with open(cfg_path, "r") as f:
+                cfg = json.load(f)
+            patched = False
+            for ep_name, ep_cfg in cfg.get("endpoints", {}).items():
+                if "sd_multicast" in ep_name and ep_cfg.get("interface") != "lo":
+                    ep_cfg["interface"] = "lo"
+                    patched = True
+            if patched:
+                with open(cfg_path, "w") as f:
+                    json.dump(cfg, f, indent=4)
+        except Exception:
+            pass
         
         try:
             with open(log_path, "w") as log:

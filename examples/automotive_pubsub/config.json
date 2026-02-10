@@ -15,15 +15,15 @@
             "protocol": "udp"
         },
         "radar_ep": {
-            "interface": "eth0",
-            "ip": "172.26.144.124",
+            "interface": "lo",
+            "ip": "127.0.0.1",
             "port": 0,
             "version": 4,
             "protocol": "udp"
         },
         "fusion_ep": {
-            "interface": "eth0",
-            "ip": "172.26.144.124",
+            "interface": "lo",
+            "ip": "127.0.0.1",
             "port": 0,
             "version": 4,
             "protocol": "udp"

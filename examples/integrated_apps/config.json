@@ -1,8 +1,8 @@
 {
     "endpoints": {
         "rust_udp": {
-            "interface": "eth0",
-            "ip": "172.26.144.124",
+            "interface": "lo",
+            "ip": "127.0.0.1",
             "version": 4,
             "port": 0,
             "protocol": "udp"
@@ -22,15 +22,15 @@
             "protocol": "tcp"
         },
         "python_v4_tcp": {
-            "interface": "eth0",
-            "ip": "172.26.144.124",
+            "interface": "lo",
+            "ip": "127.0.0.1",
             "version": 4,
             "port": 0,
             "protocol": "tcp"
         },
         "cpp_udp": {
-            "interface": "eth0",
-            "ip": "172.26.144.124",
+            "interface": "lo",
+            "ip": "127.0.0.1",
             "version": 4,
             "port": 0,
             "protocol": "udp"
