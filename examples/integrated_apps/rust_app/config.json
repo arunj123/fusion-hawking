@@ -1,0 +1,220 @@
+{
+    "endpoints": {
+        "rust_udp": {
+            "interface": "lo",
+            "ip": "127.0.0.1",
+            "version": 4,
+            "port": 0,
+            "protocol": "udp"
+        },
+        "rust_tcp": {
+            "interface": "lo",
+            "ip": "::1",
+            "version": 6,
+            "port": 0,
+            "protocol": "tcp"
+        },
+        "python_tcp": {
+            "interface": "lo",
+            "ip": "::1",
+            "version": 6,
+            "port": 0,
+            "protocol": "tcp"
+        },
+        "python_v4_tcp": {
+            "interface": "lo",
+            "ip": "127.0.0.1",
+            "version": 4,
+            "port": 0,
+            "protocol": "tcp"
+        },
+        "cpp_udp": {
+            "interface": "lo",
+            "ip": "127.0.0.1",
+            "version": 4,
+            "port": 0,
+            "protocol": "udp"
+        },
+        "sd_multicast_v4": {
+            "interface": "lo",
+            "ip": "224.0.0.1",
+            "port": 30690,
+            "version": 4,
+            "protocol": "udp"
+        },
+        "sd_multicast_v6": {
+            "interface": "lo",
+            "ip": "FF02::4:C",
+            "port": 31690,
+            "version": 6,
+            "protocol": "udp"
+        }
+    },
+    "instances": {
+        "rust_app_instance": {
+            "providing": {
+                "math-service": {
+                    "service_id": 4097,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "minor_version": 0,
+                    "endpoint": "rust_udp"
+                },
+                "eco-service": {
+                    "service_id": 4098,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "minor_version": 0,
+                    "endpoint": "rust_tcp"
+                },
+                "complex-service": {
+                    "service_id": 16385,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "minor_version": 0,
+                    "endpoint": "rust_udp"
+                }
+            },
+            "required": {
+                "math-client-v2": {
+                    "service_id": 4097,
+                    "instance_id": 3,
+                    "major_version": 2,
+                    "endpoint": "python_tcp"
+                },
+                "math-client-v1-inst2": {
+                    "service_id": 4097,
+                    "instance_id": 2,
+                    "major_version": 1,
+                    "endpoint": "cpp_udp"
+                },
+                "sort-client": {
+                    "service_id": 12289,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "endpoint": "cpp_udp"
+                },
+                "diag-client": {
+                    "service_id": 20481,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "endpoint": "python_tcp"
+                },
+                "string-client": {
+                    "service_id": 8193,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "endpoint": "python_tcp"
+                }
+            },
+            "sd": {
+                "multicast_endpoint": "sd_multicast_v4",
+                "multicast_endpoint_v6": "sd_multicast_v6"
+            }
+        },
+        "python_app_instance": {
+            "providing": {
+                "string-service": {
+                    "service_id": 8193,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "minor_version": 0,
+                    "endpoint": "python_tcp"
+                },
+                "diagnostic-service": {
+                    "service_id": 20481,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "minor_version": 0,
+                    "endpoint": "python_tcp"
+                },
+                "math-service": {
+                    "service_id": 4097,
+                    "instance_id": 3,
+                    "major_version": 2,
+                    "minor_version": 0,
+                    "endpoint": "python_tcp"
+                }
+            },
+            "required": {
+                "math-client": {
+                    "service_id": 4097,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "endpoint": "rust_udp"
+                },
+                "eco-client": {
+                    "service_id": 4098,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "endpoint": "rust_tcp"
+                },
+                "complex-client": {
+                    "service_id": 16385,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "endpoint": "rust_udp"
+                },
+                "sort-client": {
+                    "service_id": 12289,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "endpoint": "cpp_udp"
+                },
+                "sensor-client": {
+                    "service_id": 24577,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "endpoint": "cpp_udp"
+                }
+            },
+            "sd": {
+                "multicast_endpoint": "sd_multicast_v4",
+                "multicast_endpoint_v6": "sd_multicast_v6"
+            }
+        },
+        "cpp_app_instance": {
+            "providing": {
+                "sort-service": {
+                    "service_id": 12289,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "minor_version": 0,
+                    "endpoint": "cpp_udp"
+                },
+                "sensor-service": {
+                    "service_id": 24577,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "minor_version": 0,
+                    "endpoint": "cpp_udp"
+                },
+                "math-service": {
+                    "service_id": 4097,
+                    "instance_id": 2,
+                    "major_version": 1,
+                    "minor_version": 0,
+                    "endpoint": "cpp_udp"
+                }
+            },
+            "required": {
+                "math-client": {
+                    "service_id": 4097,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "endpoint": "rust_udp"
+                },
+                "string-client": {
+                    "service_id": 8193,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "endpoint": "python_tcp"
+                }
+            },
+            "sd": {
+                "multicast_endpoint": "sd_multicast_v4",
+                "multicast_endpoint_v6": "sd_multicast_v6"
+            }
+        }
+    }
+}

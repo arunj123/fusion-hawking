@@ -49,6 +49,7 @@ class SomeIpRuntime {
     uint16_t sd_multicast_port = 30490;
     std::string sd_multicast_ip_v6 = "";
     uint16_t sd_multicast_port_v6 = 30490;
+    unsigned int sd_if_index = 0;
 
 public:
     SomeIpRuntime(const std::string& config_path, const std::string& instance_name, std::shared_ptr<ILogger> logger = nullptr);

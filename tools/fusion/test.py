@@ -127,7 +127,8 @@ class Tester:
         with open(self.reporter.get_log_path("test_python_pytest"), "w") as f:
              # Check if pytest is installed
              try:
-                 pytest_cmd = ["python", "-m", "pytest", "tests/test_cross_language.py"]
+                 # Run pytest on the whole tests/ directory to catch all issues, not just cross_language
+                 pytest_cmd = ["python", "-m", "pytest", "tests/"]
                  f.write(f"=== FUSION PYTEST ===\nCommand: {' '.join(pytest_cmd)}\nPWD: {os.getcwd()}\nEnvironment [PYTHONPATH]: {env['PYTHONPATH']}\n=====================\n\n")
                  f.flush()
                  if subprocess.call(pytest_cmd, stdout=f, stderr=subprocess.STDOUT, env=env) == 0:
@@ -161,6 +162,10 @@ class Tester:
                  })
              except Exception as e:
                  results["python_integration"] = f"SKIPPED (pytest error: {e})"
+
+             except Exception as e:
+                 results["python_integration"] = f"SKIPPED (pytest error: {e})"
+
         return results
 
     def _run_cpp_tests(self):
@@ -307,6 +312,103 @@ class Tester:
             results.update(pubsub_result)
             results.setdefault("steps", []).extend(pubsub_steps)
 
+        # 4. someipy Demo (someipy Service -> Fusion Clients)
+        if demo_filter in ["all", "someipy"]:
+            print("\nRunning someipy Interop Demo...")
+            someipy_res = self._run_someipy_demo()
+            
+            someipy_steps = someipy_res.pop("steps", [])
+            results.update(someipy_res)
+            results.setdefault("steps", []).extend(someipy_steps)
+
+        return results
+
+    def _run_someipy_demo(self):
+        """Run the someipy interop demo."""
+        results = {"steps": []}
+        log_path = self.reporter.get_log_path("demo_someipy")
+        
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.pathsep.join(["src/python", "build", "build/generated/python"])
+        
+        demo_dir = "examples/someipy_demo"
+        procs = []
+        
+        try:
+            with open(log_path, "w") as log:
+                log.write("=== FUSION SOMEIPY INTEROP DEMO ===\n")
+                log.flush()
+                
+                # 1. Start Daemon
+                print("  Starting someipy daemon...")
+                p_daemon = subprocess.Popen(["python", "-u", "start_daemon.py"], stdout=log, stderr=subprocess.STDOUT, cwd=demo_dir)
+                procs.append(p_daemon)
+                time.sleep(2)
+                
+                # 2. Start Service
+                print("  Starting someipy service...")
+                p_service = subprocess.Popen(["python", "-u", "service_someipy.py"], stdout=log, stderr=subprocess.STDOUT, cwd=demo_dir)
+                procs.append(p_service)
+                time.sleep(3)
+                
+                # 3. Run Fusion Python Client
+                print("  Running Fusion Python Client...")
+                client_res = subprocess.run(["python", "-u", "client_fusion.py"], stdout=log, stderr=subprocess.STDOUT, cwd=demo_dir, env=env)
+                
+                # 4. Run Fusion Rust Client
+                print("  Running Fusion Rust Client...")
+                # Binary is expected at target/debug/someipy_client.exe or similar
+                rust_bin = os.path.abspath(os.path.join("target", "debug", "someipy_client"))
+                if os.name == 'nt': rust_bin += ".exe"
+                
+                if os.path.exists(rust_bin):
+                    subprocess.run([rust_bin], stdout=log, stderr=subprocess.STDOUT, cwd=demo_dir)
+                else:
+                    log.write(f"\n[WARN] Rust client not found at {rust_bin}. Skipping.\n")
+                
+                # 5. Run Fusion C++ Client
+                print("  Running Fusion C++ Client...")
+                cpp_bin = self._get_cpp_binary_path("client_fusion")
+                if cpp_bin:
+                    subprocess.run([os.path.abspath(cpp_bin)], stdout=log, stderr=subprocess.STDOUT, cwd=demo_dir)
+                else:
+                    log.write("\n[WARN] C++ client not found. Skipping.\n")
+
+            # Verify Logs
+            with open(log_path, "r", errors="ignore") as f:
+                content = f.read()
+            
+            patterns = [
+                ("[someipy Service] Offering Service 0x1234:0x0001", "someipy Service Startup"),
+                ("Got Response: 'Hello from Fusion Python!'", "Python -> someipy Interop"),
+                ("Got Response: 'Hello from Fusion Rust!'", "Rust -> someipy Interop"),
+                ("Got Response: 'Hello from Fusion C++!'", "C++ -> someipy Interop")
+            ]
+            
+            for pattern, desc in patterns:
+                found = pattern in content
+                results["steps"].append({
+                    "name": f"someipy Demo: {desc}",
+                    "status": "PASS" if found else "FAIL",
+                    "log": "demo_someipy",
+                    "details": f"Checked log for '{pattern}'"
+                })
+            
+            pass_count = sum(1 for s in results["steps"] if s["status"] == "PASS")
+            # We allow Rust/C++ skip if not built, but Python must pass
+            if "Got Response: 'Hello from Fusion Python!'" in content:
+                results["someipy_demo"] = "PASS"
+            else:
+                results["someipy_demo"] = "FAIL"
+
+        except Exception as e:
+            print(f"Error running someipy demo: {e}")
+            results["someipy_demo"] = "ERROR"
+        finally:
+            for p in procs:
+                p.kill()
+                p.wait()
+                
         return results
 
     def _run_automotive_pubsub_demo(self):

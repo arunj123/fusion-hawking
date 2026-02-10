@@ -27,9 +27,15 @@ target_include_directories(fusion_hawking_cpp PUBLIC
 # 2. Simple No-SD Demos
 add_executable(simple_server_cpp examples/simple_no_sd/cpp/server.cpp)
 add_executable(simple_client_cpp examples/simple_no_sd/cpp/client.cpp)
+
+# 2.5 someipy Demo Client
+add_executable(client_fusion examples/someipy_demo/client_fusion.cpp)
+target_link_libraries(client_fusion fusion_hawking_cpp)
+
 if(WIN32)
     target_link_libraries(simple_server_cpp ws2_32)
     target_link_libraries(simple_client_cpp ws2_32)
+    target_link_libraries(client_fusion ws2_32)
 endif()
 
 # 3. Integrated App Demo (Required for CI Artifacts)
@@ -41,6 +47,9 @@ target_link_libraries(cpp_test fusion_hawking_cpp)
 
 add_executable(tcp_server_test tests/tcp_server_test.cpp)
 target_link_libraries(tcp_server_test fusion_hawking_cpp)
+
+add_executable(sd_golden_test tests/sd_golden_test.cpp)
+target_link_libraries(sd_golden_test fusion_hawking_cpp)
 
 if(WIN32)
     target_link_libraries(fusion_hawking_cpp ws2_32)

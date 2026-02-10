@@ -5,3 +5,4 @@
 pytest
 pytest-cov
 plantuml>=0.3.0
+scapy

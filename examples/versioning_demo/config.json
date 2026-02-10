@@ -1,0 +1,65 @@
+{
+    "endpoints": {
+        "server_ep": {
+            "ip": "127.0.0.1",
+            "port": 0,
+            "protocol": "udp",
+            "interface": "lo",
+            "version": 4
+        },
+        "sd_multicast": {
+            "ip": "224.0.0.4",
+            "port": 30695,
+            "protocol": "udp",
+            "interface": "lo",
+            "version": 4
+        }
+    },
+    "instances": {
+        "server_v1": {
+            "providing": {
+                "service_v1": {
+                    "service_id": 8192,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "endpoint": "server_ep"
+                }
+            },
+            "sd": {
+                "multicast_endpoint": "sd_multicast"
+            }
+        },
+        "server_v2": {
+            "providing": {
+                "service_v2": {
+                    "service_id": 8192,
+                    "instance_id": 1,
+                    "major_version": 2,
+                    "endpoint": "server_ep"
+                }
+            },
+            "sd": {
+                "multicast_endpoint": "sd_multicast"
+            }
+        },
+        "client": {
+            "required": {
+                "service_v1": {
+                    "service_id": 8192,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "endpoint": "server_ep"
+                },
+                "service_v2": {
+                    "service_id": 8192,
+                    "instance_id": 1,
+                    "major_version": 2,
+                    "endpoint": "server_ep"
+                }
+            },
+            "sd": {
+                "multicast_endpoint": "sd_multicast"
+            }
+        }
+    }
+}

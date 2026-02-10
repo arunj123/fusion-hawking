@@ -30,8 +30,16 @@ def test_tcp_transport_cpp_server():
         os.path.abspath("build_cpp_debug/tcp_server_test") # Legacy
     ]
     
+    import platform
+    is_windows = platform.system() == "Windows"
+    
     server_exe = None
     for p in possible_paths:
+        if is_windows and "build_wsl" in p:
+            continue
+        if is_windows and not p.lower().endswith(".exe"):
+            continue
+            
         if os.path.exists(p):
             server_exe = p
             break
@@ -54,7 +62,8 @@ def test_tcp_transport_cpp_server():
         # Wait for SD discovery
         service_found = False
         for _ in range(50):
-            if 4097 in rt.remote_services:
+            # rt.remote_services keys are (service_id, major_version)
+            if any(k[0] == 4097 for k in rt.remote_services.keys()):
                 service_found = True
                 break
             time.sleep(0.1)
@@ -62,10 +71,13 @@ def test_tcp_transport_cpp_server():
         assert service_found, "Service 4097 not discovered over TCP/SD"
         
         # Send Request
-        target_addr = rt.remote_services[4097]
+        # Find the specific key for 4097
+        service_key = next(k for k in rt.remote_services.keys() if k[0] == 4097)
+        target_addr = rt.remote_services[service_key]
         print(f"[Python Client] Discovered service 4097 at {target_addr}")
         payload = bytes([0, 0, 0, 10, 0, 0, 0, 20]) # 10 + 20
-        response = rt.send_request(4097, 1, payload, target_addr, wait_for_response=True)
+        # send_request(service_id, method_id, payload, endpoint, wait_for_response)
+        response = rt.send_request(service_key[0], 1, payload, target_addr, wait_for_response=True)
         
         if response is None:
              print("[Python Client] ERROR: send_request returned None")

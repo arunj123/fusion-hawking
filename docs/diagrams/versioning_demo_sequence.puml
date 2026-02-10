@@ -1,0 +1,28 @@
+@startuml versioning_demo_sequence
+participant "Client" as Client
+participant "Server V1" as S1
+participant "Server V2" as S2
+
+== Startup ==
+S1 -> Network : Offer Service (ID:0x2000, Ver:1.0)
+S2 -> Network : Offer Service (ID:0x2000, Ver:2.0)
+
+== Discovery V1 ==
+Client -> Network : Find Service (ID:0x2000, Major:1)
+S1 -> Client : Offer Service (ID:0x2000, Ver:1.0)
+Client -> Client : Connect to S1
+
+== Interaction V1 ==
+Client -> S1 : Call Method V1 (x)
+S1 -> Client : Result (x+1)
+
+== Discovery V2 ==
+Client -> Network : Find Service (ID:0x2000, Major:2)
+S2 -> Client : Offer Service (ID:0x2000, Ver:2.0)
+Client -> Client : Connect to S2
+
+== Interaction V2 ==
+Client -> S2 : Call Method V2 (x, y)
+S2 -> Client : Result (x+y)
+
+@enduml

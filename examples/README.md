@@ -15,10 +15,11 @@ examples/
 │   ├── rust_app/
 │   ├── python_app/
 │   └── cpp_app/
-└── automotive_pubsub/         # 4. Automotive Pub-Sub Pattern
-    ├── cpp_radar/      # Publisher (C++)
-    ├── rust_fusion/    # Subscriber + Publisher (Rust)
-    └── python_adas/    # Subscriber (Python)
+├── automotive_pubsub/         # 4. Automotive Pub-Sub Pattern
+│   ├── cpp_radar/      # Publisher (C++)
+│   ├── rust_fusion/    # Subscriber + Publisher (Rust)
+│   └── python_adas/    # Subscriber (Python)
+└── someipy_demo/       # 5. External Interop (someipy)
 ```
 
 ---
@@ -113,6 +114,40 @@ This example shows a realistic automotive data flow:
 - `SendNotification()` to publish events
 
 See [automotive_pubsub/README.md](automotive_pubsub/README.md) for detailed instructions.
+
+---
+
+## 5. External Interop (`someipy_demo/`)
+**Purpose**: To demonstrate interoperability between the Fusion Hawking stack and external SOME/IP implementations.
+This example uses the `someipy` Python library as an external service provider:
+- **someipy Service**: Provides an `Echo` method (0x1234:0x0001).
+- **Fusion Clients**: C++, Rust, and Python clients connect to the `someipy` service.
+
+**Key Concepts**:
+- Cross-implementation discovery.
+- Port isolation for standard-compliant interop.
+- Using third-party libraries without project-level modifications.
+
+See [someipy_demo/README.md](someipy_demo/README.md) for detailed instructions.
+
+---
+
+## 6. Versioning Demo (`versioning_demo/`)
+**Purpose**: To demonstrate support for multiple versions of the same service running simultaneously.
+- **Server V1**: Offers `IVersionedService` v1 (0x2000, Major 1).
+- **Server V2**: Offers `IVersionedService` v2 (0x2000, Major 2).
+- **Client**: Connects to both versions simultaneously using `(ServiceId, MajorVersion)` lookup.
+
+**Key Concepts**:
+- Runtime support for Major Versioning in Service Discovery.
+- Configuration-based version mapping.
+
+## 7. IDL Demo (`idl_demo.py`)
+**Purpose**: A standalone script to demonstrate the Code Generation and Serialization capabilities without running a full network stack.
+- Generates Python bindings from `examples/map_service.py`.
+- Demonstrates serialization/deserialization of complex nested structs.
+- Shows the conceptual Synchronous RPC pattern.
+
 
 ---
 

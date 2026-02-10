@@ -15,5 +15,11 @@
   "simple_no_sd_sequence": "5e85b71e662ec9e34823b9117571f1c6",
   "automotive_pubsub_architecture": "c7abc4a77a92eba096c8e29abaf2aba8",
   "automotive_pubsub_sequence": "aa215166ed45e267016cc294248d8b7d",
-  "automotive_pubsub_types": "be5d726f0463c776c755ee4052e80d89"
+  "automotive_pubsub_types": "be5d726f0463c776c755ee4052e80d89",
+  "integrated_apps_architecture": "606e38a8ee47b9435d9ee80508112d15",
+  "someipy_demo_sequence": "1b47b876ce994524223f8307ab37b1ed",
+  "versioning_demo_sequence": "e2d039182da12a0a534c37e551350abb",
+  "integrated_apps_workflow": "424e32a27cd51ec83c45e8c8b367be0c",
+  "someipy_demo_integration": "f57950db0d35ff500883640c0440c93b",
+  "versioning_demo_workflow": "3ede109636a805895a44337864cdf7b2"
 }

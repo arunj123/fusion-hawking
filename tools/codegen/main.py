@@ -12,6 +12,17 @@ def main():
     parser.add_argument("--output-dir", default="build/generated", help="Base output directory for generated code")
     args = parser.parse_args()
     
+    # 0. Validate IDs (if running from project root context)
+    try:
+        from tools.id_manager.manager import IDManager
+        print("Validating Service IDs...")
+        id_mgr = IDManager(os.getcwd())
+        # id_mgr.validate() returns True currently, but logs warnings. 
+        # Future strict mode could raise exception.
+        id_mgr.scan_ids() 
+    except ImportError:
+        print("Warning: tools.id_manager not found. Skipping ID validation.")
+
     all_structs = []
     all_services = []
     ast_parser = PythonASTParser()

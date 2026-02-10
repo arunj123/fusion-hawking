@@ -132,7 +132,7 @@ class PythonGenerator(AbstractGenerator):
                 runtime_lines.append(f"        req = {svc.name}{method_pascal}Request()")
                 for f in m.args:
                     runtime_lines.append(f"        req.{f.name} = {f.name}")
-                runtime_lines.append(f"        target = self.runtime.remote_services.get(self.SERVICE_ID)")
+                runtime_lines.append(f"        target = self.runtime.remote_services.get((self.SERVICE_ID, self.MAJOR_VERSION))")
                 runtime_lines.append(f"        if not target and self.runtime.config and 'required' in self.runtime.config:")
                 runtime_lines.append(f"            cfg = self.runtime.config['required'].get(self.alias)")
                 runtime_lines.append(f"            if cfg and 'static_ip' in cfg:")

@@ -95,11 +95,12 @@ class TestRuntimeDetailed(unittest.TestCase):
         someip_header = b'\x00' * 16 # Dummy header
         data = someip_header + sd_header + entry + opt_header + option
         
-        self.runtime._handle_sd_packet(data)
+        self.runtime._handle_sd_packet(data, ('127.0.0.1', 30490))
         
         # Verify
-        self.assertIn(0x1234, self.runtime.remote_services)
-        self.assertEqual(self.runtime.remote_services[0x1234], ("127.0.0.1", 9999, 'udp'))
+        # TTL was 0x00FFFFFF. Major Version = (TTL >> 24) & 0xFF = 0.
+        self.assertIn((0x1234, 0), self.runtime.remote_services)
+        self.assertEqual(self.runtime.remote_services[(0x1234, 0)], ("127.0.0.1", 9999, 'udp'))
 
     def test_subscribe_eventgroup_flow(self):
         # Test sending subscription
@@ -125,7 +126,7 @@ class TestRuntimeDetailed(unittest.TestCase):
         opt_header = struct.pack(">I", 0)
         packet = b'\x00' * 16 + sd_header + entry_ack + opt_header
         
-        self.runtime._handle_sd_packet(packet)
+        self.runtime._handle_sd_packet(packet, ('127.0.0.1', 30490))
         self.assertTrue(self.runtime.is_subscription_acked(0x1000, 5))
 
     def test_unsubscribe(self):

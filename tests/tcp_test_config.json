@@ -1,18 +1,18 @@
 {
     "endpoints": {
         "sd_multicast_v4": {
-            "interface": "lo",
-            "ip": "239.255.0.1",
+            "interface": "eth0",
+            "ip": "224.0.0.1",
             "port": 30690,
             "version": 4,
             "protocol": "udp"
         },
         "server_tcp": {
-            "ip": "127.0.0.1",
-            "port": 31200,
+            "ip": "172.26.144.124",
+            "port": 0,
             "version": 4,
             "protocol": "tcp",
-            "interface": "lo"
+            "interface": "eth0"
         }
     },
     "instances": {

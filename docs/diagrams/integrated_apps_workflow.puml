@@ -1,0 +1,59 @@
+@startuml integrated_apps_workflow
+skinparam componentStyle uml2
+
+package "Interface Definition" {
+    [interface.py] as IDL
+    note right of IDL
+        Defines:
+        - MathService
+        - StringService
+        - SortService
+        - Complex Types
+    end note
+}
+
+package "Code Generation" {
+    [tools/codegen/main.py] as CodeGen
+    [tools/fusion/build.py] as Builder
+}
+
+package "Generated Artifacts (build/generated)" {
+    folder "Python" {
+        [runtime.py] as PyGen
+        [bindings.py] as PyBindings
+    }
+    folder "C++" {
+        [fusion_hawking.h] as CppGen
+        [bindings.h] as CppBindings
+    }
+    folder "Rust" {
+        [mod.rs] as RustGen
+        [bindings.rs] as RustBindings
+    }
+}
+
+package "Applications" {
+    [Python App] as PyApp
+    [C++ App] as CppApp
+    [Rust App] as RustApp
+    
+    [config.json] as Config
+}
+
+' Build Flow
+IDL --> Builder : Included in Build
+Builder --> CodeGen : Invokes
+CodeGen --> PyGen : Generates
+CodeGen --> CppGen : Generates
+CodeGen --> RustGen : Generates
+
+' Usage Flow
+PyGen --> PyApp : Imported
+CppGen --> CppApp : Included
+RustGen --> RustApp : Used
+
+Config --> PyApp : Configures Instances
+Config --> CppApp : Configures Instances
+Config --> RustApp : Configures Instances
+
+@enduml

@@ -53,9 +53,14 @@ impl UdpTransport {
     
     pub fn set_multicast_if_v4(&self, interface: &Ipv4Addr) -> Result<()> {
         use socket2::SockRef;
-        
         let sock_ref = SockRef::from(&self.socket);
         sock_ref.set_multicast_if_v4(interface)
+    }
+
+    pub fn set_multicast_if_v6(&self, interface_index: u32) -> Result<()> {
+        use socket2::SockRef;
+        let sock_ref = SockRef::from(&self.socket);
+        sock_ref.set_multicast_if_v6(interface_index)
     }
     
     pub fn set_multicast_loop_v4(&self, val: bool) -> Result<()> {
@@ -64,6 +69,18 @@ impl UdpTransport {
 
     pub fn set_multicast_loop_v6(&self, val: bool) -> Result<()> {
         self.socket.set_multicast_loop_v6(val)
+    }
+
+    pub fn set_multicast_ttl_v4(&self, ttl: u32) -> Result<()> {
+        use socket2::SockRef;
+        let sock_ref = SockRef::from(&self.socket);
+        sock_ref.set_multicast_ttl_v4(ttl)
+    }
+
+    pub fn set_multicast_hops_v6(&self, hops: u32) -> Result<()> {
+        use socket2::SockRef;
+        let sock_ref = SockRef::from(&self.socket);
+        sock_ref.set_multicast_hops_v6(hops)
     }
 }
 

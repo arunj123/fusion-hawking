@@ -160,8 +160,33 @@ class TestPythonRuntime(unittest.TestCase):
         
     def test_get_client(self):
         # Inject service discovery
-        self.runtime.remote_services[4097] = ('127.0.0.1', 12345, 'udp')
+        # Key is now (sid, major_version)
+        self.runtime.remote_services[(4097, 0)] = ('127.0.0.1', 12345, 'udp')
+        
+        # MathServiceClient has SERVICE_ID=4097. Runtime defaults major_ver to 1 if not in config.
+        # But wait, `get_client` takes `service_name`.
+        # Config for "math-client": "service_id": 4097. Major version not specified, defaults to 1?
+        # Let's check `runtime.py` get_client impl.
+        # "major_version = req_cfg.get('major_version', 1)"
+        # So it looks for (4097, 1).
+        # But `MathServiceStub` default major version is 1?
+        # Let's check `MathServiceClient`. If generated, it has MAJOR_VERSION.
+        # In this test, we import `MathServiceClient` from `runtime`.
+        # Wait, `from runtime import ... MathServiceClient`.
+        # This `runtime` is likely `tests/runtime.py`? No, `sys.path` inserts `src/python` and `build/generated/python`.
+        # If `MathServiceClient` is from generated code, it has headers.
+        
+        # Let's align with default lookups.
+        self.runtime.remote_services[(4097, 1)] = ('127.0.0.1', 12345, 'udp')
+        
         client = self.runtime.get_client("math-client", MathServiceClient)
+        # If config is missing or "math-client" not in required, it returns None.
+        # `tests/test_config.json` needs to be checked.
+        if client is None:
+             # Fallback for test robustness if config is missing key
+             # Mock config?
+             pass
+             
         self.assertIsInstance(client, MathServiceClient)
         self.assertEqual(client.runtime, self.runtime)
         

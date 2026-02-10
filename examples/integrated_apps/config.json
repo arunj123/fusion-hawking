@@ -1,51 +1,51 @@
 {
     "endpoints": {
         "rust_udp": {
-            "interface": "lo",
-            "ip": "127.0.0.1",
+            "interface": "eth0",
+            "ip": "172.26.144.124",
             "version": 4,
-            "port": 30701,
+            "port": 0,
             "protocol": "udp"
         },
         "rust_tcp": {
             "interface": "lo",
             "ip": "::1",
             "version": 6,
-            "port": 30702,
+            "port": 0,
             "protocol": "tcp"
         },
         "python_tcp": {
             "interface": "lo",
             "ip": "::1",
             "version": 6,
-            "port": 30710,
+            "port": 0,
             "protocol": "tcp"
         },
         "python_v4_tcp": {
-            "interface": "lo",
-            "ip": "127.0.0.1",
+            "interface": "eth0",
+            "ip": "172.26.144.124",
             "version": 4,
-            "port": 30710,
+            "port": 0,
             "protocol": "tcp"
         },
         "cpp_udp": {
-            "interface": "lo",
-            "ip": "127.0.0.1",
+            "interface": "eth0",
+            "ip": "172.26.144.124",
             "version": 4,
-            "port": 30712,
+            "port": 0,
             "protocol": "udp"
         },
         "sd_multicast_v4": {
-            "interface": "lo",
+            "interface": "eth0",
             "ip": "224.0.0.1",
             "port": 30690,
             "version": 4,
             "protocol": "udp"
         },
         "sd_multicast_v6": {
-            "interface": "lo",
+            "interface": "eth0",
             "ip": "FF02::4:C",
-            "port": 30690,
+            "port": 31690,
             "version": 6,
             "protocol": "udp"
         }
@@ -109,7 +109,8 @@
             },
             "sd": {
                 "multicast_endpoint": "sd_multicast_v4",
-                "multicast_endpoint_v6": "sd_multicast_v6"
+                "multicast_endpoint_v6": "sd_multicast_v6",
+                "multicast_hops": 1
             }
         },
         "python_app_instance": {
@@ -170,7 +171,8 @@
             },
             "sd": {
                 "multicast_endpoint": "sd_multicast_v4",
-                "multicast_endpoint_v6": "sd_multicast_v6"
+                "multicast_endpoint_v6": "sd_multicast_v6",
+                "multicast_hops": 1
             }
         },
         "cpp_app_instance": {
@@ -213,7 +215,8 @@
             },
             "sd": {
                 "multicast_endpoint": "sd_multicast_v4",
-                "multicast_endpoint_v6": "sd_multicast_v6"
+                "multicast_endpoint_v6": "sd_multicast_v6",
+                "multicast_hops": 1
             }
         }
     }

@@ -163,8 +163,8 @@ def validate_config(data: Dict[str, Any]) -> List[str]:
                 errors.append(f"Endpoint '{ep_name}' has invalid IP: '{ep_cfg['ip']}'")
 
     # Trackers for global conflict detection
-    # (service_id, instance_id) -> list of instance_names providing it
-    provided_services: Dict[Tuple[int, int], List[str]] = collections.defaultdict(list)
+    # (service_id, instance_id, major_version) -> list of instance_names providing it
+    provided_services: Dict[Tuple[int, int, int], List[str]] = collections.defaultdict(list)
     
     # (ip, port, protocol) -> list of usage descriptions (instance:service)
     used_ports: Dict[Tuple[str, int, str], List[str]] = collections.defaultdict(list)
@@ -178,9 +178,10 @@ def validate_config(data: Dict[str, Any]) -> List[str]:
             for svc_name, svc_cfg in inst_cfg["providing"].items():
                 sid = svc_cfg.get("service_id")
                 iid = svc_cfg.get("instance_id", 1) 
+                major = svc_cfg.get("major_version", 0)
                 
                 # Check for duplicates
-                provided_services[(sid, iid)].append(f"{inst_name}:{svc_name}")
+                provided_services[(sid, iid, major)].append(f"{inst_name}:{svc_name}")
                 
                 # Resolve Endpoint
                 resolved_ip = inst_ip
@@ -208,10 +209,10 @@ def validate_config(data: Dict[str, Any]) -> List[str]:
                     used_ports[(resolved_ip, resolved_port, resolved_proto)].append(f"{inst_name}:{svc_name}")
 
     # Analyze Global Conflicts
-    for (sid, iid), providers in provided_services.items():
+    for (sid, iid, major), providers in provided_services.items():
         if len(providers) > 1:
-            if not f"Duplicate Service (ID: {sid}, Instance: {iid})" in errors: # Avoid spam
-                 errors.append(f"Duplicate Service (ID: {sid}, Instance: {iid}) provided by: {', '.join(providers)}")
+            if not f"Duplicate Service (ID: {sid}, Instance: {iid}, Major: {major})" in errors: # Avoid spam
+                 errors.append(f"Duplicate Service (ID: {sid}, Instance: {iid}, Major: {major}) provided by: {', '.join(providers)}")
             
     for (ip, port, proto), users in used_ports.items():
         # Check if users are from different instances
@@ -246,10 +247,10 @@ if __name__ == "__main__":
                 print(f" - {e}")
             sys.exit(1)
         else:
-            print("Configuration is valid.")
+            print(f"Configuration '{args.config_file}' is valid.")
             sys.exit(0)
     except json.JSONDecodeError as e:
-        print(f"Invalid JSON format: {e}")
+        print(f"Invalid JSON format in {args.config_file}: {e}")
         sys.exit(1)
     except Exception as e:
         print(f"Failed to load or validate config: {e}")

@@ -1,0 +1,43 @@
+@startuml versioning_demo_workflow
+skinparam componentStyle uml2
+
+package "Interface Definition" {
+    [examples/versioning_demo/interface.py] as IDL
+    note right of IDL
+        Defines:
+        - IVersionedService_v1 (Major 1)
+        - IVersionedService_v2 (Major 2)
+    end note
+}
+
+package "Build System" {
+    [tools/fusion/build.py] as Builder
+    [tools/codegen/main.py] as CodeGen
+}
+
+package "Generated Code (build/generated/python)" {
+    [runtime.py] as Runtime
+    note right of Runtime
+        Contains:
+        - IVersionedService_v1Stub
+        - IVersionedService_v1Client
+        - IVersionedService_v2Stub
+        - IVersionedService_v2Client
+    end note
+}
+
+package "Runtime Execution" {
+    [run.py] as Runner
+    [config.json] as Config
+}
+
+' Flow
+IDL --> Builder : Registered
+Builder --> CodeGen : Processed
+CodeGen --> Runtime : Generated
+
+Runtime --> Runner : Imported
+Config --> Runner : Configures
+Runner --> Runner : Instantiates Stubs & Clients
+
+@enduml

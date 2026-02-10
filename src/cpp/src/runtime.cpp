@@ -4,18 +4,69 @@
 
 #ifdef _WIN32
 #include <ws2tcpip.h>
+#include <iphlpapi.h>
+#include <netioapi.h>
 #pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "iphlpapi.lib")
 #define SOCKLEN_T int
 #define closesocket closesocket
 #else
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <net/if.h>
 #define closesocket close
 #define SOCKLEN_T socklen_t
 #endif
 
 namespace fusion_hawking {
+
+// Helper for Windows Interface Resolution
+static unsigned int ResolveInterfaceIndex(const std::string& name) {
+    // Try standard name to index first
+    unsigned int idx = if_nametoindex(name.c_str());
+    if (idx != 0) return idx;
+
+#ifdef _WIN32
+    // Try friendly name resolution using GetAdaptersAddresses
+    ULONG outBufLen = 15000;
+    PIP_ADAPTER_ADDRESSES pAddresses = (PIP_ADAPTER_ADDRESSES)malloc(outBufLen);
+    if (pAddresses == NULL) return 0;
+
+    ULONG ret = GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, NULL, pAddresses, &outBufLen);
+    if (ret == ERROR_BUFFER_OVERFLOW) {
+        free(pAddresses);
+        pAddresses = (PIP_ADAPTER_ADDRESSES)malloc(outBufLen);
+        if (pAddresses == NULL) return 0;
+        ret = GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, NULL, pAddresses, &outBufLen);
+    }
+
+    if (ret == NO_ERROR) {
+        PIP_ADAPTER_ADDRESSES pCurrAddresses = pAddresses;
+        while (pCurrAddresses) {
+            if (pCurrAddresses->FriendlyName) {
+                // Convert FriendlyName (PWCHAR) to something comparable
+                // Simple ASCII->Wide conversion for target name since "Wi-Fi" is ASCII
+                std::wstring friendlyName(pCurrAddresses->FriendlyName);
+                std::wstring targetName(name.begin(), name.end()); 
+                
+                // Case-insensitive comparison could be better but exact match usually fine for "Wi-Fi"
+                if (friendlyName == targetName) {
+                     // Return Ipv6IfIndex if we are likely in IPv6 context context
+                     // But if_nametoindex returns the generic one. 
+                     // We'll prefer Ipv6IfIndex if available and non-zero, else IfIndex
+                     idx = pCurrAddresses->Ipv6IfIndex;
+                     if (idx == 0) idx = pCurrAddresses->IfIndex;
+                     break;
+                }
+            }
+            pCurrAddresses = pCurrAddresses->Next;
+        }
+    }
+    if (pAddresses) free(pAddresses);
+#endif
+    return idx;
+}
 
 SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& instance_name, std::shared_ptr<ILogger> logger) {
     if (logger) this->logger = logger;
@@ -32,6 +83,13 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
              interface_name = ep.iface;
              protocol = ep.protocol;
              for (char &c : protocol) c = std::tolower(c);
+        }
+    } else if (!config.required.empty()) {
+        const auto& first_req = config.required.begin()->second;
+        if (!first_req.endpoint.empty() && config.endpoints.count(first_req.endpoint)) {
+             const auto& ep = config.endpoints.at(first_req.endpoint);
+             interface_name = ep.iface;
+             // Unicast port 0 for clients by default if no protocol-specific bind needed
         }
     }
 
@@ -82,7 +140,7 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
 
     sockaddr_in addr = {0};
     addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    addr.sin_addr.s_addr = inet_addr(this->config.ip.c_str());
     addr.sin_port = htons(port);
     if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
         addr.sin_port = 0;
@@ -128,10 +186,10 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
 
         sockaddr_in t_addr = {0};
         t_addr.sin_family = AF_INET;
-        t_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+        t_addr.sin_addr.s_addr = inet_addr(this->config.ip.c_str());
         t_addr.sin_port = htons(this->port);
         if (bind(tcp_listener, (struct sockaddr*)&t_addr, sizeof(t_addr)) == SOCKET_ERROR) {
-             this->logger->Log(LogLevel::WARN, "Runtime", "Failed to bind TCP listener (IPv4)");
+             this->logger->Log(LogLevel::WARN, "Runtime", "Failed to bind TCP listener (IPv4) err=" + std::to_string(WSAGetLastError()));
         }
         listen(tcp_listener, 5);
 
@@ -149,7 +207,7 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
 
             sockaddr_in6 t_addr6 = {0};
             t_addr6.sin6_family = AF_INET6;
-            t_addr6.sin6_addr = in6addr_any;
+            inet_pton(AF_INET6, this->config.ip_v6.c_str(), &t_addr6.sin6_addr);
             t_addr6.sin6_port = htons(this->port);
             if (bind(tcp_listener_v6, (struct sockaddr*)&t_addr6, sizeof(t_addr6)) == SOCKET_ERROR) {
                 this->logger->Log(LogLevel::WARN, "Runtime", "Failed to bind TCP listener (IPv6)");
@@ -204,14 +262,15 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
     mreq.imr_multiaddr.s_addr = inet_addr(this->sd_multicast_ip.c_str());
     mreq.imr_interface.s_addr = inet_addr(config.ip.c_str());
     if (setsockopt(sd_sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, (const char*)&mreq, sizeof(mreq)) < 0) {
-        mreq.imr_interface.s_addr = htonl(INADDR_ANY);
-        setsockopt(sd_sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, (const char*)&mreq, sizeof(mreq));
+        this->logger->Log(LogLevel::ERR, "Runtime", "Failed to join SD multicast membership on " + config.ip);
     }
     in_addr if_addr;
-    if_addr.s_addr = inet_addr(config.ip.c_str());
+    if_addr.s_addr = inet_addr(this->config.ip.c_str());
     setsockopt(sd_sock, IPPROTO_IP, IP_MULTICAST_IF, (const char*)&if_addr, sizeof(if_addr));
     int loop = 1;
     setsockopt(sd_sock, IPPROTO_IP, IP_MULTICAST_LOOP, (const char*)&loop, sizeof(loop));
+    int ttl = (int)config.sd.multicast_hops;
+    setsockopt(sd_sock, IPPROTO_IP, IP_MULTICAST_TTL, (const char*)&ttl, sizeof(ttl));
 
     if (!config.sd_multicast_endpoint_v6.empty() && config.endpoints.count(config.sd_multicast_endpoint_v6)) {
         const auto& ep = config.endpoints.at(config.sd_multicast_endpoint_v6);
@@ -247,13 +306,33 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
             this->logger->Log(LogLevel::ERR, "Runtime", "Failed to bind SD socket (IPv6) to port " + std::to_string(this->sd_multicast_port_v6));
         }
         
+        unsigned int if_index = 0;
+        if (!sd_interface.empty()) {
+            if_index = ResolveInterfaceIndex(sd_interface);
+            this->logger->Log(LogLevel::INFO, "Runtime", "Resolved interface '" + sd_interface + "' to index " + std::to_string(if_index));
+            
+            // On Windows, loopback might not be resolved by GetAdaptersAddresses with "lo"
+            if (if_index == 0 && (sd_interface == "lo" || sd_interface == "Loopback Pseudo-Interface 1")) if_index = 1;
+        }
+        
+        this->sd_if_index = if_index;
+        
+        if (if_index != 0) {
+            if (setsockopt(sd_sock_v6, IPPROTO_IPV6, IPV6_MULTICAST_IF, (const char*)&if_index, sizeof(if_index)) < 0) {
+                this->logger->Log(LogLevel::WARN, "Runtime", "Failed to set IPV6_MULTICAST_IF to index " + std::to_string(if_index) + " err=" + std::to_string(WSAGetLastError()));
+            }
+        }
+        
         ipv6_mreq mreq6;
         inet_pton(AF_INET6, this->sd_multicast_ip_v6.c_str(), &mreq6.ipv6mr_multiaddr);
-        mreq6.ipv6mr_interface = 0; // Default interface
+        mreq6.ipv6mr_interface = if_index; 
         if (setsockopt(sd_sock_v6, IPPROTO_IPV6, IPV6_JOIN_GROUP, (const char*)&mreq6, sizeof(mreq6)) < 0) {
-            this->logger->Log(LogLevel::WARN, "Runtime", "Failed to join IPv6 multicast group " + this->sd_multicast_ip_v6);
+            this->logger->Log(LogLevel::WARN, "Runtime", "Failed to join IPv6 multicast group " + this->sd_multicast_ip_v6 + " err=" + std::to_string(WSAGetLastError()));
         }
-        setsockopt(sd_sock_v6, IPPROTO_IPV6, IP_MULTICAST_LOOP, (const char*)&loop, sizeof(loop));
+
+        int hops = (int)config.sd.multicast_hops;
+        setsockopt(sd_sock_v6, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, (const char*)&hops, sizeof(hops));
+        setsockopt(sd_sock_v6, IPPROTO_IPV6, IPV6_MULTICAST_LOOP, (const char*)&loop, sizeof(loop));
     }
 
     // --- Set Non-Blocking ---
@@ -303,6 +382,7 @@ void SomeIpRuntime::offer_service(const std::string& alias, RequestHandler* impl
             const auto& ep = config.endpoints.at(svc.endpoint);
             ep_ip = ep.ip;
             svc_port = ep.port;
+            if (svc_port == 0) svc_port = this->port;
             svc_proto = ep.protocol;
             if (ep.version == 6) ep_ip6 = ep.ip;
         }
@@ -403,12 +483,20 @@ void SomeIpRuntime::SendOffer(uint16_t service_id, uint16_t instance_id, uint8_t
         sd_payload.push_back(minor & 0xFF);
         
         sd_payload.push_back(0x00); sd_payload.push_back(0x00); sd_payload.push_back(0x00); 
-        sd_payload.push_back(ipv6 ? 24 : 12); // Length of options
+        sd_payload.push_back(ipv6 ? 24 : 12); // Length of options: IPv6=22+2(pad? no, 2 options header?) Wait. 
+        // Option Array Length:
+        // IPv4: 1 Option (12 bytes) -> OptArrayLen = 12. Correct.
+        // IPv6: 1 Option (24 bytes? No. 22 payload + ?).
+        // Option structure: [Len:2][Type:1][Res:1]...
+        // Total bytes = 2+1+1 + data.
+        // If Len=10 (IPv4): 2+10 = 12 bytes.
+        // If Len=22 (IPv6): 2+22 = 24 bytes.
+        // So IPv6 Option Array Len = 24. Correct.
         
         uint8_t proto_id = (protocol == "tcp") ? 0x06 : 0x11;
 
-        if (!ipv6) {
-            sd_payload.push_back(0x00); sd_payload.push_back(0x09); sd_payload.push_back(0x04); sd_payload.push_back(0x00);
+        if (!ipv6 || endpoint_ip_v6.empty()) {
+            sd_payload.push_back(0x00); sd_payload.push_back(0x0A); sd_payload.push_back(0x04); sd_payload.push_back(0x00);
             std::string ip_str = endpoint_ip.empty() ? config.ip : endpoint_ip;
             uint32_t endpoint_ip_int = ntohl(inet_addr(ip_str.c_str()));
             sd_payload.push_back((endpoint_ip_int >> 24) & 0xFF);
@@ -418,7 +506,7 @@ void SomeIpRuntime::SendOffer(uint16_t service_id, uint16_t instance_id, uint8_t
             sd_payload.push_back(0x00); sd_payload.push_back(proto_id);
             sd_payload.push_back((port >> 8) & 0xFF); sd_payload.push_back(port & 0xFF);
         } else {
-            sd_payload.push_back(0x00); sd_payload.push_back(0x15); sd_payload.push_back(0x06); sd_payload.push_back(0x00);
+            sd_payload.push_back(0x00); sd_payload.push_back(0x16); sd_payload.push_back(0x06); sd_payload.push_back(0x00);
             sockaddr_in6 v6addr; 
             std::string ip6_str = endpoint_ip_v6.empty() ? config.ip_v6 : endpoint_ip_v6;
             inet_pton(AF_INET6, ip6_str.c_str(), &v6addr.sin6_addr);
@@ -429,7 +517,7 @@ void SomeIpRuntime::SendOffer(uint16_t service_id, uint16_t instance_id, uint8_t
 
         if (has_mcast) {
             if (!ipv6 && multicast_ip.find('.') != std::string::npos) {
-                  sd_payload.push_back(0x00); sd_payload.push_back(0x09); sd_payload.push_back(0x14); sd_payload.push_back(0x00);
+                  sd_payload.push_back(0x00); sd_payload.push_back(0x0A); sd_payload.push_back(0x14); sd_payload.push_back(0x00);
                   uint32_t m_ip_int = ntohl(inet_addr(multicast_ip.c_str()));
                   sd_payload.push_back((m_ip_int >> 24) & 0xFF); sd_payload.push_back((m_ip_int >> 16) & 0xFF);
                   sd_payload.push_back((m_ip_int >> 8) & 0xFF); sd_payload.push_back(m_ip_int & 0xFF);
@@ -437,7 +525,7 @@ void SomeIpRuntime::SendOffer(uint16_t service_id, uint16_t instance_id, uint8_t
                   uint16_t m_port = multicast_port ? multicast_port : port;
                   sd_payload.push_back((m_port >> 8) & 0xFF); sd_payload.push_back(m_port & 0xFF);
             } else if (ipv6 && multicast_ip.find(':') != std::string::npos) {
-                  sd_payload.push_back(0x00); sd_payload.push_back(0x15); sd_payload.push_back(0x16); sd_payload.push_back(0x00);
+                  sd_payload.push_back(0x00); sd_payload.push_back(0x16); sd_payload.push_back(0x16); sd_payload.push_back(0x00);
                   sockaddr_in6 v6mcast; inet_pton(AF_INET6, multicast_ip.c_str(), &v6mcast.sin6_addr);
                   for(int i=0; i<16; ++i) sd_payload.push_back(v6mcast.sin6_addr.s6_addr[i]);
                   sd_payload.push_back(0x00); sd_payload.push_back(0x11); // UDP
@@ -462,15 +550,26 @@ void SomeIpRuntime::SendOffer(uint16_t service_id, uint16_t instance_id, uint8_t
         dest.sin_family = AF_INET;
         dest.sin_addr.s_addr = inet_addr(this->sd_multicast_ip.c_str());
         dest.sin_port = htons(this->sd_multicast_port);
-        sendto(sd_sock, (const char*)buffer.data(), (int)buffer.size(), 0, (struct sockaddr*)&dest, sizeof(dest));
+        int ret = sendto(sd_sock, (const char*)buffer.data(), (int)buffer.size(), 0, (struct sockaddr*)&dest, sizeof(dest));
+        if (ret < 0) {
+            this->logger->Log(LogLevel::WARN, "SD", "Failed to send IPv4 Offer for service " + std::to_string(service_id));
+        } else {
+            this->logger->Log(LogLevel::DEBUG, "SD", "Sent IPv4 Offer for service " + std::to_string(service_id));
+        }
     }
     if (sd_sock_v6 != INVALID_SOCKET) {
         std::vector<uint8_t> buffer = build_sd(true);
-        sockaddr_in6 dest;
+        sockaddr_in6 dest = {0};
         dest.sin6_family = AF_INET6;
         inet_pton(AF_INET6, this->sd_multicast_ip_v6.c_str(), &dest.sin6_addr);
         dest.sin6_port = htons(this->sd_multicast_port_v6);
-        sendto(sd_sock_v6, (const char*)buffer.data(), (int)buffer.size(), 0, (struct sockaddr*)&dest, sizeof(dest));
+        dest.sin6_scope_id = this->sd_if_index;
+        int ret = sendto(sd_sock_v6, (const char*)buffer.data(), (int)buffer.size(), 0, (struct sockaddr*)&dest, sizeof(dest));
+        if (ret < 0) {
+            this->logger->Log(LogLevel::WARN, "SD", "Failed to send IPv6 Offer for service " + std::to_string(service_id) + " err=" + std::to_string(WSAGetLastError()));
+        } else {
+            this->logger->Log(LogLevel::DEBUG, "SD", "Sent IPv6 Offer for service " + std::to_string(service_id));
+        }
     }
 }
 
@@ -568,7 +667,7 @@ void SomeIpRuntime::subscribe_eventgroup(uint16_t service_id, uint16_t instance_
     uint32_t minor = eventgroup_id << 16;
     sd_payload.push_back((minor >> 24) & 0xFF); sd_payload.push_back((minor >> 16) & 0xFF); sd_payload.push_back((minor >> 8) & 0xFF); sd_payload.push_back(minor & 0xFF);
     sd_payload.push_back(0x00); sd_payload.push_back(0x00); sd_payload.push_back(0x00); sd_payload.push_back(12);
-    sd_payload.push_back(0x00); sd_payload.push_back(0x09); sd_payload.push_back(0x04); sd_payload.push_back(0x00);
+    sd_payload.push_back(0x00); sd_payload.push_back(0x0A); sd_payload.push_back(0x04); sd_payload.push_back(0x00);
     uint32_t local_ip = ntohl(inet_addr(config.ip.c_str()));
     sd_payload.push_back((local_ip >> 24) & 0xFF); sd_payload.push_back((local_ip >> 16) & 0xFF); sd_payload.push_back((local_ip >> 8) & 0xFF); sd_payload.push_back(local_ip & 0xFF);
     sd_payload.push_back(0x00); sd_payload.push_back(0x11);
@@ -676,13 +775,13 @@ void SomeIpRuntime::process_sd_packet(const char* buf, int bytes, sockaddr_stora
              uint8_t opt_type = buf[opt_ptr+2];
              sockaddr_storage opt_addr; memset(&opt_addr, 0, sizeof(opt_addr));
              
-             if (opt_type == 0x04 && opt_len == 0x01 + 8) { // IPv4 Endpoint
+             if (opt_type == 0x04 && (opt_len == 0x0A)) { // IPv4 Endpoint
                  sockaddr_in* sin = (sockaddr_in*)&opt_addr;
                  sin->sin_family = AF_INET;
                  memcpy(&sin->sin_addr, &buf[opt_ptr+4], 4);
                  uint16_t opt_port = (uint8_t(buf[opt_ptr+10]) << 8) | uint8_t(buf[opt_ptr+11]);
                  sin->sin_port = htons(opt_port);
-             } else if (opt_type == 0x06 && opt_len == 0x01 + 20) { // IPv6 Endpoint
+             } else if (opt_type == 0x06 && (opt_len == 0x16)) { // IPv6 Endpoint
                  sockaddr_in6* sin6 = (sockaddr_in6*)&opt_addr;
                  sin6->sin6_family = AF_INET6;
                  memcpy(&sin6->sin6_addr, &buf[opt_ptr+4], 16);
@@ -690,7 +789,7 @@ void SomeIpRuntime::process_sd_packet(const char* buf, int bytes, sockaddr_stora
                  sin6->sin6_port = htons(opt_port);
              }
              parsed_opts.push_back(opt_addr);
-             opt_ptr += 3 + opt_len;
+             opt_ptr += 2 + opt_len; // Length field includes Type
         }
 
         if (index1 < parsed_opts.size()) {

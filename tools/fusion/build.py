@@ -27,7 +27,8 @@ class Builder:
         cmd = [
             sys.executable, "-m", "tools.codegen.main", 
             "examples/integrated_apps/interface.py",
-            "examples/automotive_pubsub/interface.py"
+            "examples/automotive_pubsub/interface.py",
+            "examples/versioning_demo/interface.py"
         ]
         return self.run_command(cmd, "codegen_all")
 

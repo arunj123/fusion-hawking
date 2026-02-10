@@ -1,0 +1,60 @@
+@startuml integrated_apps_architecture
+skinparam componentStyle uml2
+
+package "Integrated Apps Demo" {
+    component "Rust App" as RustApp {
+        port "UDP:0" as RustUDP
+        port "TCP:0" as RustTCP
+    }
+
+    component "Python App" as PyApp {
+        port "TCP:0" as PyTCP
+    }
+
+    component "C++ App" as CppApp {
+        port "UDP:0" as CppUDP
+    }
+}
+
+cloud "Service Discovery" as SD {
+}
+
+RustApp -down-> SD : Multicast Offer/Find
+PyApp -down-> SD : Multicast Offer/Find
+CppApp -down-> SD : Multicast Offer/Find
+
+note right of RustApp
+  Provides:
+  - MathService (UDP)
+  - EcoService (TCP)
+  - ComplexService (UDP)
+  Required:
+  - MathClient (v2)
+  - SortClient
+end note
+
+note right of PyApp
+  Provides:
+  - StringService (TCP)
+  - DiagnosticService (TCP)
+  - MathService (v2, TCP)
+  Required:
+  - MathClient
+  - EcoClient
+end note
+
+note right of CppApp
+  Provides:
+  - SortService (UDP)
+  - SensorService (UDP)
+  - MathService (v1, UDP)
+  Required:
+  - MathClient
+  - StringClient
+end note
+
+RustUDP <--> CppUDP : Math (UDP)
+RustTCP <--> PyTCP : Eco/Complex (TCP)
+PyTCP <--> CppUDP : String/Diag (TCP/UDP Bridge)
+
+@enduml

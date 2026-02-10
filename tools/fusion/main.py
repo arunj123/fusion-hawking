@@ -49,7 +49,7 @@ def run_build(root_dir, reporter, builder, tool_status, target, server, skip_cod
         if not builder.build_rust(): 
             raise Exception("Rust Build Failed")
     
-    if tool_status.get("cmake") and target in ["all", "cpp"]:
+    if tool_status.get("cmake") and target in ["all", "cpp", "python"]:
         if not builder.build_cpp(with_coverage):
             raise Exception("C++ Build Failed")
     
@@ -116,7 +116,7 @@ def main():
     parser.add_argument("--server", action="store_true", default=True, help="Enable dashboard server")
     parser.add_argument("--no-dashboard", action="store_true", help="Disable dashboard server (override)")
     parser.add_argument("--target", type=str, choices=["all", "rust", "python", "cpp"], default="all", help="Target language to test")
-    parser.add_argument("--demo", type=str, choices=["all", "simple", "integrated", "pubsub"], default="all", help="Specific demo to run")
+    parser.add_argument("--demo", type=str, choices=["all", "simple", "integrated", "pubsub", "someipy"], default="all", help="Specific demo to run")
     parser.add_argument("--no-codegen", action="store_true", help="Skip codegen (assume artifacts exist)")
     parser.add_argument("--base-port", type=int, default=0, help="Port offset for test isolation")
     parser.add_argument("--with-coverage", action="store_true", help="Build C++ with coverage instrumentation")
@@ -212,7 +212,34 @@ def main():
         # CODEGEN Stage (new)
         if stage in ["codegen", "all"] and not args.no_codegen:
             if server: server.update({"current_step": "Codegen"})
-            print("\n=== Codegen ===")
+            print("\n=== Codegen & Validation ===")
+            
+            # Run Config Validation
+            from tools.fusion.config_validator import validate_config
+            import json
+            
+            # Find all config.json files
+            config_errors = []
+            for root, _, files in os.walk(root_dir):
+                if "config.json" in files and "build" not in root:
+                    config_path = os.path.join(root, "config.json")
+                    try:
+                        with open(config_path, "r") as f:
+                            data = json.load(f)
+                        errs = validate_config(data)
+                        if errs:
+                            print(f"[FAIL] Config Validation Failed for {config_path}")
+                            for e in errs:
+                                print(f" - {e}")
+                                config_errors.append(f"{config_path}: {e}")
+                        else:
+                            print(f"[PASS] Validated {config_path}")
+                    except Exception as e:
+                        print(f"[WARN] Could not validate {config_path}: {e}")
+            
+            if config_errors:
+                 raise Exception("Configuration Validation Failed (see logs)")
+            
             if not builder.generate_bindings():
                 raise Exception("Bindings Generation Failed")
             test_results["codegen"] = "PASS"

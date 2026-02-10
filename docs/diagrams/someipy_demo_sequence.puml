@@ -1,0 +1,21 @@
+@startuml someipy_demo_sequence
+participant "someipyd (Daemon)" as Daemon
+participant "Service (someipy)" as Service
+participant "Client (Fusion)" as Client
+
+== Initialization ==
+Daemon -> Daemon : Start Multicast Listener
+Service -> Daemon : Connect & Offer Service (0x1234)
+Daemon -> Network : Multicast Offer (Service 0x1234)
+
+== Discovery ==
+Client -> Network : Join Multicast Group
+Client <-> Daemon : SD Packet Exchange
+Client -> Client : Resolve Endpoint (IP:Port)
+
+== Communication ==
+Client -> Service : Request (Echo, ID:1)
+Service -> Service : Process Request
+Service -> Client : Response (Echo Result)
+
+@enduml

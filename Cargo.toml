@@ -10,7 +10,7 @@ log = "0.4"
 env_logger = "0.10"
 ctrlc = "3.4"
 socket2 = { version = "0.5", features = ["all"] }
-tokio = { version = "1", features = ["sync", "time", "rt"] }
+tokio = { version = "1", features = ["sync", "time", "rt", "rt-multi-thread", "macros"] }
 
 [[example]]
 name = "sd_demo"
@@ -24,3 +24,6 @@ path = "examples/simple_no_sd/rust/server.rs"
 name = "simple_client"
 path = "examples/simple_no_sd/rust/client.rs"
 
+[[bin]]
+name = "someipy_client"
+path = "examples/someipy_demo/client_fusion.rs"

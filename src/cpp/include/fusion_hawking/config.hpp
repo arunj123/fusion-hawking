@@ -38,6 +38,7 @@ struct SdConfig {
     uint32_t cycle_offer_ms = 500;
     uint32_t request_response_delay_ms = 50;
     uint32_t request_timeout_ms = 2000;
+    uint16_t multicast_hops = 1;
 };
 
 struct InstanceConfig {
@@ -128,9 +129,12 @@ public:
             std::string sd_block = block.substr(sd_start, sd_end - sd_start);
             config.sd_multicast_endpoint = ExtractString(sd_block, "multicast_endpoint");
             config.sd_multicast_endpoint_v6 = ExtractString(sd_block, "multicast_endpoint_v6");
+            
+            
             int cycle = ExtractInt(sd_block, "cycle_offer_ms"); if (cycle > 0) config.sd.cycle_offer_ms = cycle;
             int delay = ExtractInt(sd_block, "request_response_delay_ms"); if (delay > 0) config.sd.request_response_delay_ms = delay;
             int timeout = ExtractInt(sd_block, "request_timeout_ms"); if (timeout > 0) config.sd.request_timeout_ms = timeout;
+            int hops = ExtractInt(sd_block, "multicast_hops"); if (hops > 0) config.sd.multicast_hops = (uint16_t)hops;
         }
         
         config.ip = ExtractString(block, "ip");

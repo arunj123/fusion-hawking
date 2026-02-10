@@ -68,6 +68,9 @@ pub struct SdConfig {
     /// Request timeout (ms, default: 2000)
     #[serde(default = "default_request_timeout")]
     pub request_timeout_ms: u64,
+    /// Multicast hops (default: 1)
+    #[serde(default = "default_multicast_hops")]
+    pub multicast_hops: u8,
 }
 
 impl Default for SdConfig {
@@ -84,6 +87,7 @@ impl Default for SdConfig {
             request_response_delay_min_ms: default_request_response_delay_min(),
             request_response_delay_max_ms: default_request_response_delay_max(),
             request_timeout_ms: default_request_timeout(),
+            multicast_hops: default_multicast_hops(),
         }
     }
 }
@@ -97,9 +101,11 @@ fn default_ttl() -> u32 { 0x00FFFFFF }
 fn default_request_response_delay_min() -> u64 { 10 }
 fn default_request_response_delay_max() -> u64 { 100 }
 fn default_request_timeout() -> u64 { 2000 }
+fn default_multicast_hops() -> u8 { 1 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct InstanceConfig {
+    pub endpoint: Option<String>,
     #[serde(default)]
     pub providing: HashMap<String, ServiceConfig>,
     #[serde(default)]
