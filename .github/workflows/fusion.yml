@@ -82,7 +82,19 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: artifact-core-${{ matrix.os }}
-        path: target/
+        path: |
+          target/release/
+          target/debug/
+          !target/release/.fingerprint/
+          !target/release/build/
+          !target/release/deps/
+          !target/release/examples/
+          !target/release/incremental/
+          !target/debug/.fingerprint/
+          !target/debug/build/
+          !target/debug/deps/
+          !target/debug/examples/
+          !target/debug/incremental/
         retention-days: 1
     - name: Upload Logs
       if: always()
@@ -138,8 +150,53 @@ jobs:
         path: logs/
 
   # ============================================
+  # Stage 1.3: Build JS
+  # ============================================
+  build-js:
+    needs: codegen
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    - name: Download Codegen Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-codegen
+        path: build/generated
+    - name: Run Build JS
+      run: python -m tools.fusion.main --stage build --target js --no-codegen --no-dashboard
+    - name: Upload JS Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: artifact-js-${{ matrix.os }}
+        path: |
+          src/js/dist/
+          src/js/package.json
+          src/js/tsconfig.json
+        retention-days: 1
+    - name: Upload Logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: logs-build-js-${{ matrix.os }}
+        path: logs/
+
+  # ============================================
   # Stage 2: Test (depends on build)
   # ============================================
+
 
   unit-test-rust:
     needs: build-core
@@ -164,7 +221,8 @@ jobs:
         path: build/generated
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
-      run: chmod +x build/release/* target/release/* target/debug/* || true
+      run: chmod -R +x build/release/* target/release/* target/debug/* || true
+
     - name: Run Rust Unit Tests
       # Note: No --clean here, as it would wipe downloaded artifacts
       run: python -m tools.fusion.main --stage test --target rust --no-dashboard
@@ -203,7 +261,8 @@ jobs:
         path: build
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
-      run: chmod +x build/* target/release/* target/debug/* || true
+      run: chmod -R +x build/* target/release/* target/debug/* || true
+
     - name: Install Pytest
       run: pip install pytest pytest-cov
     - name: Run Python Unit Tests
@@ -244,7 +303,8 @@ jobs:
         path: build
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
-      run: chmod +x build/* || true
+      run: chmod -R +x build/* || true
+
     - name: Run C++ Unit Tests
       # Note: No --clean here
       run: python -m tools.fusion.main --stage test --target cpp --no-dashboard
@@ -255,8 +315,8 @@ jobs:
         name: logs-unit-cpp-${{ matrix.os }}
         path: logs/
 
-  demo-simple:
-    needs: [build-core, build-cpp]
+  unit-test-js:
+    needs: [codegen, build-js]
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
@@ -266,6 +326,46 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.10'
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+    - name: Download Codegen Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-codegen
+        path: build/generated
+    - name: Download JS Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-js-${{ matrix.os }}
+        path: src/js
+    - name: Install JS Dependencies
+      run: npm install
+      working-directory: src/js
+    - name: Run JS Unit Tests
+      run: python -m tools.fusion.main --stage test --target js --no-dashboard
+    - name: Upload Logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: logs-unit-js-${{ matrix.os }}
+        path: logs/
+
+  demo-simple:
+    needs: [build-core, build-cpp, build-js]
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '18'
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -276,9 +376,15 @@ jobs:
       with:
         name: artifact-cpp-${{ matrix.os }}
         path: build
+    - name: Download JS Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-js-${{ matrix.os }}
+        path: src/js
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
-      run: chmod +x target/release/* target/debug/* build/* || true
+      run: chmod -R +x target/release/* target/debug/* build/* || true
+
     - name: Run Simple Demo
       run: python -m tools.fusion.main --stage demos --demo simple --base-port 0 --no-dashboard
     - name: Upload Logs
@@ -289,7 +395,7 @@ jobs:
         path: logs/
 
   demo-integrated:
-    needs: [codegen, build-core, build-cpp]
+    needs: [codegen, build-core, build-cpp, build-js]
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
@@ -299,7 +405,12 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.10'
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
     - name: Download Codegen Artifacts
+
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
@@ -314,9 +425,18 @@ jobs:
       with:
         name: artifact-cpp-${{ matrix.os }}
         path: build
+    - name: Download JS Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-js-${{ matrix.os }}
+        path: src/js
+    - name: Install JS Dependencies
+      run: npm install
+      working-directory: src/js
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
-      run: chmod +x build/* target/debug/* || true
+      run: chmod -R +x build/* target/debug/* || true
+
     - name: Run Integrated Demo
       run: python -m tools.fusion.main --stage demos --demo integrated --base-port 100 --no-dashboard
     - name: Upload Logs
@@ -327,7 +447,7 @@ jobs:
         path: logs/
 
   demo-pubsub:
-    needs: [codegen, build-core, build-cpp]
+    needs: [codegen, build-core, build-cpp, build-js]
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
@@ -337,6 +457,63 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.10'
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Download Codegen Artifacts
+
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-codegen
+        path: build/generated
+    - name: Download Core Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-core-${{ matrix.os }}
+        path: target
+    - name: Download C++ Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-cpp-${{ matrix.os }}
+        path: build
+    - name: Download JS Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-js-${{ matrix.os }}
+        path: src/js
+    - name: Install JS Dependencies
+      run: npm install
+      working-directory: src/js
+    - name: Restore Permissions (Linux)
+      if: runner.os == 'Linux'
+      run: chmod -R +x build/* target/debug/* || true
+
+    - name: Run PubSub Demo
+      run: python -m tools.fusion.main --stage demos --demo pubsub --base-port 200 --no-dashboard
+    - name: Upload Logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: logs-demo-pubsub-${{ matrix.os }}
+        path: logs/
+
+  demo-someipy:
+    needs: [codegen, build-core, build-cpp, build-js]
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '18'
     - name: Download Codegen Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -352,16 +529,27 @@ jobs:
       with:
         name: artifact-cpp-${{ matrix.os }}
         path: build
+    - name: Download JS Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-js-${{ matrix.os }}
+        path: src/js
+    - name: Install JS Dependencies (Runtime)
+      run: npm install
+      working-directory: src/js
+    - name: Install JS Dependencies (Demo Client)
+      run: npm install
+      working-directory: examples/someipy_demo/js_client
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
-      run: chmod +x build/* target/debug/* || true
-    - name: Run PubSub Demo
-      run: python -m tools.fusion.main --stage demos --demo pubsub --base-port 200 --no-dashboard
+      run: chmod -R +x build/* target/debug/* || true
+    - name: Run someipy Demo
+      run: python -m tools.fusion.main --stage demos --demo someipy --no-dashboard
     - name: Upload Logs
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: logs-demo-pubsub-${{ matrix.os }}
+        name: logs-demo-someipy-${{ matrix.os }}
         path: logs/
 
   coverage:
@@ -399,7 +587,8 @@ jobs:
       run: |
         python -m tools.fusion.main --stage build --target cpp --with-coverage --no-codegen --no-dashboard --clean
     - name: Restore Permissions
-      run: chmod +x build/* target/debug/* || true
+      run: chmod -R +x build/* target/debug/* || true
+
     - name: Run Coverage
       run: python -m tools.fusion.main --stage coverage --base-port 400 --no-dashboard
     - name: Upload Logs
@@ -413,7 +602,8 @@ jobs:
   # Stage 3: Generate Documentation (depends on build)
   # ============================================
   docs:
-    needs: [codegen, build-core, build-cpp, unit-test-rust, unit-test-cpp, unit-test-python, demo-simple, demo-integrated, demo-pubsub, coverage]
+    needs: [codegen, build-core, build-cpp, build-js, unit-test-rust, unit-test-cpp, unit-test-python, unit-test-js, demo-simple, demo-integrated, demo-pubsub, demo-someipy, coverage]
+
     runs-on: ubuntu-latest
     permissions:
       pages: write

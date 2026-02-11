@@ -136,6 +136,7 @@ def patch_configs(ip_v4, root_dir, port_offset=0, ip_v6=None, config_paths=None)
         root_dir: Project root
         port_offset: Port offset
         ip_v6: Explicit IPv6 address (optional, overrides detection)
+        config_paths: Custom list of config files to patch
     """
     if config_paths is None:
         config_paths = [
@@ -149,6 +150,11 @@ def patch_configs(ip_v4, root_dir, port_offset=0, ip_v6=None, config_paths=None)
     
     # Resolve network info
     net_info = get_network_info()
+    
+    # If IPv4 is forced to loopback, force IPv6 too for consistency
+    if ip_v4 == "127.0.0.1" and not ip_v6:
+        ip_v6 = "::1"
+
     if ip_v6: net_info['ipv6'] = ip_v6
     
     # If IPv6 is missing, attempt to configure it on Linux
@@ -257,8 +263,13 @@ def patch_configs(ip_v4, root_dir, port_offset=0, ip_v6=None, config_paths=None)
                         # Interface Patching (Mandatory)
                         final_ip = ep_cfg.get("ip")
                         
-                        # Update interface name if detected
-                        if net_info['interface'] and net_info['interface'] != 'lo':
+                        # Update interface name
+                        # We prefer the explicitly requested interface (e.g. 'lo' from ip_v4 fallback)
+                        if target_iface:
+                            ep_cfg['interface'] = target_iface
+                            modified = True
+                        elif net_info['interface'] and net_info['interface'] != 'lo':
+                            # If no force-iface, use detected if it's a real NIC
                             ep_cfg['interface'] = net_info['interface']
                             modified = True
                         
@@ -266,14 +277,18 @@ def patch_configs(ip_v4, root_dir, port_offset=0, ip_v6=None, config_paths=None)
                         if ep_cfg.pop('interface_index', None) is not None:
                             modified = True
                         
-                        elif final_ip == "127.0.0.1" or final_ip == "::1" or final_ip == "localhost":
-                             ep_cfg["interface"] = "lo"
-                             modified = True
-                        elif "interface" not in ep_cfg or not ep_cfg["interface"]:
-                             # Fallback if no target interface but we need one (e.g. Windows)
-                             # Set a placeholder to satisfy mandatory config
-                             ep_cfg["interface"] = "eth0"
-                             modified = True
+                        # Ensure we ALWAYS have an interface field if it's missing or set to a generic placeholder
+                        if not ep_cfg.get("interface") or ep_cfg.get("interface") == "eth0":
+                            if final_ip and (final_ip.startswith("127.") or final_ip == "::1" or final_ip == "localhost"):
+                                ep_cfg["interface"] = "lo"
+                                modified = True
+                            elif net_info['interface']:
+                                ep_cfg["interface"] = net_info["interface"]
+                                modified = True
+                            else:
+                                # Final fallback for Windows or minimal environments
+                                ep_cfg["interface"] = "lo" if os.name != 'nt' else "Loopback Pseudo-Interface 1"
+                                modified = True
                         
                     # Port Offset
                     if "port" in ep_cfg and isinstance(ep_cfg["port"], int):

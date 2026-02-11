@@ -2,7 +2,7 @@
 
 > **See Also:** [Architecture](architecture.md) | [User Guide](user_guide.md) | [IDL Reference](IDL.md)
 
-This document captures the design decisions and technical requirements for the Fusion Hawking SOME/IP stack.
+This document captures the design decisions and technical requirements for the Fusion Hawking SOME/IP stack, based on **AUTOSAR R22-11** (PRS_SOMEIPProtocol, PRS_SOMEIPServiceDiscoveryProtocol).
 
 ---
 

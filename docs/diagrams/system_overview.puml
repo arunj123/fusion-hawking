@@ -1,4 +1,5 @@
-@startuml
+@startuml system_overview
+
 skinparam backgroundColor #FEFEFE
 skinparam componentStyle rectangle
 
@@ -6,15 +7,19 @@ package "Fusion Hawking Stack" {
     [Rust Core Library] as Core
     [Python Runtime] as PyRT
     [C++ Runtime] as CppRT
+    [JS/TS Runtime] as JsRT
     [Code Generator (IDL)] as Codegen
     [Automation Toolkit] as Fusion
 }
+
 
 package "Application Layer" {
     [Rust Application] as RustApp
     [Python Application] as PyApp
     [C++ Application] as CppApp
+    [JS/TS Application] as JsApp
 }
+
 
 package "Network Layer" {
     [UDP Transport] as UDP
@@ -27,6 +32,9 @@ PyApp --> PyRT
 CppApp --> CppRT
 PyRT ..> Core : "Same Protocol"
 CppRT ..> Core : "Same Protocol"
+JsRT ..> Core : "Same Protocol"
+JsApp --> JsRT
+
 
 Core --> UDP
 Core --> TCP
@@ -35,6 +43,8 @@ Core --> Mcast
 Codegen --> RustApp : generates
 Codegen --> PyApp : generates
 Codegen --> CppApp : generates
+Codegen --> JsApp : generates
 Fusion --> Core : builds & tests
+
 
 @enduml

@@ -24,6 +24,15 @@
 
 namespace fusion_hawking {
 
+// Thread-safe session ID manager instance
+static SessionIdManager g_session_mgr;
+static std::mutex g_session_mgr_mutex;
+
+static uint16_t next_session(uint16_t service_id, uint16_t method_id) {
+    std::lock_guard<std::mutex> lock(g_session_mgr_mutex);
+    return g_session_mgr.next_session_id(service_id, method_id);
+}
+
 // Helper for Windows Interface Resolution
 static unsigned int ResolveInterfaceIndex(const std::string& name) {
     // Try standard name to index first
@@ -320,17 +329,20 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
         
         this->sd_if_index = if_index;
         
-        if (if_index != 0) {
+        if (if_index != 0 && !this->sd_multicast_ip_v6.empty() && this->sd_multicast_ip_v6 != "::") {
             if (setsockopt(sd_sock_v6, IPPROTO_IPV6, IPV6_MULTICAST_IF, (const char*)&if_index, sizeof(if_index)) < 0) {
                 this->logger->Log(LogLevel::WARN, "Runtime", "Failed to set IPV6_MULTICAST_IF to index " + std::to_string(if_index) + " err=" + std::to_string(GET_SOCKET_ERROR()));
             }
         }
         
-        ipv6_mreq mreq6;
-        inet_pton(AF_INET6, this->sd_multicast_ip_v6.c_str(), &mreq6.ipv6mr_multiaddr);
-        mreq6.ipv6mr_interface = if_index; 
-        if (setsockopt(sd_sock_v6, IPPROTO_IPV6, IPV6_JOIN_GROUP, (const char*)&mreq6, sizeof(mreq6)) < 0) {
-            this->logger->Log(LogLevel::WARN, "Runtime", "Failed to join IPv6 multicast group " + this->sd_multicast_ip_v6 + " err=" + std::to_string(GET_SOCKET_ERROR()));
+        if (!this->sd_multicast_ip_v6.empty() && this->sd_multicast_ip_v6 != "::") {
+            ipv6_mreq mreq6;
+            if (inet_pton(AF_INET6, this->sd_multicast_ip_v6.c_str(), &mreq6.ipv6mr_multiaddr) > 0) {
+                mreq6.ipv6mr_interface = if_index; 
+                if (setsockopt(sd_sock_v6, IPPROTO_IPV6, IPV6_JOIN_GROUP, (const char*)&mreq6, sizeof(mreq6)) < 0) {
+                    this->logger->Log(LogLevel::WARN, "Runtime", "Failed to join IPv6 multicast group " + this->sd_multicast_ip_v6 + " err=" + std::to_string(GET_SOCKET_ERROR()));
+                }
+            }
         }
 
         int hops = (int)config.sd.multicast_hops;
@@ -364,8 +376,19 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
 SomeIpRuntime::~SomeIpRuntime() {
     running = false;
     // jthread automatically joins on destruction
-    closesocket(sock);
-    closesocket(sd_sock);
+    if (sock != INVALID_SOCKET) closesocket(sock);
+    if (sock_v6 != INVALID_SOCKET) closesocket(sock_v6);
+    if (sd_sock != INVALID_SOCKET) closesocket(sd_sock);
+    if (sd_sock_v6 != INVALID_SOCKET) closesocket(sd_sock_v6);
+    if (tcp_listener != INVALID_SOCKET) closesocket(tcp_listener);
+    if (tcp_listener_v6 != INVALID_SOCKET) closesocket(tcp_listener_v6);
+    {
+        std::lock_guard<std::mutex> lock(tcp_clients_mutex);
+        for (auto& client : tcp_clients) {
+            closesocket(client.first);
+        }
+        tcp_clients.clear();
+    }
 #ifdef _WIN32
     WSACleanup();
 #endif
@@ -537,11 +560,14 @@ void SomeIpRuntime::SendOffer(uint16_t service_id, uint16_t instance_id, uint8_t
             }
         }
 
+        // SD header: service_id=0xFFFF, method_id=0x8100 [PRS_SOMEIPSD_00016]
         uint32_t total_len = (uint32_t)sd_payload.size() + 8;
         std::vector<uint8_t> buffer;
+        uint16_t sd_session = next_session(0xFFFF, 0x8100);
         buffer.push_back(0xFF); buffer.push_back(0xFF); buffer.push_back(0x81); buffer.push_back(0x00);
         buffer.push_back(total_len >> 24); buffer.push_back(total_len >> 16); buffer.push_back(total_len >> 8); buffer.push_back(total_len);
-        buffer.push_back(0x00); buffer.push_back(0x00); buffer.push_back(0x00); buffer.push_back(0x01);
+        buffer.push_back(0x00); buffer.push_back(0x00);
+        buffer.push_back(sd_session >> 8); buffer.push_back(sd_session & 0xFF);
         buffer.push_back(0x01); buffer.push_back(0x01); buffer.push_back(0x02); buffer.push_back(0x00);
         buffer.insert(buffer.end(), sd_payload.begin(), sd_payload.end());
         return buffer;
@@ -577,7 +603,7 @@ void SomeIpRuntime::SendOffer(uint16_t service_id, uint16_t instance_id, uint8_t
 }
 
 std::vector<uint8_t> SomeIpRuntime::SendRequest(uint16_t service_id, uint16_t method_id, const std::vector<uint8_t>& payload, sockaddr_storage target) {
-    uint16_t session_id = 1; // Simplification for now
+    uint16_t session_id = next_session(service_id, method_id);
     uint32_t total_len = (uint32_t)payload.size() + 8;
     std::vector<uint8_t> buffer;
     buffer.push_back(service_id >> 8); buffer.push_back(service_id & 0xFF);
@@ -801,8 +827,8 @@ void SomeIpRuntime::process_sd_packet(const char* buf, int bytes, sockaddr_stora
             else if (endpoint.ss_family == AF_INET6 && ((sockaddr_in6*)&endpoint)->sin6_port != 0) has_endpoint = true;
         }
 
-        if (type == 0x01) { // Offer
-            if (has_endpoint && ttl > 0) {
+        if (type == 0x01 && ttl > 0) { // Offer
+            if (has_endpoint) {
                  bool changed = true;
                  {
                      std::lock_guard<std::mutex> lock(remote_services_mutex);
@@ -1013,21 +1039,25 @@ void SomeIpRuntime::Run() {
 }
 
 void SomeIpRuntime::SendNotification(uint16_t service_id, uint16_t event_id, const std::vector<uint8_t>& payload) {
-    uint16_t eventgroup_id = 1; // Simplified
-    std::pair<uint16_t, uint16_t> key = {service_id, eventgroup_id};
-    
-    uint32_t total_len = (uint32_t)payload.size() + 8;
-    std::vector<uint8_t> buffer;
-    buffer.push_back(service_id >> 8); buffer.push_back(service_id & 0xFF);
-    buffer.push_back(event_id >> 8); buffer.push_back(event_id & 0xFF); 
-    buffer.push_back(total_len >> 24); buffer.push_back(total_len >> 16); buffer.push_back(total_len >> 8); buffer.push_back(total_len);
-    buffer.push_back(0x00); buffer.push_back(0x00); buffer.push_back(0x00); buffer.push_back(0x01); // Session ID Placeholder
-    buffer.push_back(0x01); buffer.push_back(0x01); buffer.push_back(0x02); buffer.push_back(0x00); // Notification
-    buffer.insert(buffer.end(), payload.begin(), payload.end());
-
+    // Determine eventgroup: iterate all subscribed eventgroups for this service
+    // and notify all subscribers across all eventgroups.
     std::lock_guard<std::mutex> lock(subscribers_mutex);
-    if (subscribers.find(key) != subscribers.end()) {
-        for (const auto& sub : subscribers[key]) {
+    for (const auto& [key, sub_list] : subscribers) {
+        if (key.first != service_id) continue;
+        uint16_t eventgroup_id = key.second;
+    
+        uint16_t session_id = next_session(service_id, event_id);
+        uint32_t total_len = (uint32_t)payload.size() + 8;
+        std::vector<uint8_t> buffer;
+        buffer.push_back(service_id >> 8); buffer.push_back(service_id & 0xFF);
+        buffer.push_back(event_id >> 8); buffer.push_back(event_id & 0xFF); 
+        buffer.push_back(total_len >> 24); buffer.push_back(total_len >> 16); buffer.push_back(total_len >> 8); buffer.push_back(total_len);
+        buffer.push_back(0x00); buffer.push_back(0x00);
+        buffer.push_back(session_id >> 8); buffer.push_back(session_id & 0xFF);
+        buffer.push_back(0x01); buffer.push_back(0x01); buffer.push_back(0x02); buffer.push_back(0x00); // Notification
+        buffer.insert(buffer.end(), payload.begin(), payload.end());
+
+        for (const auto& sub : sub_list) {
             SOCKET s = (sub.ss_family == AF_INET6) ? sock_v6 : sock;
             int sl = (sub.ss_family == AF_INET6) ? sizeof(sockaddr_in6) : sizeof(sockaddr_in);
             if (s != INVALID_SOCKET) {
@@ -1042,17 +1072,16 @@ std::vector<uint8_t> SendRequestGlue(void* rt_ptr, uint16_t service_id, uint16_t
     SomeIpRuntime* rt = (SomeIpRuntime*)rt_ptr;
     if (!rt) return {};
     
-    // Find target
+    // Find target via SD
     sockaddr_storage target;
     {
          int retries = 0;
          int max_retries = rt->config.sd.request_timeout_ms / 100;
          while (!rt->get_remote_service(service_id, 0xFFFF, target) && retries < max_retries) {
-             std::this_thread::sleep_for(std::chrono::milliseconds(100));
-             retries++;
+              std::this_thread::sleep_for(std::chrono::milliseconds(100));
+              retries++;
          }
          if (retries >= max_retries) {
-              // Try one last time or just fail
               if (!rt->get_remote_service(service_id, 0xFFFF, target)) {
                   if(rt->logger) rt->logger->Log(LogLevel::WARN, "Glue", "Service not found 0x" + std::to_string(service_id));
                   return {};
@@ -1060,33 +1089,9 @@ std::vector<uint8_t> SendRequestGlue(void* rt_ptr, uint16_t service_id, uint16_t
          }
     }
 
-    auto req = std::make_shared<SomeIpRuntime::PendingRequest>();
-    
-    {
-        std::lock_guard<std::mutex> lock(rt->pending_requests_mutex);
-        // Using 0 as client ID for simple matching
-        rt->pending_requests[{service_id, method_id, 0}] = req;
-    }
-
     if(rt->logger) rt->logger->Log(LogLevel::DEBUG, "Glue", "Sending Request...");
-    auto res = rt->SendRequest(service_id, method_id, payload, target);
-    if (!res.empty()) return res;
-
-    // Wait for response
-    std::unique_lock<std::mutex> lock(req->mtx);
-    if (req->cv.wait_for(lock, std::chrono::milliseconds(rt->config.sd.request_timeout_ms), [&]{ return req->completed; })) {
-         // Completed
-         // if(rt->logger) rt->logger->Log(LogLevel::DEBUG, "Glue", "Got Response!");
-         std::lock_guard<std::mutex> map_lock(rt->pending_requests_mutex);
-         rt->pending_requests.erase({service_id, method_id, 0});
-         return req->payload;
-    } else {
-         // Timeout
-         std::lock_guard<std::mutex> map_lock(rt->pending_requests_mutex);
-         rt->pending_requests.erase({service_id, method_id, 0});
-         if (rt->logger) rt->logger->Log(LogLevel::WARN, "Glue", "Timeout waiting for response to " + std::to_string(service_id) + ":" + std::to_string(method_id));
-         return {};
-    }
+    // SendRequest already handles PendingRequest creation and waiting
+    return rt->SendRequest(service_id, method_id, payload, target);
 }
 
 

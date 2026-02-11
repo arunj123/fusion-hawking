@@ -7,9 +7,11 @@
 **/build_cpp/
 **/bin/
 **/obj/
+**/node_modules/
 *.exe
 *.obj
 *.bin
+!/tests/fixtures/*.bin
 *.pdb
 
 # Logs and temp files
@@ -46,4 +48,6 @@ htmlcov/
 AUTOSAR_PRS_SOMEIPProtocol.pdf
 AUTOSAR_PRS_SOMEIPServiceDiscoveryProtocol.pdf
 
-
+# JS/TS
+**/dist/
+src/js/tests/.tmp/

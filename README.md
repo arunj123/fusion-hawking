@@ -1,6 +1,6 @@
 # Fusion Hawking - High-Performance SOME/IP Stack
 
-A lightweight, dependency-free SOME/IP library implemented in Rust, adhering to safety and performance standards. It includes bindings for Python and C++ to enable cross-language communication.
+A lightweight, dependency-free SOME/IP library implemented in Rust, adhering to **AUTOSAR R22-11** (PRS_SOMEIPProtocol & PRS_SOMEIPServiceDiscoveryProtocol) safety and performance standards. It includes bindings for Python and C++ to enable cross-language communication.
 
 ## Features
 
@@ -13,15 +13,19 @@ A lightweight, dependency-free SOME/IP library implemented in Rust, adhering to 
     - **Rust**: Native implementation with fully async-compatible SD machine.
     - **Python**: generated bindings and runtime with Event support.
     - **C++**: High-performance runtime with modern C++23 support.
+    - **JavaScript/TypeScript**: Pure TS implementation running on Node.js (no native bindings required).
 - **IDL Compiler**: Python-based tool (`tools/codegen`) to generate code from simple Python dataclasses. Supports recursive types and synchronous RPC. See [IDL Documentation](docs/IDL.md).
+
 
 ## Prerequisites
 
 The `fusion` tool will verify these for you, but you need:
 - **Rust**: Latest Stable (install via `rustup`).
 - **Python**: Python 3.8+.
+- **Node.js**: v18+ (for JS/TS support).
 - **C++ Compiler**: CMake 3.10+ and MSVC/GCC.
 - **Linux/WSL dependencies**: `sudo apt install build-essential cmake python3-venv lcov libssl-dev`.
+
 
 **Note**: The tool automatically attempts to install missing components like `cargo-llvm-cov` and `llvm-tools-preview`.
 
@@ -38,10 +42,11 @@ The easiest way to see everything in action is the new automation dashboard:
 This will:
 1.  **Check Toolchain**: Verifies Rust, Python, CMake, and Coverage tools.
 2.  **Dashboard**: Starts a local web server (http://localhost:8000) to show live progress.
-3.  **Build**: Compiles Rust, Python bindings, and C++.
-4.  **Test**: Runs unit tests for all languages.
-5.  **Simulate**: Runs the integrated multi-process demo (Rust/Python/C++ interacting).
+3.  **Build**: Compiles Rust, Python bindings, C++, and TypeScript.
+4.  **Test**: Runs unit tests for all languages (Rust, Python, C++, JS).
+5.  **Simulate**: Runs the integrated multi-process demo (Rust/Python/C++/JS interacting).
 6.  **Report**: Generates a comprehensive HTML report with coverage data.
+
 
 ### 2. Linux / WSL
 
@@ -63,6 +68,7 @@ python -m tools.fusion.main --stage demos --demo pubsub      # Run PubSub Demo
 python -m tools.fusion.main --stage codegen                  # Generate bindings only
 python -m tools.fusion.main --stage build --target rust      # Build Rust only
 python -m tools.fusion.main --stage test --target cpp        # Test C++ only
+python -m tools.fusion.main --stage test --target js         # Test JS only
 ```
 
 ## Architecture
@@ -141,6 +147,16 @@ Use CMake's `FetchContent` or `add_subdirectory`:
 ```cmake
 add_subdirectory(path/to/fusion-hawking)
 target_link_libraries(your_app PRIVATE fusion_hawking_cpp)
+```
+
+### 4. JavaScript/TypeScript
+Import directly from the source or build the package:
+```bash
+cd src/js && npm install && npm run build
+```
+Then import in your project:
+```typescript
+import { SomeIpRuntime } from 'fusion-hawking/runtime';
 ```
 
 ### 4. Custom Code Generation (IDL)

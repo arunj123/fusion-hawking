@@ -82,11 +82,19 @@ fn main() {
     // Client Work
     // Wait for the service to be available before subscribing to avoid race conditions
     let mut sort_client_ready = false;
+    let start_wait = std::time::Instant::now();
+    logger.log(LogLevel::Info, "Main", "Waiting for sort-client to be available...");
+    
     while !sort_client_ready {
         if rt.get_client::<SortServiceClient>("sort-client").is_some() {
             sort_client_ready = true;
+            logger.log(LogLevel::Info, "Main", "sort-client is ready!");
         } else {
-            thread::sleep(Duration::from_millis(200));
+            if start_wait.elapsed() > Duration::from_secs(30) {
+                logger.log(LogLevel::Error, "Main", "Timeout waiting for sort-client. Continuing anyway...");
+                break;
+            }
+            thread::sleep(Duration::from_millis(500));
         }
     }
 

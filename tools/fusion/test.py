@@ -80,6 +80,18 @@ class Tester:
         })
 
         print(f"  Unit test results: {results}")
+        
+        # JS
+        print("  Running JS tests...")
+        js_status = self._run_js_tests()
+        results["js"] = js_status
+        results["steps"].append({
+            "name": "JS/TS Unit Tests",
+            "status": js_status,
+            "log": "test_js",
+            "details": "Ran 'npm test' in src/js"
+        })
+
         return results
 
     def _run_rust_tests(self):
@@ -184,6 +196,17 @@ class Tester:
         else:
              return "SKIPPED"
 
+    def _run_js_tests(self):
+        npm_bin = "npm"
+        if os.name == "nt":
+            npm_bin = "npm.cmd"
+            
+        if self.builder.run_command([npm_bin, "test"], "test_js", cwd="src/js"):
+            return "PASS"
+        else:
+            return "FAIL"
+
+
     def _prebuild_rust_demo(self):
         """Builds the Rust demo app to avoid compilation delays during runtime."""
         print("  Pre-building Rust Demo...")
@@ -216,12 +239,20 @@ class Tester:
             
             rust_log = self.reporter.get_log_path("demo_rust")
             py_log = self.reporter.get_log_path("demo_python")
+            rust_log = self.reporter.get_log_path("demo_rust")
+            py_log = self.reporter.get_log_path("demo_python")
             cpp_log = self.reporter.get_log_path("demo_cpp")
+            js_log = self.reporter.get_log_path("demo_js")
+
             
             procs = []
             
             # Keep track of files to close
             log_files = []
+            
+            # Resolve C++ binary
+            cpp_exe = self._get_cpp_binary_path("cpp_app")
+
             
             try:
                 # Rust Standalone Demo
@@ -252,8 +283,6 @@ class Tester:
                 p_py = subprocess.Popen(py_cmd, stdout=f_py, stderr=subprocess.STDOUT, env=env, cwd="examples/integrated_apps/python_app")
                 procs.append(p_py)
                 
-                # C++ Standalone Demo
-                cpp_exe = self._get_cpp_binary_path("cpp_app")
                 if cpp_exe:
                     # Convert to absolute path since we change CWD
                     abs_cpp_exe = os.path.abspath(cpp_exe)
@@ -264,6 +293,33 @@ class Tester:
                     f_cpp.flush()
                     p_cpp = subprocess.Popen(cpp_cmd, stdout=f_cpp, stderr=subprocess.STDOUT, cwd="examples/integrated_apps/cpp_app")
                     procs.append(p_cpp)
+                
+                # JS Standalone Demo
+                js_app_dir = "examples/integrated_apps/js_app"
+                if os.path.exists(js_app_dir):
+                    f_js = open(js_log, "w")
+                    log_files.append(f_js)
+                    # Use locally installed node modules if needed, or assume built
+                    # We run 'node dist/src/index.js' assuming build. Or use pre-build.
+                    # Build first? fusion build --target js should have built it? 
+                    # Actually main.py build_js builds src/js. It doesn't build examples.
+                    # We need to build the example here or assume user did.
+                    # Let's run 'npm install && npm run build' quickly?
+                    # Or just run 'npx tsx src/index.ts' if supported.
+                    # We'll assume compiled to 'dist/index.js' per our package.json, 
+                    # but we haven't run build for it.
+                    # Let's try to run 'npm run build' quietly first.
+                    print("  Building JS Demo...")
+                    npm_bin = "npm.cmd" if os.name == 'nt' else "npm"
+                    subprocess.run([npm_bin, "install"], cwd=js_app_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    subprocess.run([npm_bin, "run", "build"], cwd=js_app_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    
+                    js_cmd = ["node", "dist/index.js"]
+                    f_js.write(f"=== FUSION TEST RUNNER ===\nCommand: {' '.join(js_cmd)}\nPWD: {os.path.join(os.getcwd(), js_app_dir)}\n==========================\n\n")
+                    f_js.flush()
+                    p_js = subprocess.Popen(js_cmd, stdout=f_js, stderr=subprocess.STDOUT, cwd=js_app_dir)
+                    procs.append(p_js)
+
                 
                 # Run for 20s (Increased for safety)
                 print("  Integrated Apps started, waiting 20s...")
@@ -292,13 +348,14 @@ class Tester:
                 
             print("  Verifying Integrated Apps logs...")
             time.sleep(1) # Extra buffer for OS file system
-            results = self._verify_demos(rust_log, py_log, cpp_log, results)
+            results = self._verify_demos(rust_log, py_log, cpp_log, js_log, results)
             
             # If failed, dump logs
             if results.get("demo_status") == "FAIL":
-                 for log_name, log_path in [("rust", rust_log), ("python", py_log), ("cpp", cpp_log)]:
+                 for log_name, log_path in [("rust", rust_log), ("python", py_log), ("cpp", cpp_log), ("js", js_log)]:
                      if os.path.exists(log_path):
                          print(f"\n--- FAILURE LOG: {log_name} ---")
+
                          with open(log_path, "r") as f:
                              print(f.read())
                          print(f"--- END LOG ---")
@@ -396,6 +453,17 @@ class Tester:
                 else:
                     log.write("\n[WARN] C++ client not found. Skipping.\n")
 
+                # 6. Run Fusion JS Client
+                print("  Running Fusion JS Client...")
+                js_client_dir = os.path.join(demo_dir, "js_client")
+                if os.path.exists(js_client_dir):
+                    npm_bin = "npm.cmd" if os.name == 'nt' else "npm"
+                    subprocess.run([npm_bin, "install"], cwd=js_client_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    subprocess.run([npm_bin, "run", "build"], cwd=js_client_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    subprocess.run(["node", "dist/index.js"], stdout=log, stderr=subprocess.STDOUT, cwd=js_client_dir, timeout=15)
+                else:
+                    log.write("\n[WARN] JS client not found. Skipping.\n")
+
             # Verify Logs
             with open(log_path, "r", errors="ignore") as f:
                 content = f.read()
@@ -404,7 +472,8 @@ class Tester:
                 ("[someipy Service] Offering Service 0x1234:0x0001", "someipy Service Startup"),
                 ("Got Response: 'Hello from Fusion Python!'", "Python -> someipy Interop"),
                 ("Got Response: 'Hello from Fusion Rust!'", "Rust -> someipy Interop"),
-                ("Got Response: 'Hello from Fusion C++!'", "C++ -> someipy Interop")
+                ("Got Response: 'Hello from Fusion C++!'", "C++ -> someipy Interop"),
+                ("Got Response: 'Hello from Fusion JS!'", "JS -> someipy Interop")
             ]
             
             for pattern, desc in patterns:
@@ -439,11 +508,15 @@ class Tester:
         
         # Check if Python ADAS script exists
         adas_script = "examples/automotive_pubsub/python_adas/main.py"
-        if not os.path.exists(adas_script):
+        js_adas_dir = "examples/automotive_pubsub/js_adas"
+        
+        if not os.path.exists(adas_script) and not os.path.exists(js_adas_dir):
             print("Warning: Automotive Pub-Sub demo not found, skipping...")
             return {"automotive_pubsub_demo": "SKIPPED"}
         
         log_path = self.reporter.get_log_path("demo_automotive_pubsub")
+        js_log_path = self.reporter.get_log_path("demo_automotive_pubsub_js")
+
         
         env = os.environ.copy()
         env["PYTHONPATH"] = os.pathsep.join(["src/python", "build", "build/generated/python"])
@@ -461,9 +534,27 @@ class Tester:
                 # Run Python ADAS app for 3 seconds to verify startup
                 cmd = ["python", "-u", adas_script]
                 proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env)
+                
+                # Start JS ADAS app too if exists
+                js_proc = None
+                if os.path.exists(js_adas_dir):
+                     with open(js_log_path, "w") as js_log:
+                         js_log.write("=== JS ADAS SUBSCRIBER ===\n")
+                         # Build first
+                         npm_bin = "npm.cmd" if os.name == 'nt' else "npm"
+                         subprocess.run([npm_bin, "install"], cwd=js_adas_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                         subprocess.run([npm_bin, "run", "build"], cwd=js_adas_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                         
+                         js_cmd = ["node", "dist/index.js"]
+                         js_proc = subprocess.Popen(js_cmd, cwd=js_adas_dir, stdout=js_log, stderr=subprocess.STDOUT)
+                
                 time.sleep(3)
                 proc.kill()
                 proc.wait()
+                if js_proc:
+                    js_proc.kill()
+                    js_proc.wait()
+
             
             # Read log to verify startup patterns
             with open(log_path, "r", errors="ignore") as f:
@@ -487,6 +578,27 @@ class Tester:
                     "log": "demo_automotive_pubsub",
                     "details": "Failed to detect ADAS application startup"
                 })
+            
+            # Verify JS Log
+            if os.path.exists(js_log_path):
+                 with open(js_log_path, "r", errors="ignore") as f:
+                     js_content = f.read()
+                 if "ADAS Application starting" in js_content or "Subscribed" in js_content:
+                      results.setdefault("steps", []).append({
+                        "name": "Automotive Pub-Sub: JS ADAS Subscriber Startup",
+                        "status": "PASS",
+                        "log": "demo_automotive_pubsub_js",
+                        "details": "JS ADAS app started and subscribed"
+                      })
+                 else:
+                      results["automotive_pubsub_demo"] = "FAIL" # partial fail
+                      results.setdefault("steps", []).append({
+                        "name": "Automotive Pub-Sub: JS ADAS Subscriber Startup",
+                        "status": "FAIL",
+                        "log": "demo_automotive_pubsub_js",
+                        "details": "JS ADAS app failed to start properly"
+                      })
+
                 
         except Exception as e:
             print(f"Warning: Automotive Pub-Sub Demo error: {e}")
@@ -541,9 +653,10 @@ class Tester:
                 server_proc.terminate()
                 server_proc.wait()
 
-    def _verify_demos(self, rust, py, cpp, initial_results):
+    def _verify_demos(self, rust, py, cpp, js, initial_results):
         results = initial_results
         steps = results.get('steps', [])
+
         
         # Helper logging
         def check(log_name, path, pattern, description):
@@ -581,6 +694,11 @@ class Tester:
         check("demo_cpp", cpp, "Sorting 5 items", "RPC: Python -> C++ Sort")
         check("demo_cpp", cpp, "Sorting 3 items", "RPC: Rust -> C++ Sort")
         check("demo_cpp", cpp, "Field 'status' changed", "Field: C++ Service Update")
+        
+        # JS Checks
+        check("demo_js", js, "Calling Math.Add", "RPC: JS Client -> Rust Math")
+        check("demo_js", js, "Calling String.Reverse", "RPC: JS Client -> Python String")
+
         
         # Aggregate logic
         pass_count = sum(1 for s in steps if s['status'] == 'PASS')
