@@ -2,7 +2,7 @@
 
 > **See Also:** [User Guide](user_guide.md) | [IDL Reference](IDL.md) | [Design Doc](design_and_requirements.md) | [Test Matrix](test_matrix.md)
 
-This document provides a comprehensive view of the Fusion Hawking SOME/IP stack architecture, including deployment topology, internal layers, data flows, and component interactions.
+This document provides a comprehensive view of the Fusion Hawking SOME/IP stack architecture, including deployment topology, internal layers, data flows, and component interactions. The implementation conforms to **AUTOSAR R22-11** (PRS_SOMEIPProtocol, PRS_SOMEIPServiceDiscoveryProtocol).
 
 > **Note:** Diagrams are auto-generated from [PlantUML sources](diagrams/). Run `.\fusion.bat` to regenerate after edits.
 
@@ -171,7 +171,9 @@ The `tools/fusion/` toolkit orchestrates the complete build/test/coverage workfl
 | **Logging** | `src/logging.rs` | DLT-ready logger abstraction | [Design Doc](design_and_requirements.md#3-logging-abstraction-dlt-ready) |
 | **Python Bindings** | `src/python/` | Native Python runtime | |
 | **C++ Bindings** | `src/cpp/` | Modern C++23 runtime | |
+| **JS/TS Runtime** | `src/js/` | Pure TypeScript runtime | [User Guide](user_guide.md#runtime-api) |
 | **Code Generator** | `tools/codegen/` | IDL compiler for multi-language stubs | [IDL](IDL.md) |
+
 | **Automation** | `tools/fusion/` | Build, test, coverage, dashboard | |
 
 ---

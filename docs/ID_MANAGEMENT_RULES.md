@@ -73,7 +73,7 @@ The Configuration manages the *instantiation* of the interface. It must contain:
 - **Minor Versioning**: Handled via SOME/IP SD backward compatibility check (Min Version), but currently less strictly enforced by Python runtime.
    
 ## 7. Protocol Compliance
-All runtimes and tools MUST strictly adhere to the project's interpretation of the SOME/IP and SOME/IP-SD specifications.
+All runtimes and tools MUST strictly adhere to the **AUTOSAR R22-11** SOME/IP and SOME/IP-SD specifications.
 - **Reference Document**: [SOMEIP_SPEC_COMPLIANCE.md](docs/SOMEIP_SPEC_COMPLIANCE.md)
 - **SD Option Lengths**: MUST be 9 bytes for IPv4 Endpoint/Multicast and 21 bytes for IPv6 Endpoint/Multicast (Length field excludes Type and Length fields themselves).
 - **Golden Byte Tests**: Any change to SD packet construction MUST be verified against the cross-language Golden Byte test suite.

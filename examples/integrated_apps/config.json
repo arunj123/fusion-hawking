@@ -48,6 +48,13 @@
             "port": 31690,
             "version": 6,
             "protocol": "udp"
+        },
+        "js_udp": {
+            "interface": "lo",
+            "ip": "127.0.0.1",
+            "version": 4,
+            "port": 0,
+            "protocol": "udp"
         }
     },
     "instances": {
@@ -217,6 +224,28 @@
                 "multicast_endpoint": "sd_multicast_v4",
                 "multicast_endpoint_v6": "sd_multicast_v6",
                 "multicast_hops": 1
+            },
+            "js_app_instance": {
+                "providing": {},
+                "required": {
+                    "math-client": {
+                        "service_id": 4097,
+                        "instance_id": 1,
+                        "major_version": 1,
+                        "endpoint": "rust_udp"
+                    },
+                    "string-client": {
+                        "service_id": 8193,
+                        "instance_id": 1,
+                        "major_version": 1,
+                        "endpoint": "python_tcp"
+                    }
+                },
+                "sd": {
+                    "multicast_endpoint": "sd_multicast_v4",
+                    "multicast_endpoint_v6": "sd_multicast_v6",
+                    "multicast_hops": 1
+                }
             }
         }
     }

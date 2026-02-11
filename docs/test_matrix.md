@@ -2,7 +2,7 @@
 
 > **See Also:** [User Guide](user_guide.md) | [Architecture](architecture.md) | [Design Doc](design_and_requirements.md)
 
-This document tracks test coverage and cross-language interoperability status.
+This document tracks test coverage and cross-language interoperability status against **AUTOSAR R22-11**.
 
 ---
 
@@ -17,6 +17,9 @@ This document tracks test coverage and cross-language interoperability status.
 | | Cross-lang serialization | Integration | ✅ |
 | **C++ Runtime** | `examples/cpp_test/main.cpp` | Unit | ✅ |
 | | Serialization roundtrip | Integration | ✅ |
+| **JS/TS Runtime** | `src/js/tests/` (node --test) | Unit | ✅ |
+| | Serialization roundtrip | Integration | ✅ |
+
 
 ---
 
@@ -30,7 +33,10 @@ This document tracks test coverage and cross-language interoperability status.
 | Service Discovery | All | All | ✅ |
 | Request/Response RPC | Rust | Python | ✅ |
 | Request/Response RPC | Python | C++ | ✅ |
+| Request/Response RPC | JS/TS | Python | ✅ |
 | Event Subscription | Rust | Python | ✅ |
+| Event Subscription | JS/TS | Rust | ✅ |
+
 
 > **Data Flow Diagram:** See [Architecture - Request/Response](architecture.md#requestresponse-data-flow)
 
@@ -48,6 +54,8 @@ This document tracks test coverage and cross-language interoperability status.
 | Configuration (JSON) | ✅ | ✅ | ✅ | |
 | Logging | ✅ | ✅ | ✅ | DLT-ready |
 | Events (Pub/Sub) | ✅ | ✅ | ✅ | |
+| JS/TS Support | N/A | N/A | N/A | 🆕 Full Implementation |
+
 
 > **Feature Details:** See [Design Doc - IPv6 Support](design_and_requirements.md#4-ipv6-support)
 
@@ -79,6 +87,10 @@ pytest tests/
 # C++
 cmake --build build --config Release
 .\build\Release\cpp_test.exe
+82: 
+83: # JS/TS
+84: cd src/js && npm test
+
 ```
 
 ---
@@ -93,6 +105,8 @@ After a test run, coverage reports are available in `logs/latest/coverage/`:
 | Python | `coverage/python/index.html` | `coverage.py` |
 | C++ (Windows) | `coverage/cpp/index.html` | `OpenCppCoverage` |
 | C++ (Linux) | `coverage/cpp/index.html` | `lcov` / `genhtml` |
+| JS/TS | `coverage/js/index.html` | `c8` (Planned) |
+
 
 > **CI/CD Pipeline:** See [Architecture - Automation Pipeline](architecture.md#automation--cicd-pipeline)
 

@@ -1,4 +1,5 @@
-@startuml
+@startuml cicd_pipeline
+
 skinparam backgroundColor #FEFEFE
 
 start
@@ -16,7 +17,10 @@ partition "Build Phase" {
         :cmake build (C++);
     split again
         :codegen (all bindings);
+    split again
+        :npm run build (JS);
     end split
+
 }
 
 partition "Test Phase" {
@@ -27,7 +31,10 @@ partition "Test Phase" {
         :pytest;
     split again
         :ctest;
+    split again
+        :npm test (JS);
     end split
+
     :Integration Demo;
     note right: Multi-process\ncross-language RPC
 }

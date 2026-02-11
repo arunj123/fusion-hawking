@@ -52,6 +52,11 @@ def run_build(root_dir, reporter, builder, tool_status, target, server, skip_cod
     if tool_status.get("cmake") and target in ["all", "cpp", "python"]:
         if not builder.build_cpp(with_coverage):
             raise Exception("C++ Build Failed")
+
+    if target in ["all", "js"]:
+        if not builder.build_js():
+            raise Exception("JS Build Failed")
+
     
     # Capture Configuration
     try:
@@ -86,6 +91,10 @@ def run_test(reporter, tester, target, server):
         elif target == "cpp":
             test_results["cpp"] = tester._run_cpp_tests()
             test_results["steps"].append({"name": "C++ Unit Tests", "status": test_results["cpp"], "details": "Ran target specific cpp tests"})
+        elif target == "js":
+            test_results["js"] = tester._run_js_tests()
+            test_results["steps"].append({"name": "JS Unit Tests", "status": test_results["js"], "details": "Ran 'npm test'"})
+
     
     return test_results
 
@@ -115,7 +124,8 @@ def main():
     parser.add_argument("--clean", action="store_true", help="Clean build artifacts before running")
     parser.add_argument("--server", action="store_true", default=True, help="Enable dashboard server")
     parser.add_argument("--no-dashboard", action="store_true", help="Disable dashboard server (override)")
-    parser.add_argument("--target", type=str, choices=["all", "rust", "python", "cpp"], default="all", help="Target language to test")
+    parser.add_argument("--target", type=str, choices=["all", "rust", "python", "cpp", "js"], default="all", help="Target language to test")
+
     parser.add_argument("--demo", type=str, choices=["all", "simple", "integrated", "pubsub", "someipy"], default="all", help="Specific demo to run")
     parser.add_argument("--no-codegen", action="store_true", help="Skip codegen (assume artifacts exist)")
     parser.add_argument("--base-port", type=int, default=0, help="Port offset for test isolation")
@@ -173,7 +183,12 @@ def main():
                 "build", "build_cpp", "build_linux", 
                 "target", 
                 "examples/integrated_apps/cpp_app/build",
-                "examples/integrated_apps/rust_app/target"
+                "examples/integrated_apps/rust_app/target",
+                "src/js/dist",
+                "examples/automotive_pubsub/js_adas/dist",
+                "examples/integrated_apps/js_app/dist",
+                "examples/simple_no_sd/js/dist",
+                "examples/someipy_demo/js_client/dist"
             ]
             for d in dirs_to_clean:
                 path = os.path.join(root_dir, d)

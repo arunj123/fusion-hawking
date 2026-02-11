@@ -21,6 +21,13 @@
             "interface": "lo",
             "version": 4
         },
+        "js_client_ep": {
+            "ip": "127.0.0.1",
+            "port": 0,
+            "protocol": "udp",
+            "interface": "lo",
+            "version": 4
+        },
         "sd_multicast": {
             "ip": "224.0.0.3",
             "port": 30694,
@@ -77,6 +84,22 @@
                     "instance_id": 1,
                     "major_version": 1,
                     "endpoint": "rust_client_ep"
+                }
+            },
+            "sd": {
+                "multicast_endpoint": "sd_multicast",
+                "multicast_endpoint_v6": "sd_multicast_v6",
+                "cycle_offer_ms": 1000
+            }
+        },
+        "js_client": {
+            "endpoint": "js_client_ep",
+            "required": {
+                "someipy_svc": {
+                    "service_id": 4660,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "endpoint": "js_client_ep"
                 }
             },
             "sd": {

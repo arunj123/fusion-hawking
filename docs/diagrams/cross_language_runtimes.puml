@@ -38,9 +38,23 @@ package "C++ Runtime" #DAE8FC {
     CppRuntime --> JsonConfig
 }
 
+package "JS/TS Runtime" #E1D5E7 {
+    class JsRuntime {
+        +SomeIpRuntime(config, instance)
+        +offerService(alias, impl)
+        +getClient(alias)
+        +run()
+    }
+    class NodeUdpTransport
+    JsRuntime --> NodeUdpTransport
+}
+
+
 note "All runtimes share:\n- Config-driven topology\n- Same wire protocol\n- Same SD multicast group" as N
 N .. SomeIpRuntime
 N .. PyRuntime
 N .. CppRuntime
+N .. JsRuntime
+
 
 @enduml

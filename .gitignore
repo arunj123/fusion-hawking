@@ -7,6 +7,7 @@
 **/build_cpp/
 **/bin/
 **/obj/
+**/node_modules/
 *.exe
 *.obj
 *.bin
@@ -46,4 +47,6 @@ htmlcov/
 AUTOSAR_PRS_SOMEIPProtocol.pdf
 AUTOSAR_PRS_SOMEIPServiceDiscoveryProtocol.pdf
 
-
+# JS/TS
+**/dist/
+src/js/tests/.tmp/

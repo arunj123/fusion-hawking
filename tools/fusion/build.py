@@ -60,3 +60,23 @@ class Builder:
             return False
             
         return True
+
+    def build_js(self):
+        # Build JS/TS Core
+        # Install dependencies
+        cmd_install = ["npm", "install"]
+        # Use shell=True for windows npm compatibility if needed, but run_command uses array so subprocess.run handles it.
+        # On Windows, npm is a batch file, so we might need shell=True or list ['npm.cmd', ...]
+        # fusion.bat checks python, but assumes node is in path.
+        npm_bin = "npm"
+        if os.name == "nt":
+            npm_bin = "npm.cmd"
+            
+        if not self.run_command([npm_bin, "install"], "build_js_install", cwd="src/js"):
+            return False
+            
+        # Build
+        if not self.run_command([npm_bin, "run", "build"], "build_js_compile", cwd="src/js"):
+            return False
+            
+        return True

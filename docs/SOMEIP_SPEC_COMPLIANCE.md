@@ -34,6 +34,8 @@ Based on this, the following lengths are enforced across all runtimes (Python, C
 *   **Python**: Verified with `someipy` (standard compliance).
 *   **C++**: Enforced in `runtime.cpp`.
 *   **Rust**: Enforced in `src/sd/options.rs`.
+*   **JS/TS**: Enforced in `src/js/src/sd.ts` and verified by golden tests.
+
 
 ## Platform Support
 

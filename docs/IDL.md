@@ -22,20 +22,20 @@ python -m tools.codegen.main examples/integrated_apps/interface.py
 
 ### Primitives
 
-| IDL Type | Python | Rust | C++ |
-|----------|--------|------|-----|
-| `int` / `int32` | `int` | `i32` | `int32_t` |
-| `int8` | `int` | `i8` | `int8_t` |
-| `int16` | `int` | `i16` | `int16_t` |
-| `int64` | `int` | `i64` | `int64_t` |
-| `uint8` | `int` | `u8` | `uint8_t` |
-| `uint16` | `int` | `u16` | `uint16_t` |
-| `uint32` | `int` | `u32` | `uint32_t` |
-| `uint64` | `int` | `u64` | `uint64_t` |
-| `float` / `float32` | `float` | `f32` | `float` |
-| `double` / `float64` | `float` | `f64` | `double` |
-| `bool` | `bool` | `bool` | `bool` |
-| `string` / `str` | `str` | `String` | `std::string` |
+| IDL Type | Python | Rust | C++ | JS/TS |
+|----------|--------|------|-----|-------|
+| `int` / `int32` | `int` | `i32` | `int32_t` | `number` |
+| `int8` | `int` | `i8` | `int8_t` | `number` |
+| `int16` | `int` | `i16` | `int16_t` | `number` |
+| `int64` | `int` | `i64` | `int64_t` | `bigint` |
+| `uint8` | `int` | `u8` | `uint8_t` | `number` |
+| `uint16` | `int` | `u16` | `uint16_t` | `number` |
+| `uint32` | `int` | `u32` | `uint32_t` | `number` |
+| `uint64` | `int` | `u64` | `uint64_t` | `bigint` |
+| `float` / `float32` | `float` | `f32` | `float` | `number` |
+| `double` / `float64` | `float` | `f64` | `double` | `number` |
+| `bool` | `bool` | `bool` | `bool` | `boolean` |
+| `string` / `str` | `str` | `String` | `std::string` | `string` |
 
 ### Complex Types
 
@@ -123,7 +123,7 @@ class RadarService:
 
 ---
 
-## Serialization Details
+## Serialization Details (per AUTOSAR R22-11 [PRS_SOMEIP_00030])
 
 | Element | Format |
 |---------|--------|
@@ -163,6 +163,10 @@ build/generated/
 └── cpp/
     ├── MathService.hpp      # Abstract handler + Client class
     └── generated.hpp
+└── js/
+    ├── MathService.ts       # Typed interface + Client/Server stubs
+    └── index.ts
+
 ```
 
 ---
