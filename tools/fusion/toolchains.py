@@ -73,16 +73,20 @@ class ToolchainManager:
                 os.environ["PATH"] += os.pathsep + os.path.dirname(default_path)
                 return True
                 
-        # Check ~/.cargo/bin for rust tools
-        if "cargo-" in cmd:
-             cargo_bin = os.path.expanduser("~/.cargo/bin")
-             if cargo_bin not in os.environ["PATH"]:
-                 os.environ["PATH"] += os.pathsep + cargo_bin
+        # Check ~/.cargo/bin for rust tools (common on Linux/WSL)
+        # We check this for all commands, not just those with 'cargo-'
+        cargo_bin = os.path.expanduser("~/.cargo/bin")
+        if os.path.exists(cargo_bin):
+            if cargo_bin not in os.environ["PATH"]:
+                os.environ["PATH"] += os.pathsep + cargo_bin
+            # Re-check with potential new path
+            if shutil.which(cmd):
+                return True
 
         try:
             subprocess.run([cmd, arg], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             return True
-        except FileNotFoundError:
+        except (FileNotFoundError, subprocess.CalledProcessError):
             return False
 
     def print_status(self):

@@ -20,6 +20,10 @@ class Builder:
                     print(log_file.read())
                     print(f"--- END LOG ---")
                 return False
+            except FileNotFoundError as e:
+                f.write(f"\n[ERROR] Command not found: {e}\n")
+                print(f"[ERROR] Command not found: {e}")
+                return False
 
     def generate_bindings(self):
         import sys

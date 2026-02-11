@@ -1,8 +1,8 @@
 {
     "endpoints": {
         "rust_udp": {
-            "interface": "eth0",
-            "ip": "172.26.144.124",
+            "interface": "lo",
+            "ip": "127.0.0.1",
             "version": 4,
             "port": 0,
             "protocol": "udp"
@@ -22,28 +22,28 @@
             "protocol": "tcp"
         },
         "python_v4_tcp": {
-            "interface": "eth0",
-            "ip": "172.26.144.124",
+            "interface": "lo",
+            "ip": "127.0.0.1",
             "version": 4,
             "port": 0,
             "protocol": "tcp"
         },
         "cpp_udp": {
-            "interface": "eth0",
-            "ip": "172.26.144.124",
+            "interface": "lo",
+            "ip": "127.0.0.1",
             "version": 4,
             "port": 0,
             "protocol": "udp"
         },
         "sd_multicast_v4": {
-            "interface": "eth0",
+            "interface": "lo",
             "ip": "224.0.0.1",
             "port": 30690,
             "version": 4,
             "protocol": "udp"
         },
         "sd_multicast_v6": {
-            "interface": "eth0",
+            "interface": "lo",
             "ip": "FF02::4:C",
             "port": 31690,
             "version": 6,

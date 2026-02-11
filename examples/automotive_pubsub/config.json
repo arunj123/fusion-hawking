@@ -1,29 +1,29 @@
 {
     "endpoints": {
         "sd_multicast_v4": {
-            "interface": "eth0",
+            "interface": "lo",
             "ip": "224.0.0.2",
             "port": 30692,
             "version": 4,
             "protocol": "udp"
         },
         "event_multicast": {
-            "interface": "eth0",
+            "interface": "lo",
             "ip": "225.0.0.1",
             "port": 30695,
             "version": 4,
             "protocol": "udp"
         },
         "radar_ep": {
-            "interface": "eth0",
-            "ip": "172.26.144.124",
+            "interface": "lo",
+            "ip": "127.0.0.1",
             "port": 0,
             "version": 4,
             "protocol": "udp"
         },
         "fusion_ep": {
-            "interface": "eth0",
-            "ip": "172.26.144.124",
+            "interface": "lo",
+            "ip": "127.0.0.1",
             "port": 0,
             "version": 4,
             "protocol": "udp"

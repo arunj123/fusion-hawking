@@ -263,30 +263,42 @@ def patch_configs(ip_v4, root_dir, port_offset=0, ip_v6=None, config_paths=None)
                         # Interface Patching (Mandatory)
                         final_ip = ep_cfg.get("ip")
                         
+                        # Use force_lo if final_ip is a loopback address
+                        is_loopback = final_ip and (final_ip.startswith("127.") or final_ip == "::1" or final_ip == "localhost")
+                        
                         # Update interface name
-                        # We prefer the explicitly requested interface (e.g. 'lo' from ip_v4 fallback)
-                        if target_iface:
-                            ep_cfg['interface'] = target_iface
-                            modified = True
+                        # Rules:
+                        # 1. If it's a loopback IP, it MUST use 'lo' (Linux) or Windows loopback
+                        # 2. Otherwise, if target_iface is forced (e.g. from get_local_ip), use it
+                        # 3. Else fallback to detected interface
+                        
+                        if is_loopback:
+                            new_iface = "lo" if os.name != 'nt' else "Loopback Pseudo-Interface 1"
+                            if ep_cfg.get('interface') != new_iface:
+                                ep_cfg['interface'] = new_iface
+                                modified = True
+                        elif target_iface:
+                            if ep_cfg.get('interface') != target_iface:
+                                ep_cfg['interface'] = target_iface
+                                modified = True
                         elif net_info['interface'] and net_info['interface'] != 'lo':
-                            # If no force-iface, use detected if it's a real NIC
-                            ep_cfg['interface'] = net_info['interface']
-                            modified = True
+                            if ep_cfg.get('interface') != net_info['interface']:
+                                ep_cfg['interface'] = net_info['interface']
+                                modified = True
                         
                         # Explicitly remove interface_index as runtimes now resolve dynamically
                         if ep_cfg.pop('interface_index', None) is not None:
                             modified = True
                         
-                        # Ensure we ALWAYS have an interface field if it's missing or set to a generic placeholder
+                        # Ensure we ALWAYS have an interface field if it's missing or set to a generic placeholder (like eth0)
                         if not ep_cfg.get("interface") or ep_cfg.get("interface") == "eth0":
-                            if final_ip and (final_ip.startswith("127.") or final_ip == "::1" or final_ip == "localhost"):
-                                ep_cfg["interface"] = "lo"
+                            if is_loopback:
+                                ep_cfg["interface"] = "lo" if os.name != 'nt' else "Loopback Pseudo-Interface 1"
                                 modified = True
                             elif net_info['interface']:
                                 ep_cfg["interface"] = net_info["interface"]
                                 modified = True
                             else:
-                                # Final fallback for Windows or minimal environments
                                 ep_cfg["interface"] = "lo" if os.name != 'nt' else "Loopback Pseudo-Interface 1"
                                 modified = True
                         

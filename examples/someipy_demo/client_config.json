@@ -1,45 +1,45 @@
 {
     "endpoints": {
         "python_client_ep": {
-            "ip": "172.26.144.124",
+            "ip": "127.0.0.1",
             "port": 0,
             "protocol": "udp",
-            "interface": "eth0",
+            "interface": "lo",
             "version": 4
         },
         "cpp_client_ep": {
-            "ip": "172.26.144.124",
+            "ip": "127.0.0.1",
             "port": 0,
             "protocol": "udp",
-            "interface": "eth0",
+            "interface": "lo",
             "version": 4
         },
         "rust_client_ep": {
-            "ip": "172.26.144.124",
+            "ip": "127.0.0.1",
             "port": 0,
             "protocol": "udp",
-            "interface": "eth0",
+            "interface": "lo",
             "version": 4
         },
         "js_client_ep": {
-            "ip": "172.26.144.124",
+            "ip": "127.0.0.1",
             "port": 0,
             "protocol": "udp",
-            "interface": "eth0",
+            "interface": "lo",
             "version": 4
         },
         "sd_multicast": {
             "ip": "224.0.0.3",
             "port": 30694,
             "protocol": "udp",
-            "interface": "eth0",
+            "interface": "lo",
             "version": 4
         },
         "sd_multicast_v6": {
             "ip": "ff02::1",
             "port": 30694,
             "protocol": "udp",
-            "interface": "eth0",
+            "interface": "lo",
             "version": 6
         }
     },

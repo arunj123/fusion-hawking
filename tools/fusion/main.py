@@ -156,9 +156,18 @@ def main():
     # Patch configs with local IP and Port Offset
     local_ip = get_local_ip()
     
-    # Force loopback in GitHub Actions (internal networking is often unreliable for UDP SD)
-    if os.environ.get("GITHUB_ACTIONS") == "true":
-        print("[INFO] CI detected: forcing loopback (127.0.0.1) for stability")
+    # Force loopback in GitHub Actions or WSL
+    # Internal networking in WSL2/CI is often unreliable for UDP SD multicast
+    is_wsl = False
+    try:
+        if os.path.exists("/proc/version"):
+            with open("/proc/version", "r") as f:
+                if "microsoft" in f.read().lower():
+                    is_wsl = True
+    except: pass
+
+    if os.environ.get("GITHUB_ACTIONS") == "true" or is_wsl:
+        print(f"[INFO] {'CI' if not is_wsl else 'WSL'} detected: forcing loopback (127.0.0.1) for stability")
         local_ip = "127.0.0.1"
         
     patch_configs(local_ip, root_dir, args.base_port)
