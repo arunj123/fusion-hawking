@@ -32,14 +32,14 @@
             "ip": "224.0.0.3",
             "port": 30694,
             "protocol": "udp",
-            "interface": "eth0",
+            "interface": "lo",
             "version": 4
         },
         "sd_multicast_v6": {
             "ip": "ff02::1",
             "port": 30694,
             "protocol": "udp",
-            "interface": "eth0",
+            "interface": "lo",
             "version": 6
         }
     },

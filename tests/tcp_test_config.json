@@ -1,7 +1,7 @@
 {
     "endpoints": {
         "sd_multicast_v4": {
-            "interface": "eth0",
+            "interface": "lo",
             "ip": "224.0.0.1",
             "port": 30690,
             "version": 4,

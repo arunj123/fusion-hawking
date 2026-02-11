@@ -11,6 +11,7 @@
 *.exe
 *.obj
 *.bin
+!/tests/fixtures/*.bin
 *.pdb
 
 # Logs and temp files

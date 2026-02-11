@@ -8,7 +8,7 @@
             "protocol": "udp"
         },
         "sd_multicast": {
-            "interface": "eth0",
+            "interface": "lo",
             "ip": "224.0.0.1",
             "port": 30690,
             "version": 4,

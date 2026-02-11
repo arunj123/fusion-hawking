@@ -109,15 +109,19 @@ int main() {
     // Load config from parent directory in the integrated_apps bundle
     SomeIpRuntime rt("../config.json", "cpp_app_instance", logger);
     
+    logger->Log(LogLevel::INFO, "Main", "Offering SortService...");
     SortServiceImpl sort_svc(logger, &rt);
     rt.offer_service("sort-service", &sort_svc);
 
+    logger->Log(LogLevel::INFO, "Main", "Offering SensorService...");
     SensorServiceImpl sensor_svc(&rt);
     rt.offer_service("sensor-service", &sensor_svc);
     
+    logger->Log(LogLevel::INFO, "Main", "Offering MathService...");
     MathServiceImpl math_svc(logger, 2);
     rt.offer_service("math-service", &math_svc);
     
+    logger->Log(LogLevel::INFO, "Main", "Services offered. Entering main loop.");
     std::this_thread::sleep_for(std::chrono::seconds(2));
     std::shared_ptr<MathServiceClient> client = nullptr;
 
@@ -128,17 +132,14 @@ int main() {
         
         if (!client) {
             // Try to create client if not exists
-            // Since create_client might block or log warning, we try periodically
+            logger->Log(LogLevel::INFO, "Main", "Attempting to create MathServiceClient ('math-client')...");
              try {
-                // We use specific method if available, or just create_client
-                // If create_client returns raw pointer, we manage it. 
-                // The original code used raw pointer: MathServiceClient* client = ...
-                // generated bindings probably return raw pointer (owned by runtime?) or unique_ptr?
-                // checked main.cpp: MathServiceClient* client = rt.create_client<...>();
-                // If it fails, it returns nullptr?
                 client.reset(rt.create_client<MathServiceClient>("math-client"));
+                if (client) {
+                    logger->Log(LogLevel::INFO, "Main", "MathServiceClient created successfully!");
+                }
              } catch (...) {
-                 // Ignore
+                 logger->Log(LogLevel::ERR, "Main", "Exception caught while creating MathServiceClient");
              }
         }
 

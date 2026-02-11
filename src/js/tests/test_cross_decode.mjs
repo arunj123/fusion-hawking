@@ -5,11 +5,13 @@
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { deserializeHeader, MessageType, ReturnCode } from '../dist/codec.js';
 import { parseSdEntries, parseSdOptions, SdEntryType, SdOptionType } from '../dist/sd.js';
 
-const fixturesDir = resolve(import.meta.dirname, '..', '..', '..', 'tests', 'fixtures');
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const fixturesDir = resolve(__dirname, '..', '..', '..', 'tests', 'fixtures');
 
 function loadFixture(name) {
     return readFileSync(join(fixturesDir, name));

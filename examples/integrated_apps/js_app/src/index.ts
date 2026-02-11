@@ -23,7 +23,8 @@ async function main() {
 
     // Wait, let's assume 'js_app_instance' is needed.
     const runtime = new SomeIpRuntime();
-    await runtime.loadConfigFile(configPath);
+    // Load configuration
+    await runtime.loadConfigFile(configPath, 'js_app_instance');
 
     runtime.getLogger().log(LogLevel.INFO, "Main", "JS Runtime Starting...");
     runtime.start();

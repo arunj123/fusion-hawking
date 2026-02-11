@@ -4,10 +4,12 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync, unlinkSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadConfig } from '../dist/config.js';
 
-const tmpDir = join(import.meta.dirname, '..', 'tests', '.tmp');
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const tmpDir = join(__dirname, '..', 'tests', '.tmp');
 const configPath = join(tmpDir, 'test_config.json');
 
 describe('Config Loader', () => {

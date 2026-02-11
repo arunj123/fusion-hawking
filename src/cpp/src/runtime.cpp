@@ -329,17 +329,20 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
         
         this->sd_if_index = if_index;
         
-        if (if_index != 0) {
+        if (if_index != 0 && !this->sd_multicast_ip_v6.empty() && this->sd_multicast_ip_v6 != "::") {
             if (setsockopt(sd_sock_v6, IPPROTO_IPV6, IPV6_MULTICAST_IF, (const char*)&if_index, sizeof(if_index)) < 0) {
                 this->logger->Log(LogLevel::WARN, "Runtime", "Failed to set IPV6_MULTICAST_IF to index " + std::to_string(if_index) + " err=" + std::to_string(GET_SOCKET_ERROR()));
             }
         }
         
-        ipv6_mreq mreq6;
-        inet_pton(AF_INET6, this->sd_multicast_ip_v6.c_str(), &mreq6.ipv6mr_multiaddr);
-        mreq6.ipv6mr_interface = if_index; 
-        if (setsockopt(sd_sock_v6, IPPROTO_IPV6, IPV6_JOIN_GROUP, (const char*)&mreq6, sizeof(mreq6)) < 0) {
-            this->logger->Log(LogLevel::WARN, "Runtime", "Failed to join IPv6 multicast group " + this->sd_multicast_ip_v6 + " err=" + std::to_string(GET_SOCKET_ERROR()));
+        if (!this->sd_multicast_ip_v6.empty() && this->sd_multicast_ip_v6 != "::") {
+            ipv6_mreq mreq6;
+            if (inet_pton(AF_INET6, this->sd_multicast_ip_v6.c_str(), &mreq6.ipv6mr_multiaddr) > 0) {
+                mreq6.ipv6mr_interface = if_index; 
+                if (setsockopt(sd_sock_v6, IPPROTO_IPV6, IPV6_JOIN_GROUP, (const char*)&mreq6, sizeof(mreq6)) < 0) {
+                    this->logger->Log(LogLevel::WARN, "Runtime", "Failed to join IPv6 multicast group " + this->sd_multicast_ip_v6 + " err=" + std::to_string(GET_SOCKET_ERROR()));
+                }
+            }
         }
 
         int hops = (int)config.sd.multicast_hops;

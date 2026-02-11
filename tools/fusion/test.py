@@ -3,6 +3,7 @@ import os
 import time
 import threading
 import json
+import sys
 
 class Tester:
     def __init__(self, reporter, builder):
@@ -110,7 +111,7 @@ class Tester:
         
         # 1. Unittest
         with open(self.reporter.get_log_path("test_python_unittest"), "w") as f:
-             py_cmd = ["python", "-m", "unittest", "discover", "tests"]
+             py_cmd = [sys.executable, "-m", "unittest", "discover", "tests"]
              f.write(f"=== FUSION UNIT TEST ===\nCommand: {' '.join(py_cmd)}\nPWD: {os.getcwd()}\nEnvironment [PYTHONPATH]: {env['PYTHONPATH']}\n========================\n\n")
              f.flush()
              status = "PASS" if subprocess.call(py_cmd, stdout=f, stderr=subprocess.STDOUT, env=env) == 0 else "FAIL"
@@ -124,7 +125,7 @@ class Tester:
 
         # 2. Codegen Tests
         with open(self.reporter.get_log_path("test_codegen"), "w") as f:
-             codegen_cmd = ["python", "-m", "unittest", "tools.codegen.tests.test_codegen", "-v"]
+             codegen_cmd = [sys.executable, "-m", "unittest", "tools.codegen.tests.test_codegen", "-v"]
              f.write(f"=== FUSION CODEGEN UNIT TEST ===\nCommand: {' '.join(codegen_cmd)}\nPWD: {os.getcwd()}\n================================\n\n")
              f.flush()
              status = "PASS" if subprocess.call(codegen_cmd, stdout=f, stderr=subprocess.STDOUT, env=env) == 0 else "FAIL"
@@ -141,7 +142,7 @@ class Tester:
              # Check if pytest is installed
              try:
                  # Run pytest on the whole tests/ directory to catch all issues, not just cross_language
-                 pytest_cmd = ["python", "-m", "pytest", "tests/"]
+                 pytest_cmd = [sys.executable, "-m", "pytest", "tests/"]
                  f.write(f"=== FUSION PYTEST ===\nCommand: {' '.join(pytest_cmd)}\nPWD: {os.getcwd()}\nEnvironment [PYTHONPATH]: {env['PYTHONPATH']}\n=====================\n\n")
                  f.flush()
                  if subprocess.call(pytest_cmd, stdout=f, stderr=subprocess.STDOUT, env=env) == 0:
@@ -277,7 +278,7 @@ class Tester:
                 f_py = open(py_log, "w")
                 log_files.append(f_py)
                 # Run the script within its directory
-                py_cmd = ["python", "-u", "main.py"]
+                py_cmd = [sys.executable, "-u", "main.py"]
                 f_py.write(f"=== FUSION TEST RUNNER ===\nCommand: {' '.join(py_cmd)}\nPWD: {os.path.join(os.getcwd(), 'examples/integrated_apps/python_app')}\n==========================\n\n")
                 f_py.flush()
                 p_py = subprocess.Popen(py_cmd, stdout=f_py, stderr=subprocess.STDOUT, env=env, cwd="examples/integrated_apps/python_app")
@@ -420,19 +421,19 @@ class Tester:
                 
                 # 1. Start Daemon
                 print("  Starting someipy daemon...")
-                p_daemon = subprocess.Popen(["python", "-u", "start_daemon.py"], stdout=log, stderr=subprocess.STDOUT, cwd=demo_dir)
+                p_daemon = subprocess.Popen([sys.executable, "-u", "start_daemon.py"], stdout=log, stderr=subprocess.STDOUT, cwd=demo_dir)
                 procs.append(p_daemon)
                 time.sleep(2)
                 
                 # 2. Start Service
                 print("  Starting someipy service...")
-                p_service = subprocess.Popen(["python", "-u", "service_someipy.py"], stdout=log, stderr=subprocess.STDOUT, cwd=demo_dir)
+                p_service = subprocess.Popen([sys.executable, "-u", "service_someipy.py"], stdout=log, stderr=subprocess.STDOUT, cwd=demo_dir)
                 procs.append(p_service)
                 time.sleep(3)
                 
                 # 3. Run Fusion Python Client
                 print("  Running Fusion Python Client...")
-                client_res = subprocess.run(["python", "-u", "client_fusion.py"], stdout=log, stderr=subprocess.STDOUT, cwd=demo_dir, env=env)
+                client_res = subprocess.run([sys.executable, "-u", "client_fusion.py"], stdout=log, stderr=subprocess.STDOUT, cwd=demo_dir, env=env)
                 
                 # 4. Run Fusion Rust Client
                 print("  Running Fusion Rust Client...")
@@ -532,7 +533,7 @@ class Tester:
                 log.flush()
                 
                 # Run Python ADAS app for 3 seconds to verify startup
-                cmd = ["python", "-u", adas_script]
+                cmd = [sys.executable, "-u", adas_script]
                 proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env)
                 
                 # Start JS ADAS app too if exists
