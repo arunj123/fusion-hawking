@@ -104,3 +104,36 @@ impl SomeIpDeserialize for SdPacket {
         })
     }
 }
+
+impl SdPacket {
+    #[cfg(feature = "packet-dump")]
+    pub fn dump(&self, addr: std::net::SocketAddr) {
+        log::debug!(target: "DUMP", "\n[DUMP] --- SD Message from {} ---", addr);
+        for entry in &self.entries {
+            log::debug!(target: "DUMP", "  [Entry] {:?}: Service=0x{:04X} Inst=0x{:04X} TTL={}", 
+                entry.entry_type, entry.service_id, entry.instance_id, entry.ttl);
+        }
+        for opt in &self.options {
+            match opt {
+                SdOption::Ipv4Endpoint { address, transport_proto, port } => {
+                    let proto = if *transport_proto == 0x06 { "TCP" } else { "UDP" };
+                    log::debug!(target: "DUMP", "  [Option] IPv4 Endpt: {}:{} ({})", address, port, proto);
+                }
+                SdOption::Ipv6Endpoint { address, transport_proto, port } => {
+                    let proto = if *transport_proto == 0x06 { "TCP" } else { "UDP" };
+                    log::debug!(target: "DUMP", "  [Option] IPv6 Endpt: {}:{} ({})", address, port, proto);
+                }
+                SdOption::Ipv4Multicast { address, transport_proto, port } => {
+                    let proto = if *transport_proto == 0x06 { "TCP" } else { "UDP" };
+                    log::debug!(target: "DUMP", "  [Option] IPv4 Multicast: {}:{} ({})", address, port, proto);
+                }
+                SdOption::Ipv6Multicast { address, transport_proto, port } => {
+                    let proto = if *transport_proto == 0x06 { "TCP" } else { "UDP" };
+                    log::debug!(target: "DUMP", "  [Option] IPv6 Multicast: {}:{} ({})", address, port, proto);
+                }
+                _ => log::debug!(target: "DUMP", "  [Option] {:?}", opt),
+            }
+        }
+        log::debug!(target: "DUMP", "--------------------------------------\n");
+    }
+}

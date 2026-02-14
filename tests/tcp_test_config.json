@@ -1,18 +1,27 @@
 {
-    "endpoints": {
-        "sd_multicast_v4": {
-            "interface": "lo",
-            "ip": "224.0.0.1",
-            "port": 30690,
-            "version": 4,
-            "protocol": "udp"
-        },
-        "server_tcp": {
-            "ip": "127.0.0.1",
-            "port": 0,
-            "version": 4,
-            "protocol": "tcp",
-            "interface": "lo"
+    "interfaces": {
+        "primary": {
+            "name": "eth0",
+            "endpoints": {
+                "sd_multicast": {
+                    "ip": "224.0.0.5",
+                    "port": 30890,
+                    "version": 4,
+                    "protocol": "udp"
+                },
+                "server_tcp": {
+                    "ip": "127.0.0.1",
+                    "port": 0,
+                    "version": 4,
+                    "protocol": "tcp"
+                }
+            },
+            "sd": {
+                "endpoint": "sd_multicast"
+            },
+            "server": {
+                "endpoint": "server_tcp"
+            }
         }
     },
     "instances": {
@@ -21,25 +30,28 @@
                 "math-service": {
                     "service_id": 4097,
                     "instance_id": 1,
-                    "endpoint": "server_tcp"
+                    "major_version": 1,
+                    "offer_on": {
+                        "primary": "server_tcp"
+                    }
                 }
             },
             "sd": {
-                "multicast_endpoint": "sd_multicast_v4",
                 "cycle_offer_ms": 100
-            }
+            },
+            "unicast_bind": {}
         },
         "tcp_client": {
             "required": {
                 "math-client": {
                     "service_id": 4097,
                     "instance_id": 1,
-                    "endpoint": "server_tcp"
+                    "find_on": [
+                        "primary"
+                    ]
                 }
             },
-            "sd": {
-                "multicast_endpoint": "sd_multicast_v4"
-            }
+            "unicast_bind": {}
         }
     }
 }

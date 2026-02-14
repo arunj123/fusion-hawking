@@ -55,9 +55,17 @@ impl ComplexTypeServiceProvider for ComplexImpl {
 }
 
 fn main() {
-    let rt = SomeIpRuntime::load("../config.json", "rust_app_instance");
+    let args: Vec<String> = std::env::args().collect();
+    let config_path = if args.len() > 1 {
+        &args[1]
+    } else {
+        "../config.json"
+    };
+
+    println!("Loading config from: {}", config_path);
+    let rt = SomeIpRuntime::load(config_path, "rust_app_instance");
     let logger = rt.get_logger();
-    logger.log(LogLevel::Info, "Main", "--- Rust Runtime Expanded Demo ---");
+    logger.log(LogLevel::Info, "Main", &format!("--- Rust Runtime Expanded Demo (Config: {}) ---", config_path));
     
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
@@ -99,7 +107,7 @@ fn main() {
     }
 
     // Subscribe using constants
-    rt.subscribe_eventgroup(SortServiceClient::SERVICE_ID, 1, 1, 100);
+    rt.subscribe_eventgroup(SortServiceClient::SERVICE_ID, 1, 1, 100, "primary");
 
     while running.load(Ordering::Relaxed) {
         if let Some(c) = rt.get_client::<MathServiceClient>("math-client-v2") {

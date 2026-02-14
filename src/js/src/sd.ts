@@ -31,9 +31,9 @@ export const SD_METHOD_ID = 0x8100;
 export const SD_FLAGS_REBOOT = 0x80;
 
 /** IPv4 endpoint option field length [PRS_SOMEIPSD_00280]. */
-export const IPV4_OPTION_LENGTH = 10;
+export const IPV4_OPTION_LENGTH = 0x0009;
 /** IPv6 endpoint option field length [PRS_SOMEIPSD_00280]. */
-export const IPV6_OPTION_LENGTH = 22;
+export const IPV6_OPTION_LENGTH = 0x0015;
 
 /** Parsed SD Entry. */
 export interface SdEntry {
@@ -121,7 +121,7 @@ export function parseSdOptions(buf: Buffer, offset: number): SdOption[] {
         }
 
         options.push({ length: optLen, type: optType, ipAddress, protocol, port });
-        pos += 2 + optLen;
+        pos += 3 + optLen; // Length excludes Type
     }
     return options;
 }
@@ -132,7 +132,7 @@ export function parseSdOptions(buf: Buffer, offset: number): SdOption[] {
  * @param instanceId Instance ID
  * @param majorVersion Major version
  * @param minorVersion Minor version
- * @param ipAddress IPv4 address string (e.g. "127.0.0.1")
+ * @param ipAddress IP address string
  * @param port Service port
  * @param protocol 0x11=UDP, 0x06=TCP
  * @param sessionMgr SessionIdManager for tracking
@@ -147,8 +147,12 @@ export function buildSdOffer(
     protocol: number = 0x11,
     sessionMgr?: SessionIdManager,
 ): Buffer {
+    const isV6 = ipAddress.includes(':');
+    const optLen = isV6 ? 24 : 12;
+    const optType = isV6 ? SdOptionType.IPV6_ENDPOINT : SdOptionType.IPV4_ENDPOINT;
+
     // SD Payload
-    const sdPayload = Buffer.alloc(4 + 4 + 16 + 4 + 12);
+    const sdPayload = Buffer.alloc(4 + 4 + 16 + 4 + optLen);
     let off = 0;
 
     // Flags: reboot=1
@@ -166,16 +170,31 @@ export function buildSdOffer(
     sdPayload.writeUInt32BE(majTtl >>> 0, off); off += 4;
     sdPayload.writeUInt32BE(minorVersion, off); off += 4;
     // Options length
-    sdPayload.writeUInt32BE(12, off); off += 4;
-    // IPv4 Endpoint Option
-    sdPayload.writeUInt16BE(IPV4_OPTION_LENGTH, off); off += 2;
-    sdPayload[off++] = SdOptionType.IPV4_ENDPOINT;
-    sdPayload[off++] = 0; // reserved
-    const parts = ipAddress.split('.').map(Number);
-    for (const p of parts) sdPayload[off++] = p;
-    sdPayload[off++] = 0; // reserved
-    sdPayload[off++] = protocol;
-    sdPayload.writeUInt16BE(port, off); off += 2;
+    sdPayload.writeUInt32BE(optLen, off); off += 4;
+
+    if (!isV6) {
+        // IPv4 Endpoint Option
+        sdPayload.writeUInt16BE(IPV4_OPTION_LENGTH, off); off += 2;
+        sdPayload[off++] = SdOptionType.IPV4_ENDPOINT;
+        sdPayload[off++] = 0; // reserved
+        const parts = ipAddress.split('.').map(Number);
+        for (const p of parts) sdPayload[off++] = p;
+        sdPayload[off++] = 0; // reserved
+        sdPayload[off++] = protocol;
+        sdPayload.writeUInt16BE(port, off); off += 2;
+    } else {
+        // IPv6 Endpoint Option
+        sdPayload.writeUInt16BE(IPV6_OPTION_LENGTH, off); off += 2;
+        sdPayload[off++] = SdOptionType.IPV6_ENDPOINT;
+        sdPayload[off++] = 0; // reserved
+        // Parse IPv6 address (simple version for now, full contraction support omitted for brevity if simple join works)
+        // Better: use a helper to get 16 bytes.
+        const ipv6Bytes = ipv6ToBytes(ipAddress);
+        for (let i = 0; i < 16; i++) sdPayload[off++] = ipv6Bytes[i];
+        sdPayload[off++] = 0; // reserved
+        sdPayload[off++] = protocol;
+        sdPayload.writeUInt16BE(port, off); off += 2;
+    }
 
     // SOME/IP Header
     const sessionId = sessionMgr?.nextSessionId(SD_SERVICE_ID, SD_METHOD_ID) ?? 1;
@@ -192,6 +211,24 @@ export function buildSdOffer(
     });
 
     return Buffer.concat([header, sdPayload]);
+}
+
+function ipv6ToBytes(ip: string): Uint8Array {
+    const bytes = new Uint8Array(16);
+    const parts = ip.split(':');
+    let b = 0;
+    for (const p of parts) {
+        if (p === '') {
+            // handle ::
+            const remaining = 8 - (parts.length - 1);
+            b += remaining * 2;
+            continue;
+        }
+        const val = parseInt(p, 16);
+        bytes[b++] = (val >> 8) & 0xFF;
+        bytes[b++] = val & 0xFF;
+    }
+    return bytes;
 }
 
 /**

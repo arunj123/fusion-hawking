@@ -1,0 +1,19 @@
+@startuml
+component "Gateway Instance" as Inst {
+  port "Unicast Bind (eth0)" as U_ETH
+  port "Unicast Bind (wifi)" as U_WIFI
+}
+
+interface "eth0 (SD Mcast)" as I_ETH
+interface "wifi (SD Mcast)" as I_WIFI
+
+U_ETH --> I_ETH : Sends Offers
+U_WIFI --> I_WIFI : Sends Offers
+
+note right of Inst
+  <b>Services</b>
+  DiagnosticsService
+  - offer_on: eth0 -> diag_eth_ep
+  - offer_on: wifi -> diag_wifi_ep
+end note
+@enduml

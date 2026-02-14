@@ -1,80 +1,54 @@
-import pytest
-import time
-import threading
-from fusion_hawking import SomeIpRuntime
-from bindings import SortServiceSortAscRequest, SortServiceOnSortCompletedEvent
+import unittest
+import sys
+import os
+import struct
 
-def test_event_subscription():
-    """
-    Verify that Python Runtime can subscribe to events and receive notifications.
-    We will mock a publisher (server) using another Runtime instance (or just raw UDP if easier, 
-    but using Runtime is better integration test).
-    """
-    # 1. Start Server Runtime (simulating C++ app)
-    server_runtime = SomeIpRuntime("tests/test_config.json", "cpp_app_instance")
-    
-    # We need to manually offer the service since we don't have the full C++ impl here.
-    # But wait, Python runtime doesn't have "offer_service" fully exposed for Generic RequestHandlers easily without subclasses.
-    # Let's inspect runtime.py... it has offer_service(alias, impl).
-    # We need a dummy impl.
-    
-    class DummySortService:
-        SERVICE_ID = 0x3001
-        def get_service_id(self):
-            return self.SERVICE_ID
-        def get_major_version(self):
-            return 1
-        def get_minor_version(self):
-            return 0
-        def handle(self, header, payload):
-            return None # Don't care about requests
-            
-    server_runtime.offer_service("sort-service", DummySortService())
-    server_runtime.start()
-    
-    # 2. Start Client Runtime
-    client_runtime = SomeIpRuntime("tests/test_config.json", "python_test_client")
-    client_runtime.start()
-    
-    # 3. Client Subscribes
-    # We need to access the runtime functionality. 
-    # Python runtime `subscribe_eventgroup` takes (service_id, instance_id, eventgroup_id, ttl)
-    # But wait, `client_runtime` is the wrapper. 
-    # Does it expose `subscribe_eventgroup`?
-    # Checking runtime.py... Yes, I added it.
-    
-    subscription_verified = False
-    
-    # We need to hook into the client runtime's receiving path to verification.
-    # The Python runtime currently prints "Received Notification" but doesn't expose a callback API for tests?
-    # I should check runtime.py to see how notifications are handled.
-    # It logs them.
-    # To test this automatically, I might need to modify runtime.py to allow a listener or I check the logs?
-    # Or, I can verify `is_subscription_acked`.
-    
-    client_runtime.subscribe_eventgroup(0x3001, 1, 1, 100)
-    
-    # Wait for subscription
-    time.sleep(2)
-    
-    # 4. Verify Subscription is Acked (by checking client state)
-    # server_runtime should respond with ACK if it implements SD correctly.
-    # Python runtime's `offer_service` builds a LocalService and SD machine.
-    # Does Python SD machine handle `SubscribeEventgroup`? 
-    # I need to check `src/python/fusion_hawking/runtime.py` again.
-    
-    ack = client_runtime.is_subscription_acked(0x3001, 1)
-    # assert ack == True, "Subscription was not ACKed"
-    
-    # Note: Python SD implementation might be partial (client-side mostly). 
-    # If Python SD doesn't handle incoming SubscribeEventgroup, then Server won't ACK.
-    # The C++ Runtime handles it. The Rust Runtime handles it.
-    # The Python Runtime `sd.py` or similar? 
-    # Actually, Python `runtime.py` contains the SD logic? 
-    # Let's verify Python SD capabilities.
-    
-    server_runtime.stop()
-    client_runtime.stop()
+# Standard path setup
+PROJECT_ROOT = os.getcwd()
+sys.path.insert(0, os.path.join(PROJECT_ROOT, 'src', 'python'))
+# Add generated bindings path
+sys.path.insert(0, os.path.join(PROJECT_ROOT, 'build', 'generated', 'python'))
+
+from fusion_hawking.runtime import SomeIpRuntime
+
+# Try importing generated bindings
+try:
+    from bindings import SensorServiceOnValueChangedEvent
+except ImportError:
+    SensorServiceOnValueChangedEvent = None
+
+class TestEvents(unittest.TestCase):
+    def setUp(self):
+        if SensorServiceOnValueChangedEvent is None:
+            self.skipTest("Generated bindings not found in build/generated/python")
+        self.runtime = SomeIpRuntime(None, "test", None)
+
+    def test_event_serialization(self):
+        """Verify that generated event classes can serialize/deserialize correctly."""
+        evt = SensorServiceOnValueChangedEvent(value=25.5)
+        data = evt.serialize()
+        # Float 25.5 is 0x41cc0000 (IEEE 754)
+        # Serialized structure for SensorServiceOnValueChangedEvent:
+        # >f (float)
+        expected_hex = "41cc0000"
+        self.assertEqual(data.hex(), expected_hex)
+        
+        evt2 = SensorServiceOnValueChangedEvent.deserialize(data)
+        self.assertAlmostEqual(evt2.value, 25.5)
+
+    def test_event_subscription(self):
+        """Verify that Python Runtime can subscribe/unsubscribe to eventgroups."""
+        SERVICE_ID = 0x5000 # SensorService
+        EVENTGROUP_ID = 0x8001
+        INSTANCE_ID = 1
+        
+        # Subscribe
+        self.runtime.subscribe_eventgroup(SERVICE_ID, INSTANCE_ID, EVENTGROUP_ID)
+        self.assertTrue(self.runtime.subscriptions.get((SERVICE_ID, EVENTGROUP_ID)))
+        
+        # Unsubscribe
+        self.runtime.unsubscribe_eventgroup(SERVICE_ID, INSTANCE_ID, EVENTGROUP_ID)
+        self.assertFalse(self.runtime.subscriptions.get((SERVICE_ID, EVENTGROUP_ID)))
 
 if __name__ == "__main__":
-    test_event_subscription()
+    unittest.main()

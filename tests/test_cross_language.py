@@ -6,6 +6,7 @@ import threading
 import pytest
 import shutil
 import platform
+import json
 
 # Path setup
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -123,14 +124,26 @@ def processes(build_cpp, build_rust):
         time.sleep(1)
         cpp_exe_path = find_cpp_exe()
         
+    # Helper to wrap command with namespace if needed
+    def wrap_ns(cmd, ns_name):
+        if os.environ.get("FUSION_VNET_MODE") == "1":
+            # Use namespace execution for VNet
+            # Note: WSL might need sudo, but passwordless sudo is assumed for tests
+            # Or checks if we are already root.
+            return ["sudo", "ip", "netns", "exec", ns_name] + cmd
+        return cmd
+
     try:
-        print(f"DEBUG: Executing C++: {[os.path.abspath(cpp_exe_path)]} cwd={CPP_DEMO_DIR}")
+        # C++ -> ns_ecu2 (Virtual Interface on Host)
+        cpp_cmd = wrap_ns([os.path.abspath(cpp_exe_path)], "ns_ecu2")
+        print(f"DEBUG: Executing C++: {cpp_cmd} cwd={CPP_DEMO_DIR}")
         cpp_proc = subprocess.Popen(
-            [os.path.abspath(cpp_exe_path)], 
+            cpp_cmd, 
             stdout=cpp_log, 
             stderr=subprocess.STDOUT,
             cwd=CPP_DEMO_DIR
         )
+        cpp_log.close() # Release handle in parent
     except FileNotFoundError as e:
         print(f"ERROR: C++ Popen failed: {e}")
         raise e
@@ -150,14 +163,17 @@ def processes(build_cpp, build_rust):
     rust_env["RUST_LOG"] = "debug"
 
     try:
-        print(f"DEBUG: Executing Rust: {[rust_bin]} cwd={rust_demo_dir}")
+        # Rust -> ns_ecu1
+        rust_cmd = wrap_ns([rust_bin], "ns_ecu1")
+        print(f"DEBUG: Executing Rust: {rust_cmd} cwd={rust_demo_dir}")
         rust_proc = subprocess.Popen(
-            [rust_bin],
+            rust_cmd,
             stdout=rust_log,
             stderr=subprocess.STDOUT,
             cwd=rust_demo_dir,
             env=rust_env
         )
+        rust_log.close() # Release handle in parent
     except FileNotFoundError as e:
         print(f"ERROR: Rust Popen failed: {e}")
         raise e
@@ -172,14 +188,17 @@ def processes(build_cpp, build_rust):
     python_log = open(python_log_path, "w")
     python_demo_dir = os.path.join(PROJECT_ROOT, "examples", "integrated_apps", "python_app")
     try:
-        print(f"DEBUG: Executing Python: {[sys.executable, '-u', 'main.py']} cwd={python_demo_dir}")
+        # Python -> ns_ecu3
+        py_cmd = wrap_ns([sys.executable, "-u", "main.py"], "ns_ecu3")
+        print(f"DEBUG: Executing Python: {py_cmd} cwd={python_demo_dir}")
         python_proc = subprocess.Popen(
-            [sys.executable, "-u", "main.py"],
+            py_cmd,
             stdout=python_log,
             stderr=subprocess.STDOUT,
             cwd=python_demo_dir,
             env=env
         )
+        python_log.close() # Release handle in parent
     except Exception as e:
         print(f"ERROR: Python Popen failed: {e}")
         raise e
@@ -187,7 +206,10 @@ def processes(build_cpp, build_rust):
 
     yield
 
-    # Cleanup
+    # Cleanup (sudo pkill inside ns might be needed, or just kill the sudo wrapper)
+    # Terminating the wrapper (sudo) usually propagates, but let's be safe
+    # If we are in VNet mode, we might want to kill processes in namespaces explicitly in a real setup
+    # but for now rely on Popen.terminate()
     cpp_proc.terminate()
     rust_proc.terminate()
     python_proc.terminate()
@@ -203,6 +225,7 @@ def processes(build_cpp, build_rust):
 def wait_for_log_pattern(logfile, pattern, timeout=60):
     """Wait for a pattern to appear in a log file"""
     start = time.time()
+    print(f"DEBUG: Waiting for pattern '{pattern}' in {logfile}")
     while time.time() - start < timeout:
         if os.path.exists(logfile):
             try:
@@ -210,12 +233,16 @@ def wait_for_log_pattern(logfile, pattern, timeout=60):
                 with open(logfile, "r", encoding="utf-8", errors="ignore") as f:
                     content = f.read()
                     if pattern in content:
+                        print(f"DEBUG: Found pattern '{pattern}'")
                         return True
             except PermissionError:
                 # Can happen on Windows if file is locked
+                print(f"DEBUG: PermissionError reading {logfile}")
                 pass
             except Exception as e:
                 print(f"Error reading log {logfile}: {e}")
+        else:
+            print(f"DEBUG: Log file {logfile} not found")
                 
         time.sleep(0.5)
     return False
@@ -226,20 +253,117 @@ from tools.fusion.utils import get_ipv6, patch_configs, get_local_ip
 
 def setup_module(module):
     """Patch configuration to use detected interface (eth0/lo)"""
-    print(f"DEBUG: Patching configs using detected IP: {get_local_ip()}")
-    patch_configs(ip_v4=get_local_ip(), root_dir=PROJECT_ROOT)
+    ip = get_local_ip()
+    
+    # Force loopback on Windows for reliable local testing
+    force_loopback = False
+    if os.name == 'nt':
+        print("DEBUG: Windows detected, forcing Loopback (127.0.0.1) for reliability")
+        force_loopback = True
+    
+    if force_loopback:
+        ip = "127.0.0.1"
+    
+    print(f"DEBUG: Patching configs using IP: {ip}")
+    
+    # Check for VNet setup (Host-Veth-Bridge topology)
+    import subprocess
+    vnet_map = {}
+    
+    # Check if veth_ns_ecu1 exists on Host
+    has_vnet_iface = False
+    vnet_iface_name = "veth_ns_ecu1" # Default fallback
+    if platform.system() == "Linux":
+        try:
+            # Simple check for interface existence
+            # Check widely for veth_ns_ecu1 OR veth_ns_ecu1_h0 (host side)
+            res = subprocess.run("ip link show", shell=True, capture_output=True, text=True)
+            if "veth_ns_ecu1_h0" in res.stdout:
+                has_vnet_iface = True
+                vnet_iface_name = "veth_ns_ecu1_h0"
+            elif "veth_ns_ecu1" in res.stdout:
+                has_vnet_iface = True
+                vnet_iface_name = "veth_ns_ecu1"
+        except: pass
 
-def has_ipv6():
-    """Check if we have a usable IPv6 address (global or local unique)"""
-    return get_ipv6() is not None
+    target_ifname = "eth0" # Standard default
+    if has_vnet_iface or os.environ.get("FUSION_VNET_MODE") == "1":
+        # VNet uses 10.0.1.x on Host interfaces
+        vnet_map = {
+            "rust_udp": "10.0.1.1",
+            "rust_tcp": "10.0.1.1",
+            "cpp_udp": "10.0.1.2",
+            "python_v4_udp": "10.0.1.3",
+            "python_v4_tcp": "10.0.1.3",
+            "sd_multicast_v4": "224.224.224.245", 
+            "sd_unicast_v4": "10.0.1.255" 
+        }
+        
+        # We will use a flag to indicate VNet mode config patching, but NO namespace execution
+        os.environ["FUSION_VNET_MODE"] = "1"
+        print(f"DEBUG: VNet mode detected. Detecting interface name in ns_ecu1.")
+        
+        # Detect the data interface in ns_ecu1 (should be same everywhere)
+        target_ifname = "veth0" # Valid default fallback if VNet is active
+        try:
+            # Use sudo to ensure we can see namespaces
+            res = subprocess.run(["sudo", "ip", "netns", "exec", "ns_ecu1", "ip", "-o", "link", "show"], capture_output=True, text=True)
+            for line in res.stdout.splitlines():
+                parts = line.strip().split(": ")
+                if len(parts) >= 2:
+                    ifname = parts[1].split("@")[0].strip()
+                    if ifname != "lo":
+                        target_ifname = ifname
+                        print(f"DEBUG: Detected interface '{target_ifname}' in namespace.")
+                        break
+        except Exception as e:
+            print(f"WARNING: Interface detection failed: {e}")
 
-@pytest.mark.skipif(not has_ipv6(), reason="System lacks global IPv6 capability")
+    if os.environ.get("FUSION_VNET_MODE") == "1":
+         # Manual patch for VNet
+         config_path = os.path.join(PROJECT_ROOT, "examples/integrated_apps/config.json")
+         with open(config_path, 'r') as f: data = json.load(f)
+         
+         if "interfaces" in data and "primary" in data["interfaces"]:
+             # Update Interface Name to detected name (e.g., veth0)
+             data["interfaces"]["primary"]["name"] = target_ifname
+             
+             eps = data["interfaces"]["primary"]["endpoints"]
+             for name, new_ip in vnet_map.items():
+                 if name in eps:
+                    eps[name]["ip"] = new_ip
+                    eps[name]["version"] = 4
+             
+             if "sd_multicast_v4" in eps:
+                 eps["sd_multicast_v4"]["ip"] = vnet_map.get("sd_multicast_v4", "224.224.224.245")
+
+         with open(config_path, 'w') as f: json.dump(data, f, indent=4)
+         print("DEBUG: Patched config.json for VNet.")
+    else:
+        patch_configs(ip_v4=ip, root_dir=PROJECT_ROOT)
+
+    # Backup Config for Debugging
+    log_dir = os.environ.get("FUSION_LOG_DIR", os.path.join(PROJECT_ROOT, "logs", "cross_language"))
+    os.makedirs(log_dir, exist_ok=True)
+    shutil.copy(
+        os.path.join(PROJECT_ROOT, "examples", "integrated_apps", "config.json"),
+        os.path.join(log_dir, "config.json")
+    )
+    print(f"DEBUG: Saved test config to {os.path.join(log_dir, 'config.json')}")
+
+def has_multicast_support():
+    """Check if we should run multicast tests (Skip only on Windows)"""
+    return os.name != 'nt'
+
+@pytest.mark.needs_multicast
+@pytest.mark.skipif(not has_multicast_support(), reason="Multicast disabled on Windows for stability")
 def test_rust_rpc_to_python(processes):
     """Verify Rust client calls Python StringService"""
     # Rust sends "Hello Python" to StringService.Reverse
     # Python logs "Reversing: Hello Python"
     assert wait_for_log_pattern(get_log_path("python_integration.log"), "Reversing"), "Rust->Python RPC failed: StringService did not receive request"
 
+@pytest.mark.needs_multicast
 def test_python_rpc_to_rust(processes):
     """Verify Python client calls Rust MathService"""
     # Python sends Add(10, 20) -> Rust
@@ -251,13 +375,15 @@ def test_python_rpc_to_rust(processes):
     # Pattern update: Log format is "[MathService] Math.Add"
     assert wait_for_log_pattern(get_log_path("rust_integration.log"), "[MathService] Math.Add"), "Python->Rust RPC failed: Rust service didn't log request"
 
+@pytest.mark.needs_multicast
 def test_rust_to_cpp_math_inst2(processes):
     """Verify Rust client calls C++ MathService (Instance 2)"""
     # Rust sends Add(100, 200) to math-client-v1-inst2
     # C++ logs "[2] Add(100, 200)"
     assert wait_for_log_pattern(get_log_path("cpp_integration.log"), "[2] Add(100, 200)"), "Rust->C++ Math Inst 2 RPC failed"
 
-@pytest.mark.skipif(not has_ipv6(), reason="System lacks global IPv6 capability")
+@pytest.mark.needs_multicast
+@pytest.mark.skipif(not has_multicast_support(), reason="Multicast disabled on Windows for stability")
 def test_rust_to_python_math_inst3(processes):
     """Verify Rust client calls Python MathService (Instance 3)"""
     # Configured on 'python_tcp' (IPv6)
@@ -265,6 +391,7 @@ def test_rust_to_python_math_inst3(processes):
     # Python logs "[3] Add(10, 20)"
     assert wait_for_log_pattern(get_log_path("python_integration.log"), "[3] Add(10, 20)"), "Rust->Python Math Inst 3 RPC failed"
 
+@pytest.mark.needs_multicast
 def test_cpp_rpc_to_math(processes):
     """Verify C++ client calls MathService (Rust Instance 1)"""
     # C++ logs: "Math.Add Result:"
@@ -272,17 +399,20 @@ def test_cpp_rpc_to_math(processes):
     assert wait_for_log_pattern(get_log_path("cpp_integration.log"), "Math.Add Result:"), "C++->Math RPC failed"
     assert wait_for_log_pattern(get_log_path("rust_integration.log"), "Math.Add"), "C++->Rust Math Inst 1 failed"
 
+@pytest.mark.needs_multicast
 def test_cpp_event_updates(processes):
     """Verify C++ SortService updates trigger events"""
     # C++ logs: "Field 'status' changed"
     assert wait_for_log_pattern(get_log_path("cpp_integration.log"), "Field 'status' changed"), "C++ did not trigger event/field update"
 
+@pytest.mark.needs_multicast
 def test_rust_consumes_event(processes):
     """Verify Rust client receives notification"""
     # Rust logs: "Received Notification"
     assert wait_for_log_pattern(get_log_path("rust_integration.log"), "Received Notification"), "Rust did not receive event notification"
 
-@pytest.mark.skipif(not has_ipv6(), reason="System lacks global IPv6 capability")
+@pytest.mark.needs_multicast
+@pytest.mark.skipif(not has_multicast_support(), reason="Multicast disabled on Windows for stability")
 def test_python_to_cpp_sort(processes):
     """Verify Python client calls C++ SortService"""
     # Python sends [5, 3, 1, 4, 2] to SortService

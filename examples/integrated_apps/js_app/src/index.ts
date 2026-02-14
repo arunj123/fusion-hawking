@@ -7,7 +7,9 @@ async function main() {
     console.log("=== Integrated JS Application ===");
 
     // Path to config in parent directory
-    const configPath = path.resolve('../config.json');
+    const defaultPath = path.resolve('../config.json');
+    const configPath = process.argv[2] ? path.resolve(process.argv[2]) : defaultPath;
+    console.log(`Using config from: ${configPath}`);
     // Using instance name 'js_app_instance' - make sure it's in config or we add it
     // If not in config, runtime might fail to start listener but can still be client?
     // Actually runtime requires config entry for "own" instance to bind ports.

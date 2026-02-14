@@ -1,0 +1,110 @@
+{
+    "interfaces": {
+        "lo": {
+            "name": "lo",
+            "sd": {
+                "endpoint": "sd_mcast"
+            },
+            "endpoints": {
+                "sd_mcast": {
+                    "ip": "239.0.0.1",
+                    "port": 30491,
+                    "version": 4,
+                    "protocol": "udp"
+                },
+                "service_ep": {
+                    "ip": "127.0.0.1",
+                    "port": 40001,
+                    "version": 4,
+                    "protocol": "udp"
+                },
+                "js_ep": {
+                    "ip": "127.0.0.1",
+                    "port": 40002,
+                    "version": 4,
+                    "protocol": "udp"
+                },
+                "cpp_ep": {
+                    "ip": "127.0.0.1",
+                    "port": 40003,
+                    "version": 4,
+                    "protocol": "udp"
+                },
+                "rust_ep": {
+                    "ip": "127.0.0.1",
+                    "port": 40004,
+                    "version": 4,
+                    "protocol": "udp"
+                },
+                "sd_bind_ep": {
+                    "ip": "127.0.0.1",
+                    "port": 0,
+                    "version": 4,
+                    "protocol": "udp"
+                }
+            }
+        }
+    },
+    "instances": {
+        "PythonService": {
+            "unicast_bind": {
+                "lo": "sd_bind_ep"
+            },
+            "providing": {
+                "MathService": {
+                    "service_id": 4660,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "offer_on": {
+                        "lo": "service_ep"
+                    }
+                }
+            }
+        },
+        "cpp_client": {
+            "required": {
+                "MathService": {
+                    "service_id": 4660,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "find_on": [
+                        "lo"
+                    ]
+                }
+            },
+            "unicast_bind": {
+                "lo": "sd_bind_ep"
+            }
+        },
+        "js_client": {
+            "required": {
+                "MathService": {
+                    "service_id": 4660,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "find_on": [
+                        "lo"
+                    ]
+                }
+            },
+            "unicast_bind": {
+                "lo": "sd_bind_ep"
+            }
+        },
+        "rust_client": {
+            "required": {
+                "someipy_svc": {
+                    "service_id": 4660,
+                    "instance_id": 1,
+                    "major_version": 1,
+                    "find_on": [
+                        "lo"
+                    ]
+                }
+            },
+            "unicast_bind": {
+                "lo": "sd_bind_ep"
+            }
+        }
+    }
+}

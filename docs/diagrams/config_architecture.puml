@@ -1,0 +1,65 @@
+@startuml
+skinparam componentStyle uml2
+skinparam packageStyle rectangle
+
+title Fusion Hawking Configuration Architecture
+
+package "Deployment Configuration (config.json)" {
+    class "Interface" as Iface {
+        name: string
+        type: string (vlan, eth, loopback)
+    }
+
+    class "Endpoint" as Ep {
+        name: string
+        ip: string (v4/v6)
+        port: integer
+        protocol: udp/tcp
+    }
+
+    class "SD Configuration" as SdCfg {
+        multicast_group: Endpoint
+        bind_endpoint: Endpoint (Optional)
+    }
+
+    Iface *-- "1..*" Ep : Defines
+    Iface *-- "0..1" SdCfg : Contains
+    SdCfg --> Ep : References (Group)
+    SdCfg ..> Ep : References (Bind)
+}
+
+package "Application Runtime" {
+    class "App Instance" as AppInst {
+        name: string
+        services: List<Service>
+    }
+
+    class "Service (Provider)" as SvcProv {
+        id: uint16
+        interfaces: List<string>
+    }
+
+    class "Service (Consumer)" as SvcCons {
+        id: uint16
+        preferred_interface: string
+    }
+
+    AppInst --> Iface : Loads
+    SvcProv --> Iface : Offers on
+    SvcCons --> Iface : Seeks on
+}
+
+note right of SdCfg
+  **Service Discovery**
+  - **Group**: Multicast target (224.x.x.x)
+  - **Bind**: Local interface or Wildcard (0.0.0.0)
+  for reception (e.g., Windows Loopback)
+end note
+
+note bottom of Ep
+  **Endpoint Definition**
+  Centralized definition of all
+  network addressable points.
+end note
+
+@enduml

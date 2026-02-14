@@ -4,7 +4,7 @@
 
 ## Overview
 
-Fusion-Hawking is a pure SOME/IP stack implementation supporting Rust, Python, and C++ with zero external dependencies. This guide covers day-to-day usage for application developers.
+Fusion-Hawking is a pure SOME/IP stack implementation supporting Rust, Python, C++, and JavaScript/TypeScript with zero external dependencies. This guide covers day-to-day usage for application developers.
 
 ---
 
@@ -50,7 +50,7 @@ class MathService:
 python -m tools.codegen.main examples/integrated_apps/interface.py
 ```
 
-Generated files appear in `build/generated/{rust,python,cpp}/`.
+Generated files appear in `build/generated/{rust,python,cpp,js}/`.
 
 ---
 
@@ -60,43 +60,41 @@ Applications load a shared `config.json` that defines the network topology:
 
 ```json
 {
-  "endpoints": {
-    "math_ep": {
-      "interface": "eth0",
-      "ip": "127.0.0.1",
-      "port": 30509,
-      "protocol": "udp"
-    },
-    "sd_mcast": {
-      "ip": "224.0.0.1",
-      "port": 30490,
-      "protocol": "udp"
+  "interfaces": {
+    "lo": {
+      "name": "lo",
+      "endpoints": {
+        "sd_mcast": { "ip": "224.0.0.1", "port": 30490, "version": 4 },
+        "service_ep": { "ip": "127.0.0.1", "port": 30500, "version": 4, "protocol": "udp" }
+      },
+      "sd": { "endpoint": "sd_mcast" }
     }
   },
   "instances": {
     "my_instance": {
+      "bind": {
+        "interface": "lo",
+        "endpoint": "service_ep"
+      },
       "providing": {
         "math-service": {
           "service_id": 4097,
           "instance_id": 1,
-          "endpoint": "math_ep"
+          "endpoint": "service_ep"
         }
       },
       "required": {
         "string-service": { 
           "service_id": 4098,
-          "endpoint": "math_ep" 
+          "preferred_interface": "lo" 
         }
-      },
-      "sd": {
-        "multicast_endpoint": "sd_mcast"
       }
     }
   }
 }
 ```
 
-> **Details:** See [Design & Requirements](design_and_requirements.md#2-json-configuration-schema) for the full schema including multicast, IPv6, and static routing options.
+> **Details:** See [Design & Requirements](design_and_requirements.md#2-interface-centric-configuration-schema) for the full schema details.
 
 ---
 
@@ -128,6 +126,22 @@ rt.offer_service("math-service", &my_service_impl);
 rt.run();
 ```
 
+### JavaScript/TypeScript (Node.js 18+)
+
+```typescript
+import { SomeIpRuntime } from 'fusion-hawking';
+
+const rt = new SomeIpRuntime();
+await rt.loadConfigFile('config.json', 'js_app_instance');
+
+// Register handlers for methods
+rt.registerHandler(0x0001, (header, payload) => {
+    return Buffer.from("Response from JS");
+});
+
+await rt.start();
+```
+
 > **Architecture:** See the [Cross-Language Runtime diagram](architecture.md#cross-language-runtime-architecture) for internals.
 
 ---
@@ -141,6 +155,7 @@ All runtimes use a pluggable logger interface for DLT compatibility:
 | Rust | `FusionLogger` trait | `ConsoleLogger` |
 | Python | `ILogger` base class | `ConsoleLogger` |
 | C++ | `ILogger` abstract class | `ConsoleLogger` |
+| JS/TS | `ILogger` interface | `ConsoleLogger` |
 
 Example (Python):
 
@@ -189,6 +204,11 @@ pytest tests/
 # C++ only
 cmake --build build --config Release
 .\build\Release\cpp_test.exe
+
+# JS/TS only
+cd src/js
+npm install
+npm test
 ```
 
 > **Coverage Matrix:** See [Test Matrix](test_matrix.md) for detailed coverage by component.

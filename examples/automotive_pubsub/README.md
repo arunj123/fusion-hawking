@@ -15,7 +15,7 @@ This demo simulates a realistic autonomous driving perception pipeline:
 ```
 ┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
 │   RadarService  │       │ FusionService   │       │   ADAS App      │
-│     (C++)       │──────▶│     (Rust)      │──────▶│    (Python)     │
+│     (C++)       │──────▶│     (Rust)      │──────▶│    (Py / JS)    │
 │   [Publisher]   │ Event │ [Sub + Pub]     │ Event │  [Subscriber]   │
 └─────────────────┘       └─────────────────┘       └─────────────────┘
      Port 30601                Port 30602
@@ -24,7 +24,7 @@ This demo simulates a realistic autonomous driving perception pipeline:
 **Data Flow:**
 1. **RadarService** (C++): Simulates radar sensor, publishes `on_object_detected` events at 10Hz
 2. **FusionService** (Rust): Subscribes to radar events, fuses data, publishes `on_track_updated`
-3. **ADAS App** (Python): Subscribes to fusion events, logs collision warnings
+3. **ADAS App** (Python/JS): Subscribes to fusion events, logs collision warnings
 
 ---
 
@@ -69,8 +69,8 @@ This demo simulates a realistic autonomous driving perception pipeline:
 | API | Language | Purpose |
 |-----|----------|---------|
 | `SendNotification()` | C++ | Publish an event to subscribers |
-| `subscribe_eventgroup()` | Rust/Python | Subscribe to an event group |
-| `unsubscribe_eventgroup()` | Rust/Python | Unsubscribe from events |
+| `subscribe_eventgroup()` | Rust/Py/JS | Subscribe to an event group |
+| `unsubscribe_eventgroup()` | Rust/Py/JS | Unsubscribe from events |
 | `@event` decorator | Python IDL | Define an event in the interface |
 | `@field` decorator | Python IDL | Define a field with notifier |
 
@@ -123,6 +123,11 @@ cargo run --bin fusion_node
 python examples/automotive_pubsub/python_adas/main.py
 ```
 
+**Terminal 4 - ADAS (JS/TS):**
+```bash
+cd examples/automotive_pubsub/js_adas && npm install && npm start
+```
+
 ### 4. Automated (via fusion.bat)
 ```bash
 .\fusion.bat
@@ -165,6 +170,7 @@ The demo is automatically run as part of the integration test suite.
 | `cpp_radar/main.cpp` | C++ radar publisher |
 | `rust_fusion/main.rs` | Rust fusion node (sub + pub) |
 | `python_adas/main.py` | Python ADAS subscriber |
+| `js_adas/index.ts` | JS/TS ADAS subscriber |
 
 ## Previewing Diagrams
 

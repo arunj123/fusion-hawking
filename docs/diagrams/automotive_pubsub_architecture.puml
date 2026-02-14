@@ -12,9 +12,14 @@ package "ECU 2 - Fusion Controller" {
     note bottom of FS : Subscribes + Publishes
 }
 
-package "ECU 3 - ADAS Domain Controller" {
-    [AdasApplication] as AA
+package "ECU 3 - ADAS Domain Controller (Py)" {
+    [AdasAppPy] as AA
     note bottom of AA : Pure Subscriber
+}
+
+package "ECU 4 - ADAS Domain Controller (JS)" {
+    [AdasAppJS] as AJ
+    note bottom of AJ : Pure Subscriber
 }
 
 cloud "SOME/IP Network" as NET {
@@ -24,8 +29,10 @@ cloud "SOME/IP Network" as NET {
 RS -down-> SD : Offer RadarService
 FS -down-> SD : Find RadarService\nOffer FusionService
 AA -down-> SD : Find FusionService
+AJ -down-> SD : Find FusionService
 
 RS =right=> FS : **on_object_detected**\n(EventGroup 1)
 FS =right=> AA : **on_track_updated**\n(EventGroup 1)
+FS =down=> AJ : **on_track_updated**\n(EventGroup 1)
 
 @enduml

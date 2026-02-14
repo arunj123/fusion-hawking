@@ -24,32 +24,42 @@
 
 namespace fusion_hawking {
 
-class SomeIpRuntime {
-    SOCKET sock;
+struct InterfaceContext {
+    std::string alias;
+    SOCKET sock = INVALID_SOCKET;
     SOCKET sock_v6 = INVALID_SOCKET;
-    SOCKET sd_sock;
+    SOCKET sd_sock = INVALID_SOCKET;
     SOCKET sd_sock_v6 = INVALID_SOCKET;
     SOCKET tcp_listener = INVALID_SOCKET;
     SOCKET tcp_listener_v6 = INVALID_SOCKET;
+    
+    std::string ip;
+    std::string ip_v6;
+    unsigned int if_index = 0;
+    std::string sd_multicast_ip = "";
+    uint16_t sd_multicast_port = 30490;
+    std::string sd_multicast_ip_v6 = "";
+    uint16_t sd_multicast_port_v6 = 30490;
+
+    ~InterfaceContext(); // Helper to close sockets
+};
+
+class SomeIpRuntime {
+    std::map<std::string, std::shared_ptr<InterfaceContext>> interfaces;
     std::vector<std::pair<SOCKET, sockaddr_storage>> tcp_clients;
     std::mutex tcp_clients_mutex;
     std::string protocol;
     
     std::atomic<bool> running;
     std::jthread reactor_thread;
-    uint16_t port;
+    uint16_t port; // Legacy/Main port
     std::map<uint16_t, RequestHandler*> services;
     std::map<std::pair<uint16_t, uint16_t>, sockaddr_storage> remote_services;
     std::mutex remote_services_mutex;
     
     InstanceConfig config;
+    std::map<std::string, uint16_t> bound_ports; // Maps endpoint names to actual bound ports (resolves ephemeral port 0)
     std::shared_ptr<ILogger> logger;
-    
-    std::string sd_multicast_ip = "";
-    uint16_t sd_multicast_port = 30490;
-    std::string sd_multicast_ip_v6 = "";
-    uint16_t sd_multicast_port_v6 = 30490;
-    unsigned int sd_if_index = 0;
 
 public:
     SomeIpRuntime(const std::string& config_path, const std::string& instance_name, std::shared_ptr<ILogger> logger = nullptr);
@@ -74,7 +84,7 @@ public:
         return nullptr;
     }
 
-    void SendOffer(uint16_t service_id, uint16_t instance_id, uint8_t major, uint32_t minor, uint16_t port, const std::string& protocol = "udp", const std::string& endpoint_ip = "", const std::string& endpoint_ip_v6 = "", const std::string& multicast_ip = "", uint16_t multicast_port = 0);
+    void SendOffer(uint16_t service_id, uint16_t instance_id, uint8_t major, uint32_t minor, uint16_t port, const std::string& protocol, std::shared_ptr<InterfaceContext> iface, const std::string& endpoint_ip = "", const std::string& endpoint_ip_v6 = "", const std::string& multicast_ip = "", uint16_t multicast_port = 0);
     std::vector<uint8_t> SendRequest(uint16_t service_id, uint16_t method_id, const std::vector<uint8_t>& payload, sockaddr_storage target);
     void SendNotification(uint16_t service_id, uint16_t event_id, const std::vector<uint8_t>& payload);
     bool get_remote_service(uint16_t service_id, uint16_t instance_id, sockaddr_storage& out);
@@ -84,14 +94,15 @@ public:
     void unsubscribe_eventgroup(uint16_t service_id, uint16_t instance_id, uint16_t eventgroup_id);
     bool is_subscription_acked(uint16_t service_id, uint16_t eventgroup_id);
     
-    SOCKET get_sock() const { return sock; }
-
     bool wait_for_service(uint16_t service_id, uint16_t instance_id);
 
 private:
     void Run();
-    void process_packet(const char* data, int len, sockaddr_storage src, SOCKET from_sock, bool is_tcp);
-    void process_sd_packet(const char* data, int len, sockaddr_storage src);
+    void process_packet(const char* data, int len, sockaddr_storage src, std::shared_ptr<InterfaceContext> ctx, bool is_tcp, SOCKET from_sock = INVALID_SOCKET);
+    void process_sd_packet(const char* data, int len, sockaddr_storage src, std::shared_ptr<InterfaceContext> ctx);
+#ifdef FUSION_PACKET_DUMP
+    void DumpPacket(const char* data, int len, sockaddr_storage src);
+#endif
     
     struct OfferedServiceInfo {
         uint16_t service_id;
@@ -104,10 +115,12 @@ private:
         std::string endpoint_ip_v6;
         std::string multicast_ip;
         uint16_t multicast_port;
+        std::string iface_alias;
+        uint32_t cycle_offer_ms;
+        std::chrono::steady_clock::time_point last_offer_time;
     };
     std::vector<OfferedServiceInfo> offered_services;
     
-    std::chrono::steady_clock::time_point last_offer_time;
     std::map<std::pair<uint16_t, uint16_t>, bool> subscriptions; // (service_id, eventgroup_id) -> acked
     
     // Server-side: Subscribers for my events

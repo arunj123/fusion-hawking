@@ -42,28 +42,28 @@ class TestReturnCode(unittest.TestCase):
     """Tests for SOME/IP ReturnCode enum."""
     
     def test_ok_value(self):
-        self.assertEqual(ReturnCode.OK, 0x00)
+        self.assertEqual(ReturnCode.E_OK, 0x00)
         
     def test_not_ok_value(self):
-        self.assertEqual(ReturnCode.NOT_OK, 0x01)
+        self.assertEqual(ReturnCode.E_NOT_OK, 0x01)
         
     def test_unknown_service_value(self):
-        self.assertEqual(ReturnCode.UNKNOWN_SERVICE, 0x02)
+        self.assertEqual(ReturnCode.E_UNKNOWN_SERVICE, 0x02)
         
     def test_unknown_method_value(self):
-        self.assertEqual(ReturnCode.UNKNOWN_METHOD, 0x03)
+        self.assertEqual(ReturnCode.E_UNKNOWN_METHOD, 0x03)
         
     def test_timeout_value(self):
-        self.assertEqual(ReturnCode.TIMEOUT, 0x06)
+        self.assertEqual(ReturnCode.E_TIMEOUT, 0x06)
         
     def test_malformed_message_value(self):
-        self.assertEqual(ReturnCode.MALFORMED_MESSAGE, 0x09)
+        self.assertEqual(ReturnCode.E_MALFORMED_MESSAGE, 0x09)
         
     def test_e2e_values(self):
-        self.assertEqual(ReturnCode.E2E_REPEATED, 0x0B)
-        self.assertEqual(ReturnCode.E2E_WRONG_SEQUENCE, 0x0C)
-        self.assertEqual(ReturnCode.E2E_NOT_AVAILABLE, 0x0D)
-        self.assertEqual(ReturnCode.E2E_NO_NEW_DATA, 0x0E)
+        self.assertEqual(ReturnCode.E_E2E_REPEATED, 0x0B)
+        self.assertEqual(ReturnCode.E_E2E_WRONG_SEQUENCE, 0x0C)
+        self.assertEqual(ReturnCode.E_E2E_NOT_AVAILABLE, 0x0D)
+        self.assertEqual(ReturnCode.E_E2E_NO_NEW_DATA, 0x0E)
 
 
 class TestSessionIdManager(unittest.TestCase):
@@ -194,13 +194,128 @@ class TestPythonRuntime(unittest.TestCase):
         self.assertIsNotNone(self.runtime.logger)
         
     def test_runtime_has_socket(self):
-        self.assertIsNotNone(self.runtime.sock)
+        self.assertTrue(self.runtime.listeners or self.runtime.sd_listeners)
         
     def test_runtime_has_services_dict(self):
         self.assertIsInstance(self.runtime.services, dict)
         
     def test_runtime_has_remote_services_dict(self):
         self.assertIsInstance(self.runtime.remote_services, dict)
+
+
+class TestEphemeralPortTracking(unittest.TestCase):
+    """Tests for ephemeral port (port 0) resolution in the Python runtime.
+    
+    When a service endpoint is configured with port 0, the OS assigns an
+    ephemeral port upon binding. The runtime must use the actual bound port
+    in SD offers, not the configured value of 0.
+    """
+    
+    def test_udp_ephemeral_port_resolved(self):
+        """Verify that UDP endpoints configured with port 0 get a real port after binding."""
+        import json, tempfile
+        config = {
+            "interfaces": {
+                "primary": {
+                    "name": "lo",
+                    "endpoints": {
+                        "main_udp": {"ip": "127.0.0.1", "port": 0, "version": 4, "protocol": "udp"},
+                        "sd_mcast": {"ip": "224.224.224.245", "port": 30490, "version": 4, "protocol": "udp"}
+                    },
+                    "sd": {"endpoint": "sd_mcast"}
+                }
+            },
+            "endpoints": {
+                "main_udp": {"ip": "127.0.0.1", "port": 0, "version": 4, "protocol": "udp"},
+                "sd_mcast": {"ip": "224.224.224.245", "port": 30490, "version": 4, "protocol": "udp"}
+            },
+            "instances": {
+                "test_ephemeral": {
+                    "interfaces": ["primary"],
+                    "providing": {
+                        "test_svc": {
+                            "service_id": 9999,
+                            "instance_id": 1,
+                            "endpoint": "main_udp",
+                            "major_version": 1,
+                            "minor_version": 0
+                        }
+                    },
+                    "sd": {"multicast_endpoint": "sd_mcast"}
+                }
+            }
+        }
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config, f)
+            f.flush()
+            cfg_path = f.name
+        try:
+            rt = SomeIpRuntime(cfg_path, "test_ephemeral")
+            rt.start()
+            # Check that listeners were bound to a real port (not 0)
+            for (ip, port, proto), sock in rt.listeners.items():
+                actual = sock.getsockname()[1]
+                self.assertGreater(actual, 0, f"Port must be > 0 after binding, got {actual}")
+                self.assertEqual(port, actual, "Listener key port must match actual bound port")
+            
+            # Check offered_services entries have non-zero port
+            for entry in rt.offered_services:
+                sid, iid, maj, mnr, ip, port, proto, alias = entry
+                self.assertGreater(port, 0, f"Offered service port must be > 0 for SID {sid}, got {port}")
+            
+            rt.stop()
+        finally:
+            os.unlink(cfg_path)
+
+    def test_tcp_ephemeral_port_resolved(self):
+        """Verify that TCP endpoints configured with port 0 get a real port after binding."""
+        import json, tempfile
+        config = {
+            "interfaces": {
+                "primary": {
+                    "name": "lo",
+                    "endpoints": {
+                        "main_tcp": {"ip": "127.0.0.1", "port": 0, "version": 4, "protocol": "tcp"},
+                        "sd_mcast": {"ip": "224.224.224.245", "port": 30490, "version": 4, "protocol": "udp"}
+                    },
+                    "sd": {"endpoint": "sd_mcast"}
+                }
+            },
+            "endpoints": {
+                "main_tcp": {"ip": "127.0.0.1", "port": 0, "version": 4, "protocol": "tcp"},
+                "sd_mcast": {"ip": "224.224.224.245", "port": 30490, "version": 4, "protocol": "udp"}
+            },
+            "instances": {
+                "test_tcp_eph": {
+                    "interfaces": ["primary"],
+                    "providing": {
+                        "tcp_svc": {
+                            "service_id": 9998,
+                            "instance_id": 1,
+                            "endpoint": "main_tcp",
+                            "major_version": 1,
+                            "minor_version": 0
+                        }
+                    },
+                    "sd": {"multicast_endpoint": "sd_mcast"}
+                }
+            }
+        }
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config, f)
+            f.flush()
+            cfg_path = f.name
+        try:
+            rt = SomeIpRuntime(cfg_path, "test_tcp_eph")
+            rt.start()
+            # Check TCP listeners were bound to a real port
+            for (ip, port, proto), sock in rt.listeners.items():
+                if proto == 'tcp':
+                    actual = sock.getsockname()[1]
+                    self.assertGreater(actual, 0, f"TCP port must be > 0, got {actual}")
+            rt.stop()
+        finally:
+            os.unlink(cfg_path)
 
 
 if __name__ == '__main__':

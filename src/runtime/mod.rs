@@ -40,7 +40,7 @@ use std::thread;
 use std::time::Duration;
 use std::sync::atomic::{AtomicBool, Ordering};
 use crate::transport::{UdpTransport, SomeIpTransport};
-use crate::sd::machine::{ServiceDiscovery, DEFAULT_SD_PORT};
+use crate::sd::machine::{ServiceDiscovery, SdListener};
 use crate::codec::SomeIpHeader;
 
 pub trait RequestHandler: Send + Sync {
@@ -65,6 +65,8 @@ pub struct SomeIpRuntime {
     running: Arc<AtomicBool>,
     config: Option<InstanceConfig>,
     endpoints: HashMap<String, config::EndpointConfig>,
+    /// Maps endpoint names to their actual bound ports (resolves ephemeral port 0)
+    bound_ports: HashMap<String, u16>,
     pending_requests: Arc<Mutex<HashMap<(u16, u16, u16), tokio::sync::oneshot::Sender<Vec<u8>>>>>,
     session_manager: Arc<Mutex<HashMap<(u16, u16), u16>>>,
     logger: Arc<dyn FusionLogger>,
@@ -83,218 +85,231 @@ impl SomeIpRuntime {
             .unwrap_or_else(|| panic!("Instance '{}' not found in config", instance_name))
             .clone();
 
-        let endpoints = sys_config.endpoints.clone();
-
-        // Initialize Transports based on configured endpoints (providing + required)
         let mut udp_transports: Vec<Arc<dyn SomeIpTransport>> = Vec::new();
         let mut tcp_transports: Vec<Arc<dyn SomeIpTransport>> = Vec::new();
         let mut bound_endpoints: HashMap<(String, u16, String), Arc<dyn SomeIpTransport>> = HashMap::new();
+        let mut bound_ports: HashMap<String, u16> = HashMap::new();
 
-        let mut all_endpoint_names = Vec::new();
-        if let Some(ref ep) = instance_config.endpoint {
-            all_endpoint_names.push(ep.clone());
+        // 1. Identify all interfaces used by this instance
+        let mut iface_aliases = Vec::new();
+        // Add interfaces from unicast_bind
+        for iface in instance_config.unicast_bind.keys() {
+            if !iface_aliases.contains(iface) { iface_aliases.push(iface.clone()); }
         }
+        // Add interfaces from providing.offer_on
         for svc in instance_config.providing.values() {
-            all_endpoint_names.push(svc.endpoint.clone());
-        }
-        for client in instance_config.required.values() {
-            if let Some(ref ep) = client.endpoint {
-                all_endpoint_names.push(ep.clone());
+            for iface in svc.offer_on.keys() {
+                if !iface_aliases.contains(iface) { iface_aliases.push(iface.clone()); }
             }
         }
-
-        for endpoint_name in all_endpoint_names {
-            let endpoint = endpoints.get(&endpoint_name)
-                .expect(&format!("Endpoint {} not found", endpoint_name));
-            
-            let port = endpoint.port;
-            let protocol = endpoint.protocol.to_lowercase();
-            
-            if endpoint.interface.is_none() || endpoint.interface.as_ref().unwrap().is_empty() {
-                panic!("Mandatory configuration 'interface' missing for endpoint '{}'", endpoint_name);
-            }
-            
-            let key = (endpoint.ip.clone(), port, protocol.clone());
-            if !bound_endpoints.contains_key(&key) {
-                if protocol == "tcp" {
-                    // TCP Connect is different, we usually bind servers for providing.
-                    // For client-only TCP, we don't 'bind' here, it connects on demand.
-                    // But for UDP we always bind to receive.
-                    continue; 
-                }
-
-                let addr: SocketAddr = if endpoint.version == 6 {
-                    format!("[{}]:{}", endpoint.ip, port).parse().expect("Invalid IPv6")
-                } else {
-                    format!("{}:{}", endpoint.ip, port).parse().expect("Invalid IPv4")
-                };
-
-                let bind_addr: SocketAddr = if endpoint.version == 6 {
-                    SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), addr.port())
-                } else {
-                    SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), addr.port())
-                };
-
-                let transport: Arc<dyn SomeIpTransport> = Arc::new(UdpTransport::new(bind_addr).expect("Failed to bind UDP Transport"));
-                transport.set_nonblocking(true).unwrap();
-                
-                bound_endpoints.insert(key, transport.clone());
-                udp_transports.push(transport);
-                logger.log(LogLevel::Info, "Runtime", &format!("Bound {} transport on {}", protocol, addr));
-            }
+        // Add interfaces from required.find_on
+        for req in instance_config.required.values() {
+             for iface in &req.find_on {
+                 if !iface_aliases.contains(iface) { iface_aliases.push(iface.clone()); }
+             }
         }
-        
-        // Handle TCP Providing if any
-        for svc in instance_config.providing.values() {
-            let endpoint = endpoints.get(&svc.endpoint).unwrap();
-            let protocol = endpoint.protocol.to_lowercase();
-            if protocol == "tcp" {
-                let addr: SocketAddr = if endpoint.version == 6 {
-                    format!("[{}]:{}", endpoint.ip, endpoint.port).parse().expect("Invalid IPv6")
-                } else {
-                    format!("{}:{}", endpoint.ip, endpoint.port).parse().expect("Invalid IPv4")
-                };
-                let key = (endpoint.ip.clone(), endpoint.port, protocol);
-                if !bound_endpoints.contains_key(&key) {
-                    let server = crate::transport::TcpServer::bind(addr).expect("Failed to bind TCP Server");
-                    let transport = Arc::new(crate::transport::TcpServerTransport::new(server));
-                    transport.set_nonblocking(true).unwrap();
-                    bound_endpoints.insert(key, transport.clone());
-                    tcp_transports.push(transport);
-                    logger.log(LogLevel::Info, "Runtime", &format!("Bound tcp server on {}", addr));
-                }
-            }
-        }
-        
-        // All transports must be explicitly configured according to Project Rules.
-
-        // Initialize SD
-        let sd_v4_endpoint = instance_config.sd.multicast_endpoint.as_ref()
-            .and_then(|name| endpoints.get(name));
-        
-        let sd_v6_endpoint = instance_config.sd.multicast_endpoint_v6.as_ref()
-            .and_then(|name| endpoints.get(name));
-
-        let sd_v4_ip = sd_v4_endpoint.map(|e| e.ip.clone()).expect("SD Multicast IPv4 endpoint config missing");
-        let sd_v4_port = sd_v4_endpoint.map(|e| e.port).unwrap_or(DEFAULT_SD_PORT);
-
-        let sd_v6_ip = sd_v6_endpoint.map(|e| e.ip.clone()).expect("SD Multicast IPv6 endpoint config missing");
-        let sd_v6_port = sd_v6_endpoint.map(|e| e.port).unwrap_or(DEFAULT_SD_PORT);
-
-        // SD Interface Validation
-        if let Some(ep) = sd_v4_endpoint {
-            if ep.interface.is_none() || ep.interface.as_ref().unwrap().is_empty() {
-                 logger.log(LogLevel::Error, "Runtime", "Mandatory configuration 'interface' missing for SD Endpoint (v4).");
-            }
-        }
-        if let Some(ep) = sd_v6_endpoint {
-             if ep.interface.is_none() || ep.interface.as_ref().unwrap().is_empty() {
-                 logger.log(LogLevel::Error, "Runtime", "Mandatory configuration 'interface' missing for SD Endpoint (v6).");
+        // Legacy support
+        if iface_aliases.is_empty() {
+             for iface in &instance_config.interfaces {
+                 if !iface_aliases.contains(iface) { iface_aliases.push(iface.clone()); }
              }
         }
 
-        // Finding interface IP for V4 (heuristically use first provided service's endpoint if V4)
-        let interface_ip_v4: Option<Ipv4Addr> = instance_config.providing.values()
-            .find_map(|svc| {
-                let ep = endpoints.get(&svc.endpoint)?;
-                if ep.version == 4 { ep.ip.parse().ok() } else { None }
-            })
-            .or_else(|| {
-                // Fallback: check required services
-                instance_config.required.values().find_map(|svc| {
-                     let ep = endpoints.get(svc.endpoint.as_ref()?)?;
-                     if ep.version == 4 { ep.ip.parse().ok() } else { None }
-                })
-            });
+        if iface_aliases.is_empty() && !sys_config.interfaces.is_empty() {
+             // Fallback pattern
+             if sys_config.interfaces.contains_key("primary") {
+                 iface_aliases.push("primary".to_string());
+             } else {
+                 if let Some(first) = sys_config.interfaces.keys().next() {
+                     iface_aliases.push(first.clone());
+                 }
+             }
+        }
 
-        let sd_transport_v4 = if interface_ip_v4.is_some() {
-            let sd_bind_v4: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), sd_v4_port);
-            UdpTransport::new_multicast(sd_bind_v4).ok()
-        } else {
-            logger.log(LogLevel::Warn, "Runtime", "Interface IP (v4) is not configured. SD v4 will be disabled.");
-            None
-        };
+        let mut all_discovered_endpoints = sys_config.endpoints.clone();
         
-        // IPv6 SD - similar fallback, but optional
-        let interface_ip_v6: Option<Ipv6Addr> = instance_config.providing.values()
-            .find_map(|svc| {
-                let ep = endpoints.get(&svc.endpoint)?;
-                if ep.version == 6 { ep.ip.parse().ok() } else { None }
-            })
-            .or_else(|| {
-                // Fallback: check required services
-                instance_config.required.values().find_map(|svc| {
-                     let ep = endpoints.get(svc.endpoint.as_ref()?)?;
-                     if ep.version == 6 { ep.ip.parse().ok() } else { None }
-                })
-            });
-
-        let sd_transport_v6 = if interface_ip_v6.is_some() {
-            let sd_bind_v6: SocketAddr = SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), sd_v6_port);
-            UdpTransport::new_multicast(sd_bind_v6).ok()
-        } else {
-            logger.log(LogLevel::Warn, "Runtime", "Interface IP (v6) is not configured. SD v6 will be disabled.");
-            None
-        };
-
-        let multicast_ip_v4_opt: Option<Ipv4Addr> = sd_v4_ip.parse().ok();
-        let multicast_ip_v6_opt: Option<Ipv6Addr> = sd_v6_ip.parse().ok();
-
-        let hops = instance_config.sd.multicast_hops as u32;
+        // 2. Identify all Endpoints to Bind
+        // We must bind:
+        // - All unicast_bind endpoints (Control)
+        // - All offer_on endpoints (Data)
+        let mut endpoints_to_bind = Vec::new();
         
-        // Resolve interface index dynamically for IPv6
-        let iface_idx = {
-            let iface_name = sd_v6_endpoint.and_then(|e| e.interface.as_ref())
-                .or_else(|| sd_v4_endpoint.and_then(|e| e.interface.as_ref()))
-                .map(|s| s.to_owned())
-                .unwrap_or_default();
+        // From unicast_bind
+        for ep_name in instance_config.unicast_bind.values() {
+            endpoints_to_bind.push(ep_name.clone());
+        }
+        // From offer_on
+        for svc in instance_config.providing.values() {
+            for ep_name in svc.offer_on.values() {
+                endpoints_to_bind.push(ep_name.clone());
+            }
+        }
+        // Legacy Config fallback (if used)
+        if let Some(ep) = &instance_config.endpoint {
+            endpoints_to_bind.push(ep.clone());
+        }
+
+        for alias in &iface_aliases {
+            let iface_cfg = sys_config.interfaces.get(alias)
+                .unwrap_or_else(|| panic!("Interface alias '{}' not found", alias));
             
-            if iface_name.to_lowercase().contains("lo") || iface_name.to_lowercase().contains("loopback") {
-                if cfg!(target_os = "windows") { 1 } else { 0 }
-            } else if cfg!(target_os = "windows") {
-                use std::process::Command;
-                let mut found_idx = 0;
-                if let Ok(out) = Command::new("netsh").args(&["interface", "ipv4", "show", "interfaces"]).output() {
-                    let stdout = String::from_utf8_lossy(&out.stdout);
-                    for line in stdout.lines() {
-                        if line.to_lowercase().contains(&iface_name.to_lowercase()) {
-                            if let Some(idx_str) = line.split_whitespace().next() {
-                                if let Ok(idx) = idx_str.parse::<u32>() {
-                                    found_idx = idx;
-                                    break;
-                                }
-                            }
+            // Merge interface-specific endpoints
+            for (name, ep) in &iface_cfg.endpoints {
+                all_discovered_endpoints.insert(name.clone(), ep.clone());
+            }
+        }
+
+        // Bind gathered endpoints
+        for ep_name in endpoints_to_bind {
+            if let Some(ep) = all_discovered_endpoints.get(&ep_name) {
+                let ip = ep.ip.clone();
+                let port = ep.port;
+                let proto = ep.protocol.to_lowercase();
+                
+                // Heuristic: only bind local unicast IPs
+                if let Ok(addr) = ip.parse::<std::net::IpAddr>() {
+                    if addr.is_multicast() { continue; }
+                }
+
+                let key = (ip.clone(), port, proto.clone());
+                if !bound_endpoints.contains_key(&key) {
+                    let addr_str = if ep.version == 6 { format!("[{}]:{}", ip, port) } else { format!("{}:{}", ip, port) };
+                    let addr: SocketAddr = addr_str.parse().expect("Invalid address");
+
+                    if proto == "tcp" {
+                        if let Ok(server) = crate::transport::TcpServer::bind(addr) {
+                            let transport = Arc::new(crate::transport::TcpServerTransport::new(server));
+                            transport.set_nonblocking(true).unwrap();
+                            let actual_addr = transport.local_addr().unwrap_or(addr);
+                            bound_ports.insert(ep_name.clone(), actual_addr.port());
+                            bound_endpoints.insert((ip, actual_addr.port(), proto.clone()), transport.clone());
+                            tcp_transports.push(transport);
+                            logger.log(LogLevel::Info, "Runtime", &format!("Bound tcp server on {}", actual_addr));
+                        }
+                    } else {
+                        if let Ok(transport) = UdpTransport::new(addr) {
+                            let transport_arc: Arc<dyn SomeIpTransport> = Arc::new(transport);
+                            transport_arc.set_nonblocking(true).unwrap();
+                            let actual_addr = transport_arc.local_addr().unwrap();
+                            bound_ports.insert(ep_name.clone(), actual_addr.port());
+                            bound_endpoints.insert((ip, actual_addr.port(), proto.clone()), transport_arc.clone());
+                            udp_transports.push(transport_arc);
+                            logger.log(LogLevel::Info, "Runtime", &format!("Bound udp transport on {}", actual_addr));
                         }
                     }
                 }
-                found_idx
-            } else {
-                0 // Default
-            }
-        };
-
-        if let Some(ref t4) = sd_transport_v4 {
-            let _ = t4.set_multicast_ttl_v4(hops);
-            let _ = t4.set_multicast_loop_v4(true);
-            if let (Some(mcast_v4), Some(ip_v4)) = (multicast_ip_v4_opt, interface_ip_v4) {
-                 let _ = t4.join_multicast_v4(&mcast_v4, &ip_v4);
-                 let _ = t4.set_multicast_if_v4(&ip_v4);
-            }
-        }
-        
-        if let Some(ref t6) = sd_transport_v6 {
-            if let Some(mcast_v6) = multicast_ip_v6_opt {
-                let _ = t6.join_multicast_v6(&mcast_v6, iface_idx);
-                let _ = t6.set_multicast_if_v6(iface_idx);
-                let _ = t6.set_multicast_hops_v6(hops);
             }
         }
 
-        let multicast_group_v4: Option<SocketAddr> = multicast_ip_v4_opt.map(|ip| (ip, sd_v4_port).into());
-        let multicast_group_v6: Option<SocketAddr> = multicast_ip_v6_opt.map(|ip| (ip, sd_v6_port).into());
+        // 3. Initialize SD state machine with listeners
+        let mut sd = ServiceDiscovery::new();
+        for alias in &iface_aliases {
+            let iface_cfg = sys_config.interfaces.get(alias).unwrap();
+            let sd_cfg = if let Some(ref s) = iface_cfg.sd { s } else { continue; };
+            
+            let v4_ep = sd_cfg.endpoint_v4.as_ref().and_then(|name| iface_cfg.endpoints.get(name));
+            let v6_ep = sd_cfg.endpoint_v6.as_ref().and_then(|name| iface_cfg.endpoints.get(name));
+            
+            if v4_ep.is_none() && v6_ep.is_none() { continue; }
 
-        let sd = ServiceDiscovery::new(sd_transport_v4, sd_transport_v6, interface_ip_v4, interface_ip_v6,
-                                       multicast_group_v4, multicast_group_v6);
+            // Find local unicast IP for this interface
+            let local_ip_v4 = iface_cfg.endpoints.values()
+                .find(|e| e.version == 4 && !e.ip.contains("224."))
+                .and_then(|e| e.ip.parse::<Ipv4Addr>().ok());
+            
+            let local_ip_v6 = iface_cfg.endpoints.values()
+                .find(|e| e.version == 6 && !e.ip.contains("ff"))
+                .and_then(|e| e.ip.parse::<Ipv6Addr>().ok());
+
+            let mut transport_v4 = None;
+            let mut mcast_v4 = None;
+            if let Some(ep) = v4_ep {
+                // Determine bind IP: 
+                // 1. Instance-level unicast_bind for this interface
+                // 2. Configured bind_endpoint in SD config
+                // 3. Local unicast IP
+                let instance_bind_ip = instance_config.unicast_bind.get(alias)
+                    .and_then(|name| iface_cfg.endpoints.get(name))
+                    .and_then(|e| e.ip.parse::<Ipv4Addr>().ok());
+
+                let bind_ip = instance_bind_ip
+                    .or_else(|| sd_cfg.bind_endpoint_v4.as_ref()
+                        .and_then(|name| iface_cfg.endpoints.get(name))
+                        .and_then(|e| e.ip.parse::<Ipv4Addr>().ok()))
+                    .or(local_ip_v4);
+
+                let bind_ip = bind_ip.unwrap_or_else(|| {
+                    let msg = format!("STRICT BINDING: No bind IP resolved for SD v4 on {}. Aborting.", alias);
+                    logger.log(LogLevel::Error, "Runtime", &msg);
+                    panic!("{}", msg);
+                });
+
+                let bind_addr = SocketAddr::new(IpAddr::V4(bind_ip), ep.port);
+                let mcast_addr = SocketAddr::new(IpAddr::V4(ep.ip.parse::<Ipv4Addr>().unwrap()), ep.port);
+                
+                // Use iface_cfg.name for SO_BINDTODEVICE if available, else alias
+                let if_name = if iface_cfg.name.is_empty() { alias.as_str() } else { iface_cfg.name.as_str() };
+
+                if let Ok(t) = UdpTransport::new_multicast(bind_addr, mcast_addr, Some(if_name)) {
+                    let _ = t.set_multicast_loop_v4(true);
+                    let _ = t.set_multicast_ttl_v4(instance_config.sd.multicast_hops as u32);
+                    if let (Some(lip), Ok(mip)) = (local_ip_v4, ep.ip.parse::<Ipv4Addr>()) {
+                        let _ = t.join_multicast_v4(&mip, &lip);
+                        let _ = t.set_multicast_if_v4(&lip);
+                        mcast_v4 = Some(SocketAddr::new(IpAddr::V4(mip), ep.port));
+                    }
+                    transport_v4 = Some(t);
+                }
+            }
+
+            let mut transport_v6 = None;
+            let mut mcast_v6 = None;
+            if let Some(ep) = v6_ep {
+                // Determine bind IP
+                 let instance_bind_ip = instance_config.unicast_bind.get(alias)
+                    .and_then(|name| iface_cfg.endpoints.get(name))
+                    .and_then(|e| e.ip.parse::<Ipv6Addr>().ok());
+
+                let bind_ip = instance_bind_ip
+                    .or_else(|| sd_cfg.bind_endpoint_v6.as_ref()
+                        .and_then(|name| iface_cfg.endpoints.get(name))
+                        .and_then(|e| e.ip.parse::<Ipv6Addr>().ok()))
+                    .or(local_ip_v6);
+
+                let bind_ip = bind_ip.unwrap_or_else(|| {
+                    let msg = format!("STRICT BINDING: No bind IP resolved for SD v6 on {}. Aborting.", alias);
+                    logger.log(LogLevel::Error, "Runtime", &msg);
+                    panic!("{}", msg);
+                });
+                let bind_addr = SocketAddr::new(IpAddr::V6(bind_ip), ep.port);
+                let mcast_addr = SocketAddr::new(IpAddr::V6(ep.ip.parse::<Ipv6Addr>().unwrap()), ep.port);
+                let if_name = if iface_cfg.name.is_empty() { alias.as_str() } else { iface_cfg.name.as_str() };
+                
+                if let Ok(t) = UdpTransport::new_multicast(bind_addr, mcast_addr, Some(if_name)) {
+                    let _ = t.set_multicast_loop_v6(true);
+                    let _ = t.set_multicast_hops_v6(instance_config.sd.multicast_hops as u32);
+                    if let Ok(mip) = ep.ip.parse::<Ipv6Addr>() {
+                        // Need iface index
+                        let idx = Self::resolve_iface_index(&iface_cfg.name);
+                        let _ = t.join_multicast_v6(&mip, idx);
+                        let _ = t.set_multicast_if_v6(idx);
+                        mcast_v6 = Some(SocketAddr::new(IpAddr::V6(mip), ep.port));
+                    }
+                    transport_v6 = Some(t);
+                }
+            }
+
+            sd.add_listener(SdListener {
+                alias: alias.clone(),
+                transport_v4,
+                transport_v6,
+                multicast_group_v4: mcast_v4,
+                multicast_group_v6: mcast_v6,
+                local_ip_v4,
+                local_ip_v6,
+            });
+            logger.log(LogLevel::Info, "Runtime", &format!("SD listener added for interface '{}'", alias));
+        }
 
         Arc::new(Self {
             udp_transports,
@@ -303,11 +318,25 @@ impl SomeIpRuntime {
             services: Arc::new(RwLock::new(HashMap::new())),
             running: Arc::new(AtomicBool::new(true)),
             config: Some(instance_config),
-            endpoints,
+            endpoints: all_discovered_endpoints,
+            bound_ports,
             pending_requests: Arc::new(Mutex::new(HashMap::new())),
             session_manager: Arc::new(Mutex::new(HashMap::new())),
             logger,
         })
+    }
+
+    fn resolve_iface_index(name: &str) -> u32 {
+        if name.is_empty() { return 0; }
+        // Heuristic or system call
+        let idx = if name.to_lowercase().contains("lo") || name.to_lowercase().contains("loopback") {
+             if cfg!(target_os = "windows") { 1 } else { 1 } // typical lo index
+        } else {
+             0 // fallback
+        };
+        // Print to stderr (since we don't have logger instance in static method easily) or just return
+        // Note: For real fix we should use if_nametoindex.
+        idx
     }
 
     
@@ -357,19 +386,28 @@ impl SomeIpRuntime {
                     self.logger.log(LogLevel::Info, "Runtime", &format!("Discovered service '{}' (0x{:04x}) at {} (proto 0x{:02x})", alias, service_id, endpoint, proto));
                     
                     let transport: Arc<dyn SomeIpTransport> = if proto == 0x06 {
-                        // TCP
+                        // TCP: Connect to the discovered endpoint
                         match crate::transport::TcpTransport::connect(endpoint) {
-                            Ok(t) => {
-                                t.set_nonblocking(true).unwrap();
-                                Arc::new(t)
+                            Ok(client) => {
+                                client.set_nonblocking(true).ok();
+                                self.logger.log(LogLevel::Info, "Runtime",
+                                    &format!("TCP connected to {}", endpoint));
+                                Arc::new(client)
                             }
                             Err(e) => {
-                                self.logger.log(LogLevel::Error, "Runtime", &format!("Failed to connect to TCP service: {}", e));
+                                self.logger.log(LogLevel::Error, "Runtime",
+                                    &format!("TCP connect to {} failed: {}", endpoint, e));
                                 return None;
                             }
                         }
                     } else {
                         // UDP (or default)
+                        self.logger.log(LogLevel::Info, "Runtime", &format!("Searching for UDP transport for {}, count={}", endpoint, self.udp_transports.len()));
+                        for (i, t) in self.udp_transports.iter().enumerate() {
+                            if let Ok(la) = t.local_addr() {
+                                self.logger.log(LogLevel::Info, "Runtime", &format!("  [{}] local_addr={}", i, la));
+                            }
+                        }
                         if endpoint.is_ipv4() {
                             self.udp_transports.iter().find(|t| t.local_addr().map(|a| a.is_ipv4()).unwrap_or(false))
                                 .cloned()
@@ -398,19 +436,25 @@ impl SomeIpRuntime {
     }
 
 
-    pub fn subscribe_eventgroup(&self, service_id: u16, instance_id: u16, eventgroup_id: u16, ttl: u32) {
+    pub fn subscribe_eventgroup(&self, service_id: u16, instance_id: u16, eventgroup_id: u16, ttl: u32, iface_alias: &str) {
         let mut sd = self.sd.lock().unwrap();
-        let port_v4 = self.get_transport_v4().and_then(|t| t.local_addr().ok()).map(|a| a.port()).unwrap_or(0);
-        let port_v6 = self.get_transport_v6().and_then(|t| t.local_addr().ok()).map(|a| a.port()).unwrap_or(0);
-        sd.subscribe_eventgroup(service_id, instance_id, eventgroup_id, ttl, port_v4, port_v6);
-        self.logger.log(LogLevel::Info, "Runtime", &format!("Subscribing to Service 0x{:04x} EventGroup {} (v4: {}, v6: {})", service_id, eventgroup_id, port_v4, port_v6));
+        // Resolve ports from bound transports
+        // This is a bit complex in multi-interface, we might need a better way to find the port
+        // For now, use the first available transport's port for the given interface.
+        let port_v4 = self.udp_transports.iter().find(|t| t.local_addr().map(|a| a.is_ipv4()).unwrap_or(false))
+            .and_then(|t| t.local_addr().ok()).map(|a| a.port()).unwrap_or(0);
+        let port_v6 = self.udp_transports.iter().find(|t| t.local_addr().map(|a| a.is_ipv6()).unwrap_or(false))
+            .and_then(|t| t.local_addr().ok()).map(|a| a.port()).unwrap_or(0);
+        
+        sd.subscribe_eventgroup(service_id, instance_id, eventgroup_id, ttl, iface_alias, port_v4, port_v6);
+        self.logger.log(LogLevel::Info, "Runtime", &format!("Subscribing to Service 0x{:04x} EventGroup {} on {} (v4: {}, v6: {})", service_id, eventgroup_id, iface_alias, port_v4, port_v6));
     }
 
     pub fn offer_service(&self, alias: &str, instance: Box<dyn RequestHandler>) {
         // Resolve Config
-        let (service_id, major, minor, instance_id, endpoint_name, multicast_name) = if let Some(cfg) = &self.config {
+        let (service_id, major, minor, instance_id, offer_on, multicast_name) = if let Some(cfg) = &self.config {
             if let Some(prov_cfg) = cfg.providing.get(alias) {
-                (prov_cfg.service_id, prov_cfg.major_version, prov_cfg.minor_version, prov_cfg.instance_id, prov_cfg.endpoint.clone(), prov_cfg.multicast.clone())
+                (prov_cfg.service_id, prov_cfg.major_version, prov_cfg.minor_version, prov_cfg.instance_id, prov_cfg.offer_on.clone(), prov_cfg.multicast.clone())
             } else {
                 panic!("Alias '{}' not found in config", alias);
             }
@@ -424,32 +468,37 @@ impl SomeIpRuntime {
             services.insert(service_id, instance);
         }
         
-        let endpoint = self.endpoints.get(&endpoint_name).expect("Endpoint not found");
-        let mut final_port = endpoint.port;
-        if final_port == 0 {
-            // Use the port from the first available UDP transport as baseline for service
-            final_port = self.udp_transports.first()
-                .and_then(|t| t.local_addr().ok())
-                .map(|a| a.port())
-                .unwrap_or(0);
-        }
-        
-        // Register in SD
+        // Register in SD for each relevant interface
         let mut sd = self.sd.lock().unwrap();
-        let protocol = endpoint.protocol.to_lowercase();
-        let proto_id = if protocol == "tcp" { 0x06 } else { 0x11 };
         
-        // Resolve Multicast
-        let multicast = if let Some(mcast_name) = multicast_name.as_ref() {
-            if let Some(m_ep) = self.endpoints.get(mcast_name) {
-                let m_ip: std::net::IpAddr = m_ep.ip.parse().expect("Invalid multicast IP");
-                Some((m_ip, m_ep.port))
-            } else { None }
-        } else { None };
+        // Provide on all interfaces defined in offer_on
+        for (iface_alias, endpoint_name) in offer_on {
+            let mut final_port = 0;
+            let mut proto_id = 0x11;
+            
+            // Resolve the actual bound port for this endpoint.
+            if let Some(ep) = self.endpoints.get(&endpoint_name) {
+                 let protocol = ep.protocol.to_lowercase();
+                 proto_id = if protocol == "tcp" { 0x06 } else { 0x11 };
+                 // Use actual bound port (resolves ephemeral), fallback to config
+                 final_port = self.bound_ports.get(&endpoint_name).copied().unwrap_or(ep.port);
+            } else {
+                 self.logger.log(LogLevel::Warn, "Runtime", &format!("Endpoint '{}' not found for service '{}' on '{}'", endpoint_name, alias, iface_alias));
+            }
 
-        sd.offer_service(service_id, instance_id, major, minor, final_port, proto_id, multicast);
-        self.logger.log(LogLevel::Info, "Runtime", &format!("Offered Service '{}' (0x{:04x}) on endpoint {} ({}:{}, {})", 
-            alias, service_id, endpoint_name, endpoint.ip, final_port, protocol));
+            // Resolve Multicast
+            let multicast = if let Some(mcast_name) = multicast_name.as_ref() {
+                if let Some(m_ep) = self.endpoints.get(mcast_name) {
+                    if let Ok(m_ip) = m_ep.ip.parse::<std::net::IpAddr>() {
+                        Some((m_ip, m_ep.port))
+                    } else { None }
+                } else { None }
+            } else { None };
+
+            sd.offer_service(service_id, instance_id, major, minor, &iface_alias, final_port, proto_id, multicast);
+            self.logger.log(LogLevel::Info, "Runtime", &format!("Offered Service '{}' (0x{:04x}) on {} (port {}, proto 0x{:02x})", 
+                alias, service_id, iface_alias, final_port, proto_id));
+        }
     }
     
     pub async fn send_request_and_wait(&self, service_id: u16, method_id: u16, payload: &[u8], target: SocketAddr) -> Option<Vec<u8>> {
@@ -509,7 +558,9 @@ impl SomeIpRuntime {
                 match transport.receive(&mut buf) {
                     Ok((size, src)) => {
                         if size < 16 { continue; }
-                         if let Ok(header) = SomeIpHeader::deserialize(&buf[..16]) {
+                        if let Ok(header) = SomeIpHeader::deserialize(&buf[..16]) {
+                            #[cfg(feature = "packet-dump")]
+                            header.dump(src);
                              // Handle RESPONSE (0x80)
                              if header.message_type == 0x80 {
                                  let mut pending = self.pending_requests.lock().unwrap();

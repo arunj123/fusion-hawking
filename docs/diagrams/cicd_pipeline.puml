@@ -47,6 +47,8 @@ partition "Coverage" {
         :coverage.py (Python);
     split again
         :OpenCppCoverage (C++);
+    split again
+        :c8 (JS);
     end split
 }
 

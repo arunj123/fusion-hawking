@@ -1,62 +1,88 @@
 {
-    "endpoints": {
-        "test_ep": {
-            "interface": "lo",
-            "ip": "127.0.0.1",
-            "port": 0,
-            "version": 4,
-            "protocol": "udp"
-        },
-        "sd_multicast": {
-            "interface": "lo",
-            "ip": "224.0.0.1",
-            "port": 30690,
-            "version": 4,
-            "protocol": "udp"
+    "interfaces": {
+        "primary": {
+            "name": "eth0",
+            "endpoints": {
+                "test_ep": {
+                    "ip": "127.0.0.1",
+                    "port": 0,
+                    "version": 4,
+                    "protocol": "udp"
+                },
+                "sd_multicast": {
+                    "ip": "224.0.0.3",
+                    "port": 30890,
+                    "version": 4,
+                    "protocol": "udp"
+                },
+                "sd_bind_ep": {
+                    "ip": "127.0.0.1",
+                    "port": 0,
+                    "version": 4,
+                    "protocol": "udp"
+                }
+            },
+            "sd": {
+                "endpoint": "sd_multicast"
+            }
         }
     },
     "instances": {
         "test_instance": {
+            "unicast_bind": {
+                "primary": "sd_bind_ep"
+            },
             "providing": {
                 "math-service": {
                     "service_id": 4097,
                     "instance_id": 1,
-                    "endpoint": "test_ep"
+                    "offer_on": {
+                        "primary": "test_ep"
+                    }
                 }
             },
             "required": {
                 "math-client": {
                     "service_id": 4097,
                     "instance_id": 1,
-                    "endpoint": "test_ep"
+                    "find_on": [
+                        "primary"
+                    ]
                 }
             },
             "sd": {
-                "multicast_endpoint": "sd_multicast"
+                "cycle_offer_ms": 100
             }
         },
         "python_test_client": {
+            "unicast_bind": {
+                "primary": "sd_bind_ep"
+            },
             "required": {
                 "sort-service": {
                     "service_id": 12289,
                     "instance_id": 1,
-                    "endpoint": "test_ep"
+                    "find_on": [
+                        "primary"
+                    ]
                 }
             },
             "sd": {
-                "multicast_endpoint": "sd_multicast"
+                "cycle_offer_ms": 1000
             }
         },
         "cpp_app_instance": {
+            "unicast_bind": {
+                "primary": "sd_bind_ep"
+            },
             "providing": {
                 "sort-service": {
                     "service_id": 12289,
                     "instance_id": 1,
-                    "endpoint": "test_ep"
+                    "offer_on": {
+                        "primary": "test_ep"
+                    }
                 }
-            },
-            "sd": {
-                "multicast_endpoint": "sd_multicast"
             }
         }
     }

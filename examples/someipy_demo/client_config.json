@@ -1,111 +1,110 @@
 {
-    "endpoints": {
-        "python_client_ep": {
-            "ip": "127.0.0.1",
-            "port": 0,
-            "protocol": "udp",
-            "interface": "lo",
-            "version": 4
-        },
-        "cpp_client_ep": {
-            "ip": "127.0.0.1",
-            "port": 0,
-            "protocol": "udp",
-            "interface": "lo",
-            "version": 4
-        },
-        "rust_client_ep": {
-            "ip": "127.0.0.1",
-            "port": 0,
-            "protocol": "udp",
-            "interface": "lo",
-            "version": 4
-        },
-        "js_client_ep": {
-            "ip": "127.0.0.1",
-            "port": 0,
-            "protocol": "udp",
-            "interface": "lo",
-            "version": 4
-        },
-        "sd_multicast": {
-            "ip": "224.0.0.3",
-            "port": 30694,
-            "protocol": "udp",
-            "interface": "lo",
-            "version": 4
-        },
-        "sd_multicast_v6": {
-            "ip": "ff02::1",
-            "port": 30694,
-            "protocol": "udp",
-            "interface": "lo",
-            "version": 6
+    "interfaces": {
+        "default": {
+            "name": "eth0",
+            "endpoints": {
+                "python_client_ep": {
+                    "ip": "127.0.0.1",
+                    "port": 0,
+                    "protocol": "udp",
+                    "version": 4
+                },
+                "cpp_client_ep": {
+                    "ip": "127.0.0.1",
+                    "port": 0,
+                    "protocol": "udp",
+                    "version": 4
+                },
+                "rust_client_ep": {
+                    "ip": "127.0.0.1",
+                    "port": 0,
+                    "protocol": "udp",
+                    "version": 4
+                },
+                "js_client_ep": {
+                    "ip": "127.0.0.1",
+                    "port": 0,
+                    "protocol": "udp",
+                    "version": 4
+                },
+                "sd_multicast": {
+                    "ip": "224.0.0.3",
+                    "port": 30890,
+                    "protocol": "udp",
+                    "version": 4
+                },
+                "sd_multicast_v6": {
+                    "ip": "ff0e::1",
+                    "port": 30890,
+                    "protocol": "udp",
+                    "version": 6
+                }
+            },
+            "sd": {
+                "endpoint_v4": "sd_multicast",
+                "endpoint_v6": "sd_multicast_v6"
+            }
         }
     },
     "instances": {
         "python_client": {
-            "endpoint": "python_client_ep",
+            "unicast_bind": {
+                "default": "python_client_ep"
+            },
             "required": {
                 "someipy_svc": {
                     "service_id": 4660,
                     "instance_id": 1,
                     "major_version": 1,
-                    "endpoint": "python_client_ep"
+                    "find_on": [
+                        "default"
+                    ]
                 }
-            },
-            "sd": {
-                "multicast_endpoint": "sd_multicast",
-                "multicast_endpoint_v6": "sd_multicast_v6",
-                "cycle_offer_ms": 1000
             }
         },
         "cpp_client": {
-            "endpoint": "cpp_client_ep",
+            "unicast_bind": {
+                "default": "cpp_client_ep"
+            },
             "required": {
                 "someipy_svc": {
                     "service_id": 4660,
                     "instance_id": 1,
                     "major_version": 1,
-                    "endpoint": "cpp_client_ep"
+                    "find_on": [
+                        "default"
+                    ]
                 }
-            },
-            "sd": {
-                "multicast_endpoint": "sd_multicast",
-                "multicast_endpoint_v6": "sd_multicast_v6",
-                "cycle_offer_ms": 1000
             }
         },
         "rust_client": {
-            "endpoint": "rust_client_ep",
+            "unicast_bind": {
+                "default": "rust_client_ep"
+            },
             "required": {
                 "someipy_svc": {
                     "service_id": 4660,
                     "instance_id": 1,
                     "major_version": 1,
-                    "endpoint": "rust_client_ep"
+                    "find_on": [
+                        "default"
+                    ]
                 }
-            },
-            "sd": {
-                "multicast_endpoint": "sd_multicast",
-                "multicast_endpoint_v6": "sd_multicast_v6",
-                "cycle_offer_ms": 1000
             }
         },
         "js_client": {
-            "endpoint": "js_client_ep",
+            "unicast_bind": {
+                "default": "js_client_ep"
+            },
             "required": {
                 "someipy_svc": {
                     "service_id": 4660,
                     "instance_id": 1,
                     "major_version": 1,
-                    "endpoint": "js_client_ep"
+                    "find_on": [
+                        "default"
+                    ]
                 }
-            },
-            "sd": {
-                "multicast_endpoint": "sd_multicast",
-                "multicast_endpoint_v6": "sd_multicast_v6",
-                "cycle_offer_ms": 1000
             }
         }
     }

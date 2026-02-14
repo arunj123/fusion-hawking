@@ -16,6 +16,9 @@ struct ServiceConfig {
     uint32_t minor_version = 0;
     std::string endpoint;
     std::string multicast;
+    std::vector<std::string> interfaces;
+    std::map<std::string, std::string> offer_on; // Interface -> Endpoint Name
+    uint32_t cycle_offer_ms = 0; // 0 means use global/SD setting
 };
 
 struct EndpointConfig {
@@ -32,6 +35,8 @@ struct ClientConfig {
     uint8_t major_version = 1;
     uint32_t minor_version = 0;
     std::string endpoint;
+    std::string preferred_interface;
+    std::vector<std::string> find_on; // List of interface names
 };
 
 struct SdConfig {
@@ -41,16 +46,35 @@ struct SdConfig {
     uint16_t multicast_hops = 1;
 };
 
+struct InterfaceSdConfig {
+    std::string endpoint;
+    std::string endpoint_v6;
+    std::string bind_endpoint_v4;
+    std::string bind_endpoint_v6;
+    
+    // Legacy/Direct bind support (if needed internally)
+    std::string unicast_bind_endpoint; 
+};
+
+struct InterfaceConfig {
+    std::string name;
+    std::map<std::string, EndpointConfig> endpoints;
+    InterfaceSdConfig sd;
+};
+
 struct InstanceConfig {
     std::string ip;
     std::string ip_v6;
     int ip_version = 4;
+    std::string endpoint;
     std::map<std::string, ServiceConfig> providing;
     std::map<std::string, ClientConfig> required;
     std::map<std::string, EndpointConfig> endpoints;
+    std::map<std::string, InterfaceConfig> interfaces;
+    std::map<std::string, std::string> unicast_bind; // Interface -> Endpoint Name
     SdConfig sd;
     
-    // Config helpers
+    // Config helpers (legacy/fallback)
     std::string sd_multicast_endpoint;
     std::string sd_multicast_endpoint_v6;
 };
@@ -93,6 +117,19 @@ public:
         
         std::string block = json.substr(start, end - start);
         
+        // Parse unicast_bind
+        size_t ub_pos = block.find("\"unicast_bind\"");
+        if (ub_pos != std::string::npos) {
+            size_t ub_start = block.find("{", ub_pos);
+            size_t ub_end = ub_start + 1; int ub_depth = 1;
+            while (ub_depth > 0 && ub_end < block.length()) {
+                if (block[ub_end] == '{') ub_depth++;
+                else if (block[ub_end] == '}') ub_depth--;
+                ub_end++;
+            }
+            ParseStringMap(block.substr(ub_start, ub_end - ub_start), config.unicast_bind);
+        }
+
         size_t prov_pos = block.find("\"providing\"");
         if (prov_pos != std::string::npos) {
             size_t p_start = block.find("{", prov_pos);
@@ -138,25 +175,54 @@ public:
         }
         
         config.ip = ExtractString(block, "ip");
-        if (config.ip.empty()) config.ip = "127.0.0.1";
-        
         config.ip_v6 = ExtractString(block, "ip_v6");
-        if (config.ip_v6.empty()) config.ip_v6 = "::1";
-        
+        config.endpoint = ExtractString(block, "endpoint");
         config.ip_version = ExtractInt(block, "ip_version");
-        if (config.ip_version == 0) config.ip_version = 4;
+
+        // 2. Parse Interfaces (Global)
+        size_t iface_pos = json.find("\"interfaces\"");
+        if (iface_pos != std::string::npos) {
+             size_t i_start = json.find("{", iface_pos);
+             size_t i_end = i_start + 1; int i_depth = 1;
+             while (i_depth > 0 && i_end < json.length()) {
+                 if (json[i_end] == '{') i_depth++;
+                 else if (json[i_end] == '}') i_depth--;
+                 i_end++;
+             }
+             ParseInterfaces(json.substr(i_start, i_end - i_start), config.interfaces);
+        }
 
         return config;
     }
 
 private:
+    static void ParseStringMap(const std::string& json, std::map<std::string, std::string>& map) {
+        size_t pos = 0;
+        while ((pos = json.find("\"", pos)) != std::string::npos) {
+            size_t key_end = json.find("\"", pos + 1);
+            if (key_end == std::string::npos) break;
+            std::string key = json.substr(pos + 1, key_end - pos - 1);
+            
+            size_t val_start = json.find(":", key_end);
+            if (val_start == std::string::npos) break;
+            size_t quote_start = json.find("\"", val_start);
+            if (quote_start == std::string::npos) break;
+            size_t quote_end = json.find("\"", quote_start + 1);
+            if (quote_end == std::string::npos) break;
+            
+            std::string val = json.substr(quote_start + 1, quote_end - quote_start - 1);
+            map[key] = val;
+            pos = quote_end + 1;
+        }
+    }
+
     static void ParseProviding(const std::string& json, std::map<std::string, ServiceConfig>& map) {
         size_t pos = 0;
         while ((pos = json.find("\"", pos)) != std::string::npos) {
             size_t key_end = json.find("\"", pos + 1);
             if (key_end == std::string::npos) break;
             std::string key = json.substr(pos + 1, key_end - pos - 1);
-            if (key == "providing" || key == "service_id" || key == "instance_id") { pos = key_end + 1; continue; }
+            if (key == "providing" || key == "service_id" || key == "instance_id" || key == "unicast_bind") { pos = key_end + 1; continue; }
             
             size_t obj_start = json.find("{", key_end);
             if (obj_start == std::string::npos) break;
@@ -175,6 +241,85 @@ private:
             cfg.minor_version = ExtractInt(val, "minor_version");
             cfg.endpoint = ExtractString(val, "endpoint");
             cfg.multicast = ExtractString(val, "multicast");
+            cfg.cycle_offer_ms = ExtractInt(val, "cycle_offer_ms");
+
+            size_t iface_arr_pos = val.find("\"interfaces\"");
+            if (iface_arr_pos != std::string::npos) {
+                size_t arr_start = val.find("[", iface_arr_pos);
+                size_t arr_end = val.find("]", arr_start);
+                if (arr_start != std::string::npos && arr_end != std::string::npos) {
+                    std::string arr_content = val.substr(arr_start + 1, arr_end - arr_start - 1);
+                    ParseStringList(arr_content, cfg.interfaces);
+                }
+            }
+
+            // Parse offer_on
+            size_t off_pos = val.find("\"offer_on\"");
+            if (off_pos != std::string::npos) {
+                size_t off_start = val.find("{", off_pos);
+                size_t off_end = off_start + 1; int off_depth = 1;
+                while (off_depth > 0 && off_end < val.length()) {
+                    if (val[off_end] == '{') off_depth++;
+                    else if (val[off_end] == '}') off_depth--;
+                    off_end++;
+                }
+                ParseStringMap(val.substr(off_start, off_end - off_start), cfg.offer_on);
+            }
+
+            map[key] = cfg;
+            pos = obj_end;
+        }
+    }
+
+    static void ParseInterfaces(const std::string& json, std::map<std::string, InterfaceConfig>& map) {
+        size_t pos = 0;
+        while ((pos = json.find("\"", pos)) != std::string::npos) {
+            size_t key_end = json.find("\"", pos + 1);
+            if (key_end == std::string::npos) break;
+            std::string key = json.substr(pos + 1, key_end - pos - 1);
+            
+            size_t obj_start = json.find("{", key_end);
+            if (obj_start == std::string::npos) break;
+            size_t obj_end = obj_start + 1; int depth = 1;
+            while (depth > 0 && obj_end < json.length()) {
+                if (json[obj_end] == '{') depth++;
+                else if (json[obj_end] == '}') depth--;
+                obj_end++;
+            }
+            
+            std::string val = json.substr(obj_start, obj_end - obj_start);
+            InterfaceConfig cfg;
+            cfg.name = ExtractString(val, "name");
+            
+            size_t endp_pos = val.find("\"endpoints\"");
+            if (endp_pos != std::string::npos) {
+                 size_t e_start = val.find("{", endp_pos);
+                 size_t e_end = e_start + 1; int e_depth = 1;
+                 while (e_depth > 0 && e_end < val.length()) {
+                     if (val[e_end] == '{') e_depth++;
+                     else if (val[e_end] == '}') e_depth--;
+                     e_end++;
+                 }
+                 ParseEndpoints(val.substr(e_start, e_end - e_start), cfg.endpoints);
+            }
+            
+            size_t sd_pos = val.find("\"sd\"");
+            if (sd_pos != std::string::npos) {
+                size_t s_start = val.find("{", sd_pos);
+                size_t s_end = s_start + 1; int s_depth = 1;
+                while (s_depth > 0 && s_end < val.length()) {
+                    if (val[s_end] == '{') s_depth++;
+                    else if (val[s_end] == '}') s_depth--;
+                    s_end++;
+                }
+                std::string sd_val = val.substr(s_start, s_end - s_start);
+                cfg.sd.endpoint = ExtractString(sd_val, "endpoint_v4");
+                if (cfg.sd.endpoint.empty()) cfg.sd.endpoint = ExtractString(sd_val, "endpoint");
+                cfg.sd.endpoint_v6 = ExtractString(sd_val, "endpoint_v6");
+                cfg.sd.bind_endpoint_v4 = ExtractString(sd_val, "bind_endpoint_v4");
+                cfg.sd.bind_endpoint_v6 = ExtractString(sd_val, "bind_endpoint_v6");
+            }
+
             map[key] = cfg;
             pos = obj_end;
         }
@@ -186,6 +331,7 @@ private:
             size_t key_end = json.find("\"", pos + 1);
             if (key_end == std::string::npos) break;
             std::string key = json.substr(pos + 1, key_end - pos - 1);
+            if (key == "required" || key == "service_id" || key == "instance_id") { pos = key_end + 1; continue; }
             
             size_t obj_start = json.find("{", key_end);
             if (obj_start == std::string::npos) break;
@@ -203,8 +349,30 @@ private:
             cfg.major_version = ExtractInt(val, "major_version");
             cfg.minor_version = ExtractInt(val, "minor_version");
             cfg.endpoint = ExtractString(val, "endpoint");
+            cfg.preferred_interface = ExtractString(val, "preferred_interface");
+
+            size_t find_pos = val.find("\"find_on\"");
+            if (find_pos != std::string::npos) {
+                size_t arr_start = val.find("[", find_pos);
+                size_t arr_end = val.find("]", arr_start);
+                if (arr_start != std::string::npos && arr_end != std::string::npos) {
+                    std::string arr_content = val.substr(arr_start + 1, arr_end - arr_start - 1);
+                    ParseStringList(arr_content, cfg.find_on);
+                }
+            }
+
             map[key] = cfg;
             pos = obj_end;
+        }
+    }
+
+    static void ParseStringList(const std::string& content, std::vector<std::string>& list) {
+        size_t s_pos = 0;
+        while ((s_pos = content.find("\"", s_pos)) != std::string::npos) {
+            size_t s_end = content.find("\"", s_pos + 1);
+            if (s_end == std::string::npos) break;
+            list.push_back(content.substr(s_pos + 1, s_end - s_pos - 1));
+            s_pos = s_end + 1;
         }
     }
 

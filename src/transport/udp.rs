@@ -2,6 +2,7 @@ use super::traits::SomeIpTransport;
 use std::net::{UdpSocket, SocketAddr, Ipv4Addr};
 use std::io::Result;
 
+#[derive(Debug)]
 pub struct UdpTransport {
     socket: UdpSocket,
 }
@@ -13,9 +14,12 @@ impl UdpTransport {
     }
     
     /// Create a multicast-ready socket with SO_REUSEADDR for shared port binding
-    pub fn new_multicast(bind_addr: SocketAddr) -> Result<Self> {
+    pub fn new_multicast(bind_addr: SocketAddr, multicast_addr: SocketAddr, iface_name: Option<&str>) -> Result<Self> {
         use socket2::{Socket, Domain, Type, Protocol};
         
+        // Logger not available here? We use println! for debug
+        println!("[DEBUG] Creating multicast socket for {}", bind_addr);
+
         let domain = match bind_addr {
             SocketAddr::V4(_) => Domain::IPV4,
             SocketAddr::V6(_) => Domain::IPV6,
@@ -25,12 +29,62 @@ impl UdpTransport {
         
         // Set SO_REUSEADDR to allow multiple processes to bind
         socket.set_reuse_address(true)?;
+        println!("[DEBUG] SO_REUSEADDR set to true");
+
+        // Enable Multicast Loopback so local processes (on same host) see these packets
+        match bind_addr {
+            SocketAddr::V4(_) => {
+                socket.set_multicast_loop_v4(true)?;
+                println!("[DEBUG] IP_MULTICAST_LOOP (v4) set to true");
+            },
+            SocketAddr::V6(_) => {
+                socket.set_multicast_loop_v6(true)?;
+                println!("[DEBUG] IP_MULTICAST_LOOP (v6) set to true");
+            }
+        }
         
         // On some platforms, also need SO_REUSEPORT
         #[cfg(all(unix, not(target_os = "solaris"), not(target_os = "illumos")))]
         socket.set_reuse_port(true)?;
-        
-        socket.bind(&bind_addr.into())?;
+
+        // Platform-specific binding logic
+        #[cfg(windows)]
+        {
+            // Windows: Bind to Unicast Interface IP (Strict Binding supported here)
+            println!("[DEBUG] Windows: Binding to Unicast IP {}", bind_addr);
+            match socket.bind(&bind_addr.into()) {
+                Ok(_) => {},
+                Err(e) => {
+                    println!("[ERROR] Failed to bind to {}: {:?}", bind_addr, e);
+                    return Err(e);
+                }
+            }
+        }
+
+        #[cfg(unix)]
+        {
+            // Linux/Unix: Bind to Multicast Group IP to allow reception
+            // Binding to Unicast blocks multicast packets on Linux
+            let mcast_sock_addr = SocketAddr::new(multicast_addr.ip(), bind_addr.port());
+            println!("[DEBUG] Linux: Binding to Multicast Group IP {}", mcast_sock_addr);
+            
+            // SO_BINDTODEVICE
+            if let Some(ifname) = iface_name {
+                 println!("[DEBUG] Linux: Setting SO_BINDTODEVICE to {}", ifname);
+                 let bytes = ifname.as_bytes();
+                 if let Err(e) = socket.bind_device(Some(bytes)) {
+                     println!("[WARN] Failed to set SO_BINDTODEVICE: {:?}", e);
+                 }
+            }
+
+            match socket.bind(&mcast_sock_addr.into()) {
+                Ok(_) => {},
+                Err(e) => {
+                    println!("[ERROR] Failed to bind to {}: {:?}", mcast_sock_addr, e);
+                    return Err(e);
+                }
+            }
+        }
         
         Ok(UdpTransport { socket: socket.into() })
     }

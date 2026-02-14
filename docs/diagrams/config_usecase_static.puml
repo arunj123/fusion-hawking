@@ -1,0 +1,16 @@
+@startuml
+component "Static Client" as Client
+component "Static Server" as Server
+
+Client -> Server : Unicast UDP (No SD)
+
+note right of Server
+  <b>Providing</b>
+  LegacyService -> p2p_link: server_static_ep
+end note
+
+note left of Client
+  <b>Required</b>
+  LegacyService -> find_on: p2p_link
+end note
+@enduml

@@ -1,14 +1,40 @@
 import subprocess
 import os
 import shutil
+import sys
 
 class CoverageManager:
-    def __init__(self, reporter, toolchains):
+    def __init__(self, reporter, toolchains, env_caps=None):
         self.reporter = reporter
         self.toolchains = toolchains
+        self.env_caps = env_caps or {}
+
+    def _build_pytest_marker_expr(self):
+        """Build a pytest -m expression to deselect tests based on capabilities."""
+        caps = self.env_caps
+        excluded = []
+        if not caps.get('has_netns'):
+            excluded.append('needs_netns')
+        if not caps.get('has_multicast'):
+            excluded.append('needs_multicast')
+        if not caps.get('has_ipv6'):
+            excluded.append('needs_ipv6')
+        if not caps.get('has_veth'):
+            excluded.append('needs_veth')
+        if excluded:
+            expr = ' and '.join(f'not {m}' for m in excluded)
+            return expr
+        return None
 
     def run_coverage(self, target="all"):
         print("\n--- Running Coverage ---")
+        if self.env_caps:
+             print("  [cov] Environment capabilities:")
+             for key, val in self.env_caps.items():
+                 if key != 'interfaces':
+                     icon = '[v]' if val else '[x]' if isinstance(val, bool) else '   '
+                     print(f"    {icon} {key}: {val}")
+        
         results = {}
         
         if target in ["all", "rust"]:
@@ -40,32 +66,41 @@ class CoverageManager:
         print("Generating Python Coverage...")
         env = os.environ.copy()
         env["PYTHONPATH"] = os.pathsep.join(["src/python", "build", "build/generated/python"])
+        env["FUSION_LOG_DIR"] = str(self.reporter.raw_logs_dir)
+        
+        # Use a distinct log name for the runner, preserving 'python_integration.log' for the app under test
+        runner_log_name = "coverage_python_pytest"
         
         cmd = ["pytest", "--cov=src/python", 
                f"--cov-report=html:{os.path.join(self.reporter.coverage_dir, 'python')}",
                "tests/"]
         
-        # Log injection happens in _run, but we need to control the header
-        # _run doesn't support custom headers easily without modification.
-        # So we'll overload _run or prep the file first.
-        # Actually _run opens the file in "w" mode, so it overwrites.
-        # Let's modify _run to accept a header_info dict.
-        # Or just write it here manually and use append mode in _run? No, _run logic...
-        # Simplest: manually write header, then call _run with append mode? _run hardcodes "w".
+        # Apply marker filters
+        marker_expr = self._build_pytest_marker_expr()
+        if marker_expr:
+            cmd.extend(["-m", marker_expr])
         
-        # Let's modify _run to accept 'header' argument.
-        header = f"=== FUSION COVERAGE RUNNER ===\nCommand: {' '.join(cmd)}\nPWD: {os.getcwd()}\nEnvironment [PYTHONPATH]: {env['PYTHONPATH']}\n==============================\n\n"
+        header = f"=== FUSION COVERAGE RUNNER ===\nCommand: {' '.join(cmd)}\nPWD: {os.getcwd()}\nEnvironment [PYTHONPATH]: {env['PYTHONPATH']}\nMarker Filter: {marker_expr}\n==============================\n\n"
         
-        if self._run(cmd, "python_integration", env=env, header=header):
+        if self._run(cmd, runner_log_name, env=env, header=header):
             return "PASS"
         else:
-            # If it failed, dump the log to stdout for CI visibility
-            log_path = self.reporter.get_log_path("python_integration")
-            if os.path.exists(log_path):
-                print(f"\n--- FAILURE LOG: python_integration ---")
-                with open(log_path, "r") as f:
-                    print(f.read())
-                print(f"--- END LOG ---")
+            # If it failed, dump the runner log
+            self._dump_log(runner_log_name)
+            
+            # Also dump component logs which might contain the actual failure details
+            print("\n  [INFO] Dumping component logs due to coverage failure:")
+            for app_log in ["python_integration.log", "cpp_integration.log", "rust_integration.log"]:
+                 log_path = os.path.join(self.reporter.raw_logs_dir, app_log)
+                 if os.path.exists(log_path):
+                     print(f"\n--- COMPONENT LOG: {app_log} ---")
+                     try:
+                         with open(log_path, "r", encoding='utf-8', errors='ignore') as f:
+                             print(f.read())
+                     except Exception as e:
+                         print(f"Error reading {app_log}: {e}")
+                     print(f"--- END COMPONENT LOG ---")
+            
             return "FAIL"
 
     def _run_cpp_coverage(self):
@@ -86,13 +121,16 @@ class CoverageManager:
             return "SKIPPED"
             
         out_dir = os.path.join(self.reporter.coverage_dir, "cpp")
+        # Use a distinct log name
+        runner_log_name = "coverage_cpp_test"
+        
         cmd = ["OpenCppCoverage", "--sources", "src\\cpp", 
                f"--export_type", f"html:{out_dir}", 
                "--", cpp_test_exe]
         
         header = f"=== FUSION COVERAGE RUNNER ===\nCommand: {' '.join(cmd)}\nPWD: {os.getcwd()}\n==============================\n\n"
 
-        if self._run(cmd, "cpp_integration", header=header):
+        if self._run(cmd, runner_log_name, header=header):
             # Cleanup OpenCppCoverage log
             if os.path.exists("LastCoverageResults.log"):
                 try:
@@ -100,7 +138,9 @@ class CoverageManager:
                 except:
                     pass
             return "PASS"
-        return "FAIL"
+        else:
+             self._dump_log(runner_log_name)
+             return "FAIL"
 
     def _run_cpp_coverage_linux(self):
         if not shutil.which("lcov"):
@@ -149,9 +189,12 @@ class CoverageManager:
         # 2. Run Test
         header = f"=== FUSION C++ COVERAGE TEST RUN ===\n"
         print(f"  Running test binary: {cpp_test_exe}")
-        if not self._run([f"./{cpp_test_exe}"], "cpp_integration_run", header=header):
+        # Use distinct log name
+        runner_log_name = "coverage_cpp_run"
+        
+        if not self._run([f"./{cpp_test_exe}"], runner_log_name, header=header):
             print("Warning: C++ test returned non-zero during coverage run")
-            self._dump_log("cpp_integration_run")
+            self._dump_log(runner_log_name)
 
         # Diagnostics: Check for .gcda files
         gcda_files = []
@@ -163,7 +206,7 @@ class CoverageManager:
         if len(gcda_files) == 0:
             print("  [ERROR] No .gcda files generated. Check if binary was built with --coverage and ran successfully.")
             # Dump test output regardless of return code to see if it actually ran
-            self._dump_log("cpp_integration_run")
+            self._dump_log(runner_log_name)
 
         # 3. Capture coverage
         info_file = os.path.join(self.reporter.coverage_dir, "cpp", "coverage.info")
@@ -171,27 +214,27 @@ class CoverageManager:
         # Base directory might help LCOV 2.0
         capture_cmd.extend(["--base-directory", os.getcwd()])
         
-        if not self._run(capture_cmd, "cpp_coverage_capture"):
-            self._dump_log("cpp_coverage_capture")
+        if not self._run(capture_cmd, "coverage_cpp_capture"):
+            self._dump_log("coverage_cpp_capture")
             return "FAIL"
 
         # 4. Filter (exclude tests, examples, tools)
         filter_cmd = ["lcov", "--remove", info_file, "/usr/*", "*/tests/*", "*/examples/*", "*/build/*", "--output-file", info_file]
-        self._run(filter_cmd, "cpp_coverage_filter")
+        self._run(filter_cmd, "coverage_cpp_filter")
 
         # 5. Generate HTML
         gen_cmd = ["genhtml", info_file, "--output-directory", out_dir]
-        if self._run(gen_cmd, "cpp_coverage_html"):
+        if self._run(gen_cmd, "coverage_cpp_html"):
             return "PASS"
         else:
-            self._dump_log("cpp_coverage_html")
+            self._dump_log("coverage_cpp_html")
             return "FAIL"
 
     def _dump_log(self, log_name):
         log_path = self.reporter.get_log_path(log_name)
         if os.path.exists(log_path):
             print(f"\n--- FAILURE LOG: {log_name} ---")
-            with open(log_path, "r") as f:
+            with open(log_path, "r", errors='ignore') as f:
                 print(f.read())
             print(f"--- END LOG ---")
 

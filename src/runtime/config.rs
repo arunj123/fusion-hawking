@@ -17,14 +17,34 @@ pub struct MulticastConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+pub struct InterfaceSdConfig {
+    pub endpoint_v4: Option<String>,
+    pub endpoint_v6: Option<String>,
+    pub bind_endpoint_v4: Option<String>,
+    pub bind_endpoint_v6: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct InterfaceConfig {
+    pub name: String,
+    pub endpoints: HashMap<String, EndpointConfig>,
+    pub sd: Option<InterfaceSdConfig>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct ServiceConfig {
     pub service_id: u16,
     pub instance_id: u16,
     pub major_version: u8,
     #[serde(default)]
     pub minor_version: u32,
-    pub endpoint: String,
+    #[serde(default)]
+    pub offer_on: HashMap<String, String>, // Interface -> Endpoint
     pub multicast: Option<String>,
+    // Legacy fields for backward compatibility during migration
+    pub endpoint: Option<String>,
+    #[serde(default)]
+    pub interfaces: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -32,7 +52,10 @@ pub struct ClientConfig {
     pub service_id: u16,
     pub instance_id: u16,
     pub major_version: u8,
+    #[serde(default)]
+    pub find_on: Vec<String>, // List of interfaces
     pub endpoint: Option<String>,
+    pub preferred_interface: Option<String>,
 }
 
 /// Service Discovery Configuration
@@ -105,7 +128,8 @@ fn default_multicast_hops() -> u8 { 1 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct InstanceConfig {
-    pub endpoint: Option<String>,
+    #[serde(default)]
+    pub unicast_bind: HashMap<String, String>, // Interface -> Endpoint
     #[serde(default)]
     pub providing: HashMap<String, ServiceConfig>,
     #[serde(default)]
@@ -113,11 +137,17 @@ pub struct InstanceConfig {
     /// Service Discovery configuration
     #[serde(default)]
     pub sd: SdConfig,
+    // Legacy support
+    pub endpoint: Option<String>,
+    #[serde(default)]
+    pub interfaces: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct SystemConfig {
     #[serde(default)]
     pub endpoints: HashMap<String, EndpointConfig>,
+    #[serde(default)]
+    pub interfaces: HashMap<String, InterfaceConfig>,
     pub instances: HashMap<String, InstanceConfig>,
 }

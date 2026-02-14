@@ -22,12 +22,12 @@ describe('SD Constants', () => {
         assert.equal(SD_METHOD_ID, 0x8100);
     });
 
-    it('[PRS_SOMEIPSD_00280] IPv4 option length is 10', () => {
-        assert.equal(IPV4_OPTION_LENGTH, 10);
+    it('[PRS_SOMEIPSD_00280] IPv4 option length is 9', () => {
+        assert.equal(IPV4_OPTION_LENGTH, 9);
     });
 
-    it('[PRS_SOMEIPSD_00280] IPv6 option length is 22', () => {
-        assert.equal(IPV6_OPTION_LENGTH, 22);
+    it('[PRS_SOMEIPSD_00280] IPv6 option length is 21', () => {
+        assert.equal(IPV6_OPTION_LENGTH, 21);
     });
 
     it('entry types match spec', () => {
@@ -116,7 +116,7 @@ describe('Golden SD Hex References', () => {
             '80000000' + '00000010' +
             '01000010' + '12340001' + '01ffffff' + '0000000a' +
             '0000000c' +
-            '000a0400' + '7f000001' + '00117724', 'hex');
+            '00090400' + '7f000001' + '00117724', 'hex');
 
         const h = deserializeHeader(golden);
         assert.equal(h.serviceId, 0xFFFF);
@@ -128,7 +128,7 @@ describe('Golden SD Hex References', () => {
         assert.equal(entries[0].serviceId, 0x1234);
 
         const options = parseSdOptions(sd, 4 + 4 + 16);
-        assert.equal(options[0].length, 10);
+        assert.equal(options[0].length, 9);
         assert.equal(options[0].type, SdOptionType.IPV4_ENDPOINT);
         assert.equal(options[0].port, 30500);
     });
@@ -137,13 +137,13 @@ describe('Golden SD Hex References', () => {
         // Standalone IPv6 option
         const optBuf = Buffer.from(
             '00000018' +  // options array length = 24
-            '00160600' +  // len=22, type=IPv6 endpoint
+            '00150600' +  // len=21, type=IPv6 endpoint
             '00000000000000000000000000000001' + // ::1
             '00117724', 'hex');
 
         const options = parseSdOptions(optBuf, 0);
         assert.equal(options.length, 1);
-        assert.equal(options[0].length, 22, '[PRS_SOMEIPSD_00280] IPv6 len=22');
+        assert.equal(options[0].length, 21, '[PRS_SOMEIPSD_00280] IPv6 len=21');
         assert.equal(options[0].type, SdOptionType.IPV6_ENDPOINT);
         assert.equal(options[0].port, 30500);
     });

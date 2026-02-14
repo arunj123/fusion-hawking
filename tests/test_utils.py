@@ -130,14 +130,15 @@ class TestUtils(unittest.TestCase):
         # We need get_network_info to return interface='lo' if it falls back?
         # My change to utils.py makes get_network_info return 'lo' if ipv4 is None/127.
         
-        utils.get_network_info = lambda: {'ipv4': None, 'ipv6': None, 'interface': 'lo'}
+        iface_name = 'lo' if os.name != 'nt' else 'Loopback Pseudo-Interface 1'
+        utils.get_network_info = lambda: {'ipv4': None, 'ipv6': None, 'interface': iface_name}
         
         try:
             utils.patch_configs("127.0.0.1", self.test_dir)
             
             new_data = self.read_config(rel_path)
             self.assertEqual(new_data["endpoints"]["ep"]["ip"], "127.0.0.1")
-            self.assertEqual(new_data["endpoints"]["ep"]["interface"], "lo")
+            self.assertEqual(new_data["endpoints"]["ep"]["interface"], iface_name)
             
         finally:
             utils.get_network_info = original_get_info

@@ -83,9 +83,8 @@ impl SomeIpSerialize for SdOption {
     fn serialize<W: Write>(&self, writer: &mut W) -> Result<()> {
         match self {
             SdOption::Ipv4Endpoint { address, transport_proto, port } => {
-                // Length=10, Type=0x04
-                // [Len:2][Type:1][Res:1][IPv4:4][Res:1][L4:1][Port:2]
-                let len: u16 = 0x000A;
+                // Length=9 per PRS_SOMEIPSD_00307, Type=0x04
+                let len: u16 = 0x0009;
                 writer.write_all(&len.to_be_bytes())?;
                 writer.write_all(&[option_types::IPV4_ENDPOINT])?;
                 writer.write_all(&[0x00])?; // Reserved
@@ -95,8 +94,8 @@ impl SomeIpSerialize for SdOption {
                 writer.write_all(&port.to_be_bytes())?;
             },
             SdOption::Ipv6Endpoint { address, transport_proto, port } => {
-                // Length=22, Type=0x06
-                let len: u16 = 0x0016;
+                // Length=21 per PRS_SOMEIPSD_00315, Type=0x06
+                let len: u16 = 0x0015;
                 writer.write_all(&len.to_be_bytes())?;
                 writer.write_all(&[option_types::IPV6_ENDPOINT])?;
                 writer.write_all(&[0x00])?;
@@ -107,7 +106,7 @@ impl SomeIpSerialize for SdOption {
             },
             SdOption::Ipv4Multicast { address, transport_proto, port } => {
                 // Same format as IPv4 Endpoint but Type=0x14
-                let len: u16 = 0x000A;
+                let len: u16 = 0x0009;
                 writer.write_all(&len.to_be_bytes())?;
                 writer.write_all(&[option_types::IPV4_MULTICAST])?;
                 writer.write_all(&[0x00])?;
@@ -118,7 +117,7 @@ impl SomeIpSerialize for SdOption {
             },
             SdOption::Ipv6Multicast { address, transport_proto, port } => {
                 // Same format as IPv6 Endpoint but Type=0x16
-                let len: u16 = 0x0016;
+                let len: u16 = 0x0015;
                 writer.write_all(&len.to_be_bytes())?;
                 writer.write_all(&[option_types::IPV6_MULTICAST])?;
                 writer.write_all(&[0x00])?;
@@ -128,17 +127,19 @@ impl SomeIpSerialize for SdOption {
                 writer.write_all(&port.to_be_bytes())?;
             },
             SdOption::Configuration { config_string } => {
-                // Length = Type(1) + Reserved(1) + string length
+                // Length = string length + 1 (Reserved)
                 let string_bytes = config_string.as_bytes();
-                let len: u16 = (2 + string_bytes.len()) as u16;
+                let len: u16 = (1 + string_bytes.len()) as u16;
                 writer.write_all(&len.to_be_bytes())?;
                 writer.write_all(&[option_types::CONFIGURATION])?;
                 writer.write_all(&[0x00])?; // Reserved
                 writer.write_all(string_bytes)?;
             },
             SdOption::LoadBalancing { priority, weight } => {
-                // Length = 6 (1 Type + 1 reserved + 2 priority + 2 weight)
-                let len: u16 = 0x0006;
+                // Length = 4 (1 reserved + 1 reserved + 2 priority/weight? no)
+                // Actually Load Balancing is Type(1) + Res(1) + Priority(2) + Weight(2) = 6 bytes.
+                // Length (excluding type) = 5.
+                let len: u16 = 0x0005;
                 writer.write_all(&len.to_be_bytes())?;
                 writer.write_all(&[option_types::LOAD_BALANCING])?;
                 writer.write_all(&[0x00])?; // Reserved
@@ -165,9 +166,8 @@ impl SomeIpDeserialize for SdOption {
         reader.read_exact(&mut type_buf)?;
         let type_id = type_buf[0];
 
-        // [PRS_SOMEIPSD_00024] Length field includes Type field.
-        // So payload_len (remaining data) is Length - 1 (Type).
-        let payload_len = if length > 0 { length - 1 } else { 0 };
+        // [PRS_SOMEIPSD_00024] Length field excludes Type field.
+        let payload_len = length;
         
         let mut data = vec![0u8; payload_len as usize];
         if payload_len > 0 {
@@ -275,7 +275,7 @@ mod tests {
         // Length field includes Type. So Length = 1(Type) + 1(Res) + 16(IPv6) + 1(Res) + 1(Proto) + 2(Port) = 22 = 0x16
         #[rustfmt::skip]
         let packet_data = [
-            0x00, 0x16, // Length: 22
+            0x00, 0x15, // Length: 21 (PRS_SOMEIPSD_00315)
             0x06,       // Type: IPv6 Endpoint
             0x00,       // Reserved
             0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, // IPv6...

@@ -1,73 +1,97 @@
 {
-    "endpoints": {
-        "sd_multicast_v4": {
-            "interface": "lo",
-            "ip": "224.0.0.2",
-            "port": 30692,
-            "version": 4,
-            "protocol": "udp"
-        },
-        "event_multicast": {
-            "interface": "lo",
-            "ip": "225.0.0.1",
-            "port": 30695,
-            "version": 4,
-            "protocol": "udp"
-        },
-        "radar_ep": {
-            "interface": "lo",
-            "ip": "127.0.0.1",
-            "port": 0,
-            "version": 4,
-            "protocol": "udp"
-        },
-        "fusion_ep": {
-            "interface": "lo",
-            "ip": "127.0.0.1",
-            "port": 0,
-            "version": 4,
-            "protocol": "udp"
+    "interfaces": {
+        "primary": {
+            "name": "eth0",
+            "endpoints": {
+                "sd_multicast": {
+                    "ip": "224.0.0.4",
+                    "port": 30892,
+                    "version": 4,
+                    "protocol": "udp"
+                },
+                "event_multicast": {
+                    "ip": "225.0.0.3",
+                    "port": 30895,
+                    "version": 4,
+                    "protocol": "udp"
+                },
+                "radar_ep": {
+                    "ip": "127.0.0.1",
+                    "port": 0,
+                    "version": 4,
+                    "protocol": "udp"
+                },
+                "fusion_ep": {
+                    "ip": "127.0.0.1",
+                    "port": 0,
+                    "version": 4,
+                    "protocol": "udp"
+                },
+                "sd_unicast_ep": {
+                    "ip": "127.0.0.1",
+                    "port": 0,
+                    "version": 4,
+                    "protocol": "udp"
+                }
+            },
+            "sd": {
+                "endpoint": "sd_multicast"
+            }
         }
     },
     "instances": {
         "radar_cpp_instance": {
+            "unicast_bind": {
+                "primary": "sd_unicast_ep"
+            },
             "providing": {
                 "radar-service": {
                     "service_id": 28673,
                     "instance_id": 1,
                     "major_version": 1,
                     "minor_version": 0,
-                    "endpoint": "radar_ep",
-                    "multicast": "event_multicast",
+                    "offer_on": {
+                        "primary": "radar_ep"
+                    },
                     "eventgroups": {
                         "radar-events": {
                             "eventgroup_id": 1,
                             "events": [
                                 32769
-                            ]
+                            ],
+                            "multicast": {
+                                "primary": "event_multicast"
+                            }
                         }
                     }
                 }
             },
             "sd": {
-                "multicast_endpoint": "sd_multicast_v4"
+                "cycle_offer_ms": 1000
             }
         },
         "fusion_rust_instance": {
+            "unicast_bind": {
+                "primary": "sd_unicast_ep"
+            },
             "providing": {
                 "fusion-service": {
                     "service_id": 28674,
                     "instance_id": 1,
                     "major_version": 1,
                     "minor_version": 0,
-                    "endpoint": "fusion_ep",
-                    "multicast": "event_multicast",
+                    "offer_on": {
+                        "primary": "fusion_ep"
+                    },
                     "eventgroups": {
                         "fusion-events": {
                             "eventgroup_id": 1,
                             "events": [
                                 32769
-                            ]
+                            ],
+                            "multicast": {
+                                "primary": "event_multicast"
+                            }
                         }
                     }
                 }
@@ -77,24 +101,28 @@
                     "service_id": 28673,
                     "instance_id": 1,
                     "major_version": 1,
-                    "endpoint": "radar_ep"
+                    "find_on": [
+                        "primary"
+                    ]
                 }
             },
             "sd": {
-                "multicast_endpoint": "sd_multicast_v4"
+                "cycle_offer_ms": 1000
             }
         },
         "adas_python_instance": {
+            "unicast_bind": {
+                "primary": "sd_unicast_ep"
+            },
             "required": {
                 "fusion-client": {
                     "service_id": 28674,
                     "instance_id": 1,
                     "major_version": 1,
-                    "endpoint": "fusion_ep"
+                    "find_on": [
+                        "primary"
+                    ]
                 }
-            },
-            "sd": {
-                "multicast_endpoint": "sd_multicast_v4"
             }
         }
     }

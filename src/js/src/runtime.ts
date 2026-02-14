@@ -12,6 +12,7 @@
  * @module
  */
 
+import * as os from 'node:os';
 import {
     HEADER_SIZE,
     MessageType,
@@ -33,7 +34,7 @@ import {
 } from './sd.js';
 import { UdpTransport, type ITransport, type RemoteInfo } from './transport.js';
 import { type ILogger, LogLevel, ConsoleLogger } from './logger.js';
-import { type AppConfig, loadConfig } from './config.js';
+import { type AppConfig, loadConfig, type InterfaceConfig } from './config.js';
 
 /** Handler function for incoming requests. */
 export type RequestHandler = (
@@ -69,12 +70,25 @@ interface Subscriber {
     port: number;
 }
 
+/** Interface-specific network state. */
+interface InterfaceContext {
+    alias: string;
+    transport: ITransport;
+    transportV6?: ITransport;
+    sdTransport: ITransport;
+    sdTransportV6?: ITransport;
+    ip: string;
+    ipV6?: string;
+    ifIndex?: number;
+}
+
 export class SomeIpRuntime {
-    private transport: ITransport;
-    private sdTransport: ITransport | null = null;
+    private interfaces = new Map<string, InterfaceContext>();
+    private tcpClients = new Map<string, any>(); // Placeholder for future TCP
     private sessionMgr = new SessionIdManager();
     private logger: ILogger;
     private config: AppConfig | null = null;
+    private packetDump: boolean = false;
 
     public getLogger(): ILogger {
         return this.logger;
@@ -86,13 +100,83 @@ export class SomeIpRuntime {
     private pendingRequests = new Map<string, PendingRequest>(); // "sessionId" → pending
     private subscribers = new Map<string, Subscriber[]>(); // "serviceId:eventgroupId" → subscribers
 
+    // Maps endpoint names to their actual bound ports (resolves ephemeral port 0)
+    private boundPorts = new Map<string, number>();
+
     // SD timers
     private offerTimer: ReturnType<typeof setInterval> | null = null;
     private running = false;
 
     constructor(logger?: ILogger) {
         this.logger = logger ?? new ConsoleLogger();
-        this.transport = new UdpTransport('udp4', this.logger);
+        this.packetDump = process.env.FUSION_PACKET_DUMP === "1" || process.env.FUSION_PACKET_DUMP === "true";
+    }
+
+    private _resolveInterfaceIp(ifaceName: string, family: 4 | 6): string | undefined {
+        const interfaces = os.networkInterfaces();
+        let iface = interfaces[ifaceName];
+
+        // Windows/Platform mapping: if 'lo' is requested but doesn't exist, try common aliases or search for any loopback
+        if (!iface && ifaceName === 'lo') {
+            iface = interfaces['Loopback Pseudo-Interface 1'] || interfaces['lo0'] || interfaces['localhost'] || interfaces['lo'];
+
+            if (!iface) {
+                // Fallback: search all interfaces for one marked as internal/loopback
+                for (const name in interfaces) {
+                    const candidate = interfaces[name];
+                    if (candidate && candidate.some(a => a.internal || name.toLowerCase().includes('loopback'))) {
+                        iface = candidate;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (iface) {
+            const addr = iface.find(a => a.family === (family === 4 ? 'IPv4' : 'IPv6') || (a.family as any) === (family === 4 ? 4 : 6));
+            if (addr) return addr.address;
+        }
+
+        return undefined;
+    }
+
+    private _dumpPacket(data: Buffer, rinfo: { address: string; port: number }) {
+        if (!this.packetDump) return;
+        if (data.length < 16) return;
+        const sid = data.readUInt16BE(0);
+        const mid = data.readUInt16BE(2);
+        const length = data.readUInt32BE(4);
+        const cid = data.readUInt16BE(8);
+        const ssid = data.readUInt16BE(10);
+        const pv = data[12];
+        const iv = data[13];
+        const mt = data[14];
+        const rc = data[15];
+
+        const mtMap: Record<number, string> = { 0: "REQ", 1: "REQ_NO_RET", 2: "NOTIF", 0x80: "RESP", 0x81: "ERR" };
+        const mtStr = mtMap[mt] || `0x${mt.toString(16)}`;
+
+        this.logger.log(LogLevel.DEBUG, "DUMP", `\n[DUMP] --- SOME/IP Message from ${rinfo.address}:${rinfo.port} ---`);
+        this.logger.log(LogLevel.DEBUG, "DUMP", `  [Header] Service:0x${sid.toString(16).padStart(4, '0')} Method:0x${mid.toString(16).padStart(4, '0')} Len:${length} Client:0x${cid.toString(16).padStart(4, '0')} Session:0x${ssid.toString(16).padStart(4, '0')}`);
+        this.logger.log(LogLevel.DEBUG, "DUMP", `  [Header] Proto:v${pv} Iface:v${iv} Type:${mtStr} Return:0x${rc.toString(16).padStart(2, '0')}`);
+
+        if (sid === 0xFFFF && mid === 0x8100) {
+            const payload = data.subarray(HEADER_SIZE);
+            if (payload.length >= 8) {
+                const entries = parseSdEntries(payload, 4);
+                for (const entry of entries) {
+                    const typeName = { [SdEntryType.FIND_SERVICE]: "FindService", [SdEntryType.OFFER_SERVICE]: "OfferService", [SdEntryType.SUBSCRIBE_EVENTGROUP]: "Subscribe", [SdEntryType.SUBSCRIBE_EVENTGROUP_ACK]: "SubAck" }[entry.type] || `0x${entry.type.toString(16)}`;
+                    this.logger.log(LogLevel.DEBUG, "DUMP", `  [Entry] ${typeName}: Service=0x${entry.serviceId.toString(16).padStart(4, '0')} Inst=0x${entry.instanceId.toString(16).padStart(4, '0')} TTL=${entry.ttl}`);
+                }
+                const entriesLen = payload.readUInt32BE(4);
+                const options = parseSdOptions(payload, 4 + 4 + entriesLen);
+                for (const opt of options) {
+                    const typeName = { [SdOptionType.IPV4_ENDPOINT]: "IPv4 Endpt", [SdOptionType.IPV6_ENDPOINT]: "IPv6 Endpt", [SdOptionType.IPV4_MULTICAST]: "IPv4 Multicast", [SdOptionType.IPV6_MULTICAST]: "IPv6 Multicast" }[opt.type] || `0x${opt.type.toString(16)}`;
+                    this.logger.log(LogLevel.DEBUG, "DUMP", `  [Option] ${typeName}: ${opt.ipAddress}:${opt.port} (${opt.protocol === 0x06 ? 'TCP' : 'UDP'})`);
+                }
+            }
+        }
+        this.logger.log(LogLevel.DEBUG, "DUMP", "--------------------------------------\n");
     }
 
     /** Load config from a JSON file and initialize. */
@@ -113,22 +197,147 @@ export class SomeIpRuntime {
     }
 
     /**
-     * Start the runtime: bind transport, set up SD, start offering.
+     * Start the runtime: bind transports, set up SD, start offering.
      */
-    async start(bindAddress: string = '127.0.0.1', bindPort: number = 0): Promise<void> {
+    async start(bindAddress?: string, bindPort: number = 0): Promise<void> {
         this.running = true;
 
-        // Bind main transport
-        await this.transport.bind(bindAddress, bindPort);
-        this.logger.log(LogLevel.INFO, 'Runtime',
-            `Started on ${this.transport.localAddress}:${this.transport.localPort}`);
+        if (!this.config) {
+            // Minimal mode without config — bind address is mandatory
+            if (!bindAddress) {
+                throw new Error('No config loaded and no bindAddress provided. Cannot start: bind address must be explicitly specified.');
+            }
+            const ip = bindAddress;
+            const transport = new UdpTransport('udp4', this.logger);
+            await transport.bind(ip, bindPort);
+            transport.onMessage((data, rinfo) => this.handleMessage(data, rinfo, undefined));
+            this.interfaces.set("default", { alias: "default", transport, sdTransport: transport, ip });
+            this.logger.log(LogLevel.INFO, 'Runtime', `Started (minimal) on ${ip}:${bindPort}`);
+        } else {
+            // Load from interfaces map
+            const aliasesToBind = this.config.activeInterfaceAliases ?? Object.keys(this.config.interfaces);
+            this.logger.log(LogLevel.INFO, 'Runtime', `Binding interfaces: ${aliasesToBind.join(', ')}`);
+            for (const alias of aliasesToBind) {
+                const ifaceCfg: InterfaceConfig = this.config!.interfaces[alias];
+                if (!ifaceCfg) {
+                    this.logger.log(LogLevel.WARN, 'Runtime', `Interface alias '${alias}' found in active list but not in config interfaces.`);
+                    continue;
+                }
+                const ifaceName = ifaceCfg.name ?? alias;
+                // We typically bind to the SD endpoint's IP or the first endpoint's IP
+                const sdEpKey = ifaceCfg.sd?.endpoint;
+                const sdEp = ifaceCfg.endpoints[sdEpKey];
 
-        // Set up message handling
-        this.transport.onMessage((data, rinfo) => this.handleMessage(data, rinfo));
+                // Determine bind IPs
+                let bindIpV4: string | undefined;
+                let bindIpV6: string | undefined;
 
-        // Start SD if config available
-        if (this.config) {
-            await this.startServiceDiscovery();
+                // 1. Check unicastBind
+                if (this.config.unicastBind && this.config.unicastBind[alias]) {
+                    const bindEpName = this.config.unicastBind[alias];
+                    if (this.config.endpoints[bindEpName]) {
+                        const ep = this.config.endpoints[bindEpName];
+                        if (ep.version === 4) bindIpV4 = ep.ip;
+                        else if (ep.version === 6) bindIpV6 = ep.ip;
+                    } else if (ifaceCfg.endpoints[bindEpName]) {
+                        const ep = ifaceCfg.endpoints[bindEpName];
+                        if (ep.version === 4) bindIpV4 = ep.ip;
+                        else if (ep.version === 6) bindIpV6 = ep.ip;
+                    }
+                }
+
+                // 2. Check SD bind endpoints (Legacy/Specific)
+                if (!bindIpV4 && ifaceCfg.sd.bindEndpointV4) {
+                    const epName = ifaceCfg.sd.bindEndpointV4;
+                    if (ifaceCfg.endpoints[epName]) bindIpV4 = ifaceCfg.endpoints[epName].ip;
+                }
+                if (!bindIpV6 && ifaceCfg.sd.bindEndpointV6) {
+                    const epName = ifaceCfg.sd.bindEndpointV6;
+                    if (ifaceCfg.endpoints[epName]) bindIpV6 = ifaceCfg.endpoints[epName].ip;
+                }
+
+                // 3. Fallback: Try to find IPs from any endpoint on this interface
+                if (!bindIpV4 || !bindIpV6) {
+                    for (const ep of Object.values(ifaceCfg.endpoints)) {
+                        const resolved = this._resolveInterfaceIp(ifaceName, ep.version);
+                        if (ep.version === 4 && !bindIpV4) bindIpV4 = resolved ?? ep.ip;
+                        if (ep.version === 6 && !bindIpV6) bindIpV6 = resolved ?? ep.ip;
+                    }
+                }
+
+                if (!bindIpV4 && !bindIpV6) {
+                    this.logger.log(LogLevel.WARN, 'Runtime', `No IPs resolved for interface ${alias} (${ifaceName})`);
+                    continue;
+                }
+
+                const ctx: InterfaceContext = { alias, ip: bindIpV4 ?? '', ipV6: bindIpV6 ?? '', transport: null as any, sdTransport: null as any };
+
+                if (bindIpV4) {
+                    const mainTransport = new UdpTransport('udp4', this.logger);
+                    await mainTransport.bind(bindIpV4, bindPort);
+                    mainTransport.onMessage((data, rinfo) => this.handleMessage(data, rinfo, ctx));
+                    ctx.transport = mainTransport;
+
+                    if (sdEp && sdEp.version === 4) {
+                        const sdTransport = new UdpTransport('udp4', this.logger);
+                        // Bind to local interface IP from config.
+
+                        const isWindows = os.platform() === 'win32';
+                        // Windows: Bind to Unicast Interface IP (Strict Binding supported here)
+                        // Linux: Bind to Multicast Group IP to allow reception
+                        const bindTarget = isWindows ? bindIpV4 : sdEp.ip;
+
+                        await sdTransport.bind(bindTarget!, sdEp.port);
+
+                        await sdTransport.joinMulticast(sdEp.ip, bindIpV4);
+                        sdTransport.setMulticastLoopback(true);
+                        sdTransport.setMulticastInterface(bindIpV4);
+                        sdTransport.onMessage((data, rinfo) => this.handleMessage(data, rinfo, ctx));
+                        ctx.sdTransport = sdTransport;
+                    } else {
+                        // Fallback: use main transport for SD if no specific SD port
+                        ctx.sdTransport = mainTransport;
+                    }
+                }
+
+                if (bindIpV6) {
+                    const mainTransportV6 = new UdpTransport('udp6', this.logger);
+                    await mainTransportV6.bind(bindIpV6, bindPort);
+                    mainTransportV6.onMessage((data, rinfo) => this.handleMessage(data, rinfo, ctx));
+                    ctx.transportV6 = mainTransportV6;
+
+                    // IPv6 SD transport with multicast
+                    const sdEpKeyV6 = ifaceCfg.sd?.endpointV6;
+                    const sdEpV6 = sdEpKeyV6 ? ifaceCfg.endpoints[sdEpKeyV6] : undefined;
+                    if (sdEpV6 && sdEpV6.version === 6) {
+                        const sdTransportV6 = new UdpTransport('udp6', this.logger);
+                        // Bind to local interface IPv6 from config.
+                        // Strict Binding: Bind ONLY to the configured unicast address
+                        await sdTransportV6.bind(bindIpV6, sdEpV6.port);
+                        await sdTransportV6.joinMulticast(sdEpV6.ip, bindIpV6);
+                        sdTransportV6.setMulticastLoopback(true);
+                        sdTransportV6.onMessage((data, rinfo) => this.handleMessage(data, rinfo, ctx));
+                        ctx.sdTransportV6 = sdTransportV6;
+                    } else {
+                        ctx.sdTransportV6 = mainTransportV6;
+                    }
+                }
+
+                this.interfaces.set(alias, ctx);
+
+                // Populate boundPorts for all unicast endpoints on this interface
+                for (const [epName, ep] of Object.entries(ifaceCfg.endpoints)) {
+                    if (ep.ip.startsWith('224.') || ep.ip.startsWith('239.') || ep.ip.toLowerCase().startsWith('ff')) continue;
+                    // All endpoints on this interface share the same transport, use its actual bound port
+                    const actualPort = ctx.transport.localPort ?? ep.port;
+                    this.boundPorts.set(epName, actualPort);
+                }
+
+                this.logger.log(LogLevel.INFO, 'Runtime', `Initialized interface ${alias} on ${bindIpV4 || bindIpV6}`);
+            }
+
+            // Start cyclic offers
+            this.startCycle();
         }
     }
 
@@ -139,14 +348,17 @@ export class SomeIpRuntime {
             clearInterval(this.offerTimer);
             this.offerTimer = null;
         }
-        // Reject all pending requests
-        for (const [key, pending] of this.pendingRequests) {
+        for (const pending of this.pendingRequests.values()) {
             clearTimeout(pending.timer);
             pending.reject(new Error('Runtime stopped'));
         }
         this.pendingRequests.clear();
-        this.transport.close();
-        this.sdTransport?.close();
+        for (const ctx of this.interfaces.values()) {
+            ctx.transport.close();
+            ctx.transportV6?.close();
+            if (ctx.sdTransport !== ctx.transport) ctx.sdTransport.close();
+        }
+        this.interfaces.clear();
         this.logger.log(LogLevel.INFO, 'Runtime', 'Stopped');
     }
 
@@ -159,10 +371,22 @@ export class SomeIpRuntime {
         payload: Buffer,
         targetAddress: string,
         targetPort: number,
-        timeoutMs: number = 3000,
+        timeoutMs: number = 8000,
     ): Promise<SomeIpResponse> {
         const sessionId = this.sessionMgr.nextSessionId(serviceId, methodId);
         const packet = buildPacket(serviceId, methodId, sessionId, MessageType.REQUEST, payload);
+
+        let ifAlias = "";
+        if (this.config) {
+            for (const client of Object.values(this.config.required)) {
+                if (client.serviceId === serviceId) ifAlias = client.interfaces?.[0] || "";
+            }
+        }
+        const ctx = this.interfaces.get(ifAlias) || this.interfaces.values().next().value;
+        if (!ctx) throw new Error("No available interfaces for request");
+
+        const isV6 = targetAddress.includes(':');
+        const transport = isV6 ? (ctx.transportV6 || ctx.transport) : ctx.transport;
 
         return new Promise<SomeIpResponse>((resolve, reject) => {
             const timer = setTimeout(() => {
@@ -171,12 +395,12 @@ export class SomeIpRuntime {
             }, timeoutMs);
 
             this.pendingRequests.set(String(sessionId), { resolve, reject, timer });
-            this.transport.send(packet, targetAddress, targetPort).catch(reject);
+            transport.send(packet, targetAddress, targetPort).catch(reject);
         });
     }
 
     /**
-     * Send a fire-and-forget request (no response expected).
+     * Send a fire-and-forget request.
      */
     async sendRequestNoReturn(
         serviceId: number,
@@ -187,7 +411,11 @@ export class SomeIpRuntime {
     ): Promise<void> {
         const sessionId = this.sessionMgr.nextSessionId(serviceId, methodId);
         const packet = buildPacket(serviceId, methodId, sessionId, MessageType.REQUEST_NO_RETURN, payload);
-        await this.transport.send(packet, targetAddress, targetPort);
+        const ctx = this.interfaces.values().next().value;
+        if (!ctx) return;
+        const isV6 = targetAddress.includes(':');
+        const transport = isV6 ? (ctx.transportV6 || ctx.transport) : ctx.transport;
+        await transport.send(packet, targetAddress, targetPort);
     }
 
     /**
@@ -198,16 +426,35 @@ export class SomeIpRuntime {
         eventId: number,
         payload: Buffer,
     ): Promise<void> {
-        // Iterate over all eventgroups for this service
+        const offeringIfaces: InterfaceContext[] = [];
+        if (this.config) {
+            for (const svc of Object.values(this.config.providing)) {
+                if (svc.serviceId === serviceId) {
+                    for (const alias of (svc.interfaces || [])) {
+                        const ctx = this.interfaces.get(alias);
+                        if (ctx && !offeringIfaces.includes(ctx)) offeringIfaces.push(ctx);
+                    }
+                }
+            }
+        }
+        if (offeringIfaces.length === 0) {
+            const first = this.interfaces.values().next().value;
+            if (first) offeringIfaces.push(first);
+        }
+
+        const sessionId = this.sessionMgr.nextSessionId(serviceId, eventId);
+        const packet = buildPacket(serviceId, eventId, sessionId, MessageType.NOTIFICATION, payload);
+
         for (const [key, subs] of this.subscribers) {
             const [sid] = key.split(':').map(Number);
             if (sid !== serviceId) continue;
 
-            const sessionId = this.sessionMgr.nextSessionId(serviceId, eventId);
-            const packet = buildPacket(serviceId, eventId, sessionId, MessageType.NOTIFICATION, payload);
-
             for (const sub of subs) {
-                await this.transport.send(packet, sub.address, sub.port);
+                const isV6 = sub.address.includes(':');
+                for (const ctx of offeringIfaces) {
+                    const transport = isV6 ? (ctx.transportV6 || ctx.transport) : ctx.transport;
+                    await transport.send(packet, sub.address, sub.port);
+                }
             }
         }
     }
@@ -221,24 +468,28 @@ export class SomeIpRuntime {
         eventgroupId: number,
         ttl: number = 3
     ): Promise<void> {
-        if (!this.sdTransport || !this.config) {
-            this.logger.log(LogLevel.WARN, 'Runtime', 'Cannot subscribe: SD not running');
-            return;
-        }
+        if (!this.config) return;
 
-        const sdEp = this.config.endpoints[this.config.sd.multicastEndpoint];
+        let ifAlias = "";
+        for (const client of Object.values(this.config.required)) {
+            if (client.serviceId === serviceId) ifAlias = client.interfaces?.[0] || "";
+        }
+        const ctx = this.interfaces.get(ifAlias) || this.interfaces.values().next().value;
+        if (!ctx) return;
+
+        const sdEpKey = this.config.interfaces[ctx.alias]?.sd?.endpoint;
+        const sdEp = this.config.interfaces[ctx.alias]?.endpoints[sdEpKey];
         if (!sdEp) return;
 
         const packet = buildSdSubscribe(serviceId, instanceId, 1, eventgroupId, this.sessionMgr);
-        await this.sdTransport.send(packet, sdEp.ip, sdEp.port);
+        await ctx.sdTransport.send(packet, sdEp.ip, sdEp.port);
         this.logger.log(LogLevel.INFO, 'Runtime',
-            `Subscribed to service 0x${serviceId.toString(16)} eventgroup 0x${eventgroupId.toString(16)}`);
+            `Subscribed to service 0x${serviceId.toString(16)} eventgroup 0x${eventgroupId.toString(16)} on ${ctx.alias}`);
     }
 
     /** Get a discovered remote service by service ID. */
     getRemoteService(serviceId: number, instanceId: number = 0xFFFF): RemoteService | undefined {
         if (instanceId === 0xFFFF) {
-            // Find any instance
             for (const [key, svc] of this.remoteServices) {
                 if (key.startsWith(`${serviceId}:`)) return svc;
             }
@@ -247,22 +498,19 @@ export class SomeIpRuntime {
         return this.remoteServices.get(`${serviceId}:${instanceId}`);
     }
 
-    /** Get the bound port (useful when binding to port 0). */
-    get localPort(): number { return this.transport.localPort; }
-    get localAddress(): string { return this.transport.localAddress; }
+    /** bound port of first interface */
+    get localPort(): number { return this.interfaces.values().next().value?.transport.localPort ?? 0; }
+    get localAddress(): string { return this.interfaces.values().next().value?.ip ?? ''; }
 
     // ── Private Methods ──
 
-    private handleMessage(data: Buffer, rinfo: RemoteInfo): void {
+    private handleMessage(data: Buffer, rinfo: RemoteInfo, ctx?: InterfaceContext): void {
+        this._dumpPacket(data, rinfo);
         const header = deserializeHeader(data);
-        if (!header) {
-            this.logger.log(LogLevel.WARN, 'Runtime', `Received packet too short (${data.length} bytes)`);
-            return;
-        }
+        if (!header) return;
 
-        // SD message?
         if (header.serviceId === SD_SERVICE_ID && header.methodId === SD_METHOD_ID) {
-            this.handleSdMessage(data, rinfo);
+            this.handleSdMessage(data, rinfo, ctx);
             return;
         }
 
@@ -271,7 +519,7 @@ export class SomeIpRuntime {
         switch (header.messageType) {
             case MessageType.REQUEST:
             case MessageType.REQUEST_NO_RETURN:
-                this.handleRequest(header, payload, rinfo);
+                this.handleRequest(header, payload, rinfo, ctx);
                 break;
             case MessageType.RESPONSE:
             case MessageType.ERROR:
@@ -281,28 +529,21 @@ export class SomeIpRuntime {
                 this.logger.log(LogLevel.DEBUG, 'Runtime',
                     `Notification from service 0x${header.serviceId.toString(16)} event 0x${header.methodId.toString(16)}`);
                 break;
-            default:
-                this.logger.log(LogLevel.WARN, 'Runtime',
-                    `Unknown message type 0x${header.messageType.toString(16)}`);
         }
     }
 
-    private handleRequest(header: SomeIpHeader, payload: Buffer, rinfo: RemoteInfo): void {
-        this.logger.log(LogLevel.DEBUG, 'Runtime',
-            `Request: service=0x${header.serviceId.toString(16)} method=0x${header.methodId.toString(16)} from ${rinfo.address}:${rinfo.port}`);
-
+    private handleRequest(header: SomeIpHeader, payload: Buffer, rinfo: RemoteInfo, ctx?: InterfaceContext): void {
         const handler = this.handlers.get(header.methodId);
         if (!handler) {
-            this.logger.log(LogLevel.WARN, 'Runtime',
-                `No handler for method 0x${header.methodId.toString(16)}`);
-            // Send error response if it's a REQUEST (not fire-and-forget)
             if (header.messageType === MessageType.REQUEST) {
                 const errPacket = buildPacket(
                     header.serviceId, header.methodId, header.sessionId,
                     MessageType.ERROR, Buffer.alloc(0),
                     { returnCode: ReturnCode.UNKNOWN_METHOD }
                 );
-                this.transport.send(errPacket, rinfo.address, rinfo.port);
+                const isV6 = rinfo.address.includes(':');
+                const transport = isV6 ? (ctx?.transportV6 || ctx?.transport) : ctx?.transport;
+                if (transport) transport.send(errPacket, rinfo.address, rinfo.port);
             }
             return;
         }
@@ -313,7 +554,9 @@ export class SomeIpRuntime {
                 header.serviceId, header.methodId, header.sessionId,
                 MessageType.RESPONSE, responsePayload,
             );
-            this.transport.send(resPacket, rinfo.address, rinfo.port);
+            const isV6 = rinfo.address.includes(':');
+            const transport = isV6 ? (ctx?.transportV6 || ctx?.transport) : ctx?.transport;
+            if (transport) transport.send(resPacket, rinfo.address, rinfo.port);
         }
     }
 
@@ -323,101 +566,80 @@ export class SomeIpRuntime {
             clearTimeout(pending.timer);
             this.pendingRequests.delete(String(header.sessionId));
             pending.resolve({ returnCode: header.returnCode, payload });
-        } else {
-            this.logger.log(LogLevel.WARN, 'Runtime',
-                `Unexpected response for session ${header.sessionId}`);
         }
     }
 
-    private handleSdMessage(data: Buffer, rinfo: RemoteInfo): void {
+    private handleSdMessage(data: Buffer, rinfo: RemoteInfo, ctx?: InterfaceContext): void {
         const payload = data.subarray(HEADER_SIZE);
         if (payload.length < 8) return;
 
-        // Skip flags (4 bytes), parse entries
         const entries = parseSdEntries(payload, 4);
         const entriesLen = payload.readUInt32BE(4);
-        const optionsOffset = 4 + 4 + entriesLen;
-        const options = parseSdOptions(payload, optionsOffset);
+        const options = parseSdOptions(payload, 4 + 4 + entriesLen);
 
         for (const entry of entries) {
             if (entry.type === SdEntryType.OFFER_SERVICE && entry.ttl > 0) {
-                // Process offer — extract endpoint from options
                 if (options.length > 0) {
-                    const opt = options[0];
-                    const key = `${entry.serviceId}:${entry.instanceId}`;
-                    this.remoteServices.set(key, {
-                        address: opt.ipAddress,
-                        port: opt.port,
-                        protocol: opt.protocol,
-                        majorVersion: entry.majorVersion,
-                        minorVersion: entry.minorVersion,
-                    });
-                    this.logger.log(LogLevel.INFO, 'Runtime',
-                        `Discovered service 0x${entry.serviceId.toString(16)} at ${opt.ipAddress}:${opt.port}`);
+                    // Check find_on
+                    let allowed = true;
+                    if (this.config && ctx) {
+                        const req = Object.values(this.config.required).find(r => r.serviceId === entry.serviceId);
+                        if (req && req.findOn && req.findOn.length > 0) {
+                            if (!req.findOn.includes(ctx.alias)) allowed = false;
+                        }
+                    }
+
+                    if (allowed) {
+                        const opt = options[0];
+                        const key = `${entry.serviceId}:${entry.instanceId}`;
+                        this.remoteServices.set(key, { address: opt.ipAddress, port: opt.port, protocol: opt.protocol, majorVersion: entry.majorVersion, minorVersion: entry.minorVersion });
+                        this.logger.log(LogLevel.INFO, 'Runtime', `Discovered service 0x${entry.serviceId.toString(16)} at ${opt.ipAddress}:${opt.port}`);
+                    }
                 }
             } else if (entry.type === SdEntryType.OFFER_SERVICE && entry.ttl === 0) {
-                // Stop offer
-                const key = `${entry.serviceId}:${entry.instanceId}`;
-                this.remoteServices.delete(key);
-                this.logger.log(LogLevel.INFO, 'Runtime',
-                    `Service 0x${entry.serviceId.toString(16)} stopped`);
+                this.remoteServices.delete(`${entry.serviceId}:${entry.instanceId}`);
             } else if (entry.type === SdEntryType.SUBSCRIBE_EVENTGROUP && entry.ttl > 0) {
-                // Subscribe
                 const egId = entry.minorVersion & 0xFFFF;
                 const key = `${entry.serviceId}:${egId}`;
                 const subs = this.subscribers.get(key) ?? [];
-                subs.push({ address: rinfo.address, port: rinfo.port });
-                this.subscribers.set(key, subs);
-                this.logger.log(LogLevel.INFO, 'Runtime',
-                    `Subscriber added for service 0x${entry.serviceId.toString(16)} eventgroup ${egId}`);
+                if (!subs.some(s => s.address === rinfo.address && s.port === rinfo.port)) {
+                    subs.push({ address: rinfo.address, port: rinfo.port });
+                    this.subscribers.set(key, subs);
+                }
             }
         }
     }
 
-    private async startServiceDiscovery(): Promise<void> {
-        if (!this.config) return;
-
-        const sdEp = this.config.endpoints[this.config.sd.multicastEndpoint];
-        if (!sdEp) {
-            this.logger.log(LogLevel.WARN, 'Runtime', 'No SD multicast endpoint configured');
-            return;
-        }
-
-        // Create SD transport
-        this.sdTransport = new UdpTransport('udp4', this.logger);
-        try {
-            await (this.sdTransport as UdpTransport).bind('0.0.0.0', sdEp.port);
-            await (this.sdTransport as UdpTransport).joinMulticast(sdEp.ip);
-            (this.sdTransport as UdpTransport).setMulticastLoopback(true);
-        } catch (err: any) {
-            this.logger.log(LogLevel.WARN, 'Runtime', `SD transport setup failed: ${err.message}`);
-            return;
-        }
-
-        // Handle incoming SD messages
-        this.sdTransport.onMessage((data, rinfo) => this.handleMessage(data, rinfo));
-
-        // Start periodic offering
+    private startCycle(): void {
         const sendOffers = async () => {
             if (!this.config || !this.running) return;
-            for (const [, svc] of Object.entries(this.config.providing)) {
-                const ep = this.config.endpoints[svc.endpoint];
-                if (!ep) continue;
-                const packet = buildSdOffer(
-                    svc.serviceId, svc.instanceId,
-                    svc.majorVersion, svc.minorVersion,
-                    ep.ip, ep.port,
-                    svc.protocol === 'tcp' ? 0x06 : 0x11,
-                    this.sessionMgr,
-                );
-                await this.sdTransport!.send(packet, sdEp.ip, sdEp.port);
+            for (const svc of Object.values(this.config.providing)) {
+                for (const alias of (svc.interfaces || [])) {
+                    const ctx = this.interfaces.get(alias);
+                    if (!ctx) continue;
+
+                    const sdEpKey = this.config.interfaces[alias]?.sd?.endpoint;
+                    const sdEp = this.config.interfaces[alias]?.endpoints[sdEpKey];
+
+                    // Resolve offer endpoint
+                    const offerEpName = svc.offerOn?.[alias] ?? svc.endpoint;
+                    let svcEp = this.config.interfaces[alias]?.endpoints[offerEpName];
+                    if (!svcEp) svcEp = this.config.endpoints[offerEpName]; // Fallback to global
+
+                    if (sdEp && svcEp) {
+                        // Use actual bound port (resolves ephemeral port 0)
+                        const actualPort = this.boundPorts.get(offerEpName) ?? svcEp.port;
+                        const packet = buildSdOffer(svc.serviceId, svc.instanceId, svc.majorVersion, svc.minorVersion, svcEp.ip, actualPort, svc.protocol === 'tcp' ? 0x06 : 0x11, this.sessionMgr);
+                        await ctx.sdTransport.send(packet, sdEp.ip, sdEp.port);
+                    }
+                }
             }
         };
 
-        // Initial offer after delay
+        const interval = this.config?.sd.offerInterval ?? 2000;
         setTimeout(() => {
             sendOffers();
-            this.offerTimer = setInterval(sendOffers, this.config!.sd.offerInterval);
-        }, this.config.sd.initialDelay);
+            this.offerTimer = setInterval(sendOffers, interval);
+        }, this.config?.sd.initialDelay ?? 100);
     }
 }

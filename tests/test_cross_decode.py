@@ -107,7 +107,7 @@ class TestRpcRequestDecode(unittest.TestCase):
         self.assertEqual(h["length"], 16)
         self.assertEqual(h["protocol_version"], 0x01)
         self.assertEqual(h["message_type"], MessageType.REQUEST)
-        self.assertEqual(h["return_code"], ReturnCode.OK)
+        self.assertEqual(h["return_code"], ReturnCode.E_OK)
 
     def test_payload_decode(self):
         h = parse_someip_header(self.data)
@@ -129,7 +129,7 @@ class TestRpcResponseDecode(unittest.TestCase):
         h = parse_someip_header(self.data)
         self.assertIsNotNone(h)
         self.assertEqual(h["message_type"], MessageType.RESPONSE)
-        self.assertEqual(h["return_code"], ReturnCode.OK)
+        self.assertEqual(h["return_code"], ReturnCode.E_OK)
 
     def test_payload_decode(self):
         h = parse_someip_header(self.data)

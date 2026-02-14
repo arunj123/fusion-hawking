@@ -17,6 +17,7 @@ This diagram shows how the IDL (`interface.py`) transforms into the code used by
 -   **Rust App** (`examples/integrated_apps/rust_app`): High-performance backend services.
 -   **Python App** (`examples/integrated_apps/python_app`): Scripting and coordination.
 -   **C++ App** (`examples/integrated_apps/cpp_app`): Legacy integration or high-performance compute.
+-   **JS App** (`examples/integrated_apps/js_app`): Web/Node.js visualization or gateway services.
 
 ## Running the Demo
 

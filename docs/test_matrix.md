@@ -33,7 +33,8 @@ This document tracks test coverage and cross-language interoperability status ag
 | Service Discovery | All | All | ✅ |
 | Request/Response RPC | Rust | Python | ✅ |
 | Request/Response RPC | Python | C++ | ✅ |
-| Request/Response RPC | JS/TS | Python | ✅ |
+| Request/Response RPC | JS/TS | Rust | ✅ |
+| Request/Response RPC | C++ | JS/TS | ✅ |
 | Event Subscription | Rust | Python | ✅ |
 | Event Subscription | JS/TS | Rust | ✅ |
 
@@ -44,17 +45,17 @@ This document tracks test coverage and cross-language interoperability status ag
 
 ## Feature Coverage
 
-| Feature | Rust | Python | C++ | Notes |
-|---------|------|--------|-----|-------|
-| UDP Transport | ✅ | ✅ | ✅ | |
-| TCP Transport | ✅ | 🔲 | 🔲 | Planned |
-| Service Discovery | ✅ | ✅ | ✅ | |
-| IPv4 | ✅ | ✅ | ✅ | |
-| IPv6 | ✅ | ✅ | ✅ | |
-| Configuration (JSON) | ✅ | ✅ | ✅ | |
-| Logging | ✅ | ✅ | ✅ | DLT-ready |
-| Events (Pub/Sub) | ✅ | ✅ | ✅ | |
-| JS/TS Support | N/A | N/A | N/A | 🆕 Full Implementation |
+| Feature | Rust | Python | C++ | JS/TS | Notes |
+|---------|------|--------|-----|-------|-------|
+| UDP Transport | ✅ | ✅ | ✅ | ✅ | |
+| TCP Transport | ✅ | ✅ | ✅ | 🔲 | Rust/Py/C++ verified |
+| Service Discovery | ✅ | ✅ | ✅ | ✅ | Multi-interface |
+| IPv4 | ✅ | ✅ | ✅ | ✅ | |
+| IPv6 | ✅ | ✅ | ✅ | ✅ | |
+| Configuration | ✅ | ✅ | ✅ | ✅ | Interface-centric |
+| Logging | ✅ | ✅ | ✅ | ✅ | DLT-ready |
+| Events (Pub/Sub) | ✅ | ✅ | ✅ | ✅ | |
+| Packet Dump | ✅ | ✅ | ✅ | ✅ | Runtime diagnostics |
 
 
 > **Feature Details:** See [Design Doc - IPv6 Support](design_and_requirements.md#4-ipv6-support)

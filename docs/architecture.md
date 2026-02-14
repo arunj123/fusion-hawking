@@ -38,7 +38,38 @@ Applications can be deployed anywhere on the network. Service Discovery enables 
 
 ---
 
-## Layered Architecture
+## Configuration Architecture
+
+The system uses a strict **Configuration-Driven Architecture** where deployment topology is decoupled from application logic.
+
+### Core Concepts
+
+1.  **Interfaces**: The root of the network configuration. Defined by IDL and physically mapped in `config.json`. An interface represents a logical network path (e.g., "Vehicle Network", "Diagnostics VLAN").
+2.  **Endpoints**: Defined *within* interfaces. An endpoint is a named `IP:Port` pair.
+    *   **Unicast Endpoints**: Used for service instances (RPC/Events).
+    *   **Multicast Endpoints**: Used for Service Discovery (SD) groups.
+3.  **Service Binding**:
+    *   **Providers**: Explicitly list which **Interfaces** they offer service on.
+    *   **Consumers**: Specify a **Preferred Interface** to seek the service on.
+
+### Service Discovery & Binding model
+
+The runtime binds services to endpoints defined in the configuration.
+*   **SD Multicast**: Uses a specific endpoint for the Multicast Group.
+*   **SD Bind**: Uses a dedicated `bind_endpoint` (if configured) or the interface's local unicast IP. This supports platform-specific binding requirements (e.g., Windows Loopback) without polluting runtime code with OS-specific logic.
+
+![Configuration Architecture](images/config_architecture.png)
+
+<details>
+<summary>View PlantUML Source</summary>
+
+[config_architecture.puml](diagrams/config_architecture.puml)
+</details>
+
+> **Design Principle:** Application runtimes MUST NOT contain environment-specific network workarounds. All network adaptation handles via configuration patching (Deployment) or Network Namespacing (Testing).
+
+---
+
 
 The stack follows a clean layered architecture with strict separation of concerns:
 

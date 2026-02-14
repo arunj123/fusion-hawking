@@ -1,8 +1,6 @@
 ---
-description: 
+description: Coding Rules
 ---
-
-# Coding Rules
 
 ## Configuration and Hardcoding
 - **No Hardcoded Fallbacks**: NO hardcoded fallbacks for interface IPs, multicast addresses, or ports. If configuration is missing or invalid, the application MUST log a clear error and exit immediately.
@@ -19,3 +17,9 @@ description:
 ## Platform Specifics
 - **Binary detection**: On Windows, always favor `.exe` binaries and exclude build artifacts from WSL (Linux) environments to avoid execution errors.
 - **Header compatibility**: Use appropriate conditional compilation (`#ifdef _WIN32`) for networking headers and library linking on Windows.
+
+## Environment Adaptation
+- **No runtime environment detection**: Runtime code MUST NOT detect the OS, check for interface availability, or adapt its binding behavior at runtime. All environment-specific adaptation is the sole responsibility of the `fusion` tool via `config.json` patching.
+- **Fusion tool responsibility**: The `fusion` tool MUST detect the environment (OS, available interfaces, multicast support, IPv6 availability, CI/WSL constraints) and prepare the configuration before any runtime is started.
+- **Capability logging**: Every test run MUST log the detected environment capabilities (OS, interfaces, multicast status, IPv6 status) to the run report. Tests requiring unavailable capabilities MUST be explicitly skipped with a logged reason, never silently failed or hung.
+- **Config is the single source of truth**: If a platform requires `0.0.0.0` or `INADDR_ANY` for bind compatibility, this must be set in `config.json` by the fusion tool — never hardcoded in runtime source code.

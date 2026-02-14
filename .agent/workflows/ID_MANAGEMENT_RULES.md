@@ -1,4 +1,6 @@
-# ID and Configuration Rules
+---
+description: ID and Configuration Rules
+---
 
 ## Core Principle
 **Separation of Definition and Deployment**
@@ -29,19 +31,7 @@ The Configuration manages the *instantiation* of the interface. It must contain:
 - **Network Endpoints**: IP addresses (Unicast/Multicast), Ports, Transports (UDP/TCP).
 - **Interface Bindings**: Which network interface to use.
 
-*Example Config:*
-```json
-// config.json
-{
-  "instances": {
-    "my_service_instance": {
-      "service_id": 4660, 
-      "instance_id": 1,   
-      "endpoint": "my_endpoint"
-    }
-  }
-}
-```
+*Config Format:* See the config JSON schema in `tools/fusion/config_schema.json` for the authoritative structure. Do not use inline examples — they drift from the real format.
 
 ## 3. Application Code Rules
 - **No Hardcoded IDs**: Application code must NOT contain magic numbers like `0x1234` or `4660`.
@@ -49,8 +39,12 @@ The Configuration manages the *instantiation* of the interface. It must contain:
 - **Load Instance from Config**: Code must load the specific instance configuration to know *which* instance ID to use.
 
 ## 4. IP Address Rules
-- **No Hardcoded IPs**: Core runtime code must not have hardcoded IPs like `127.0.0.1` or `224.224.224.245` as defaults if they can be avoided.
-- **Bind Exception**: For *server listening sockets*, binding to `0.0.0.0` (INADDR_ANY) is permitted if required for OS compatibility (e.g., Windows Multicast), but the *advertised* IP in Service Discovery must be the specific configured interface IP.
+- **No Hardcoded IPs**: Core runtime code must not have hardcoded IPs like `127.0.0.1` or `::1` as defaults. Fallbacks are strictly forbidden.
+- **Endpoint-Centric**: Interface IPs are defined ONLY in the `endpoints` section. Instances must refer to these via `providing` services.
+- **No Instance IPs**: The `ip` and `ip_v6` fields in the `instances` block are deprecated and must be removed.
+- **SD-Centric Discovery**: If Service Discovery (SD) is enabled for an instance, `required` services should NOT specify a static `endpoint`. The runtime must wait for discovery.
+- **No Bind Exceptions**: Runtimes MUST bind exclusively to the IP specified in the `endpoints` configuration. Binding to `0.0.0.0` (INADDR_ANY), `127.0.0.1`, or `::` is forbidden in runtime code. If a specific platform (e.g., Windows) requires wildcard binding for compatibility, the `fusion` tool MUST detect this environment and patch the `config.json` endpoints accordingly before launching the runtime.
+- **Strict Exit**: If a runtime cannot bind to a configured local endpoint for an offered service, it MUST exit with an error. No "automatic loopback" fallbacks.
 
 ## 5. Tooling Support
 
@@ -74,6 +68,5 @@ The Configuration manages the *instantiation* of the interface. It must contain:
    
 ## 7. Protocol Compliance
 All runtimes and tools MUST strictly adhere to the **AUTOSAR R22-11** SOME/IP and SOME/IP-SD specifications.
-- **Reference Document**: [SOMEIP_SPEC_COMPLIANCE.md](docs/SOMEIP_SPEC_COMPLIANCE.md)
 - **SD Option Lengths**: MUST be 9 bytes for IPv4 Endpoint/Multicast and 21 bytes for IPv6 Endpoint/Multicast (Length field excludes Type and Length fields themselves).
 - **Golden Byte Tests**: Any change to SD packet construction MUST be verified against the cross-language Golden Byte test suite.

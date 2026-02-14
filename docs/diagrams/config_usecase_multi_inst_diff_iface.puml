@@ -1,0 +1,13 @@
+@startuml
+component "Internal Logger" as LogIn
+component "External Logger" as LogEx
+
+interface "Loopback (lo)" as LO
+interface "Ethernet (eth0)" as ETH
+
+LogIn -> LO : Binds
+LogEx -> ETH : Binds
+
+note right of LogIn: Isolated to internal network
+note right of LogEx: Exposed to external network
+@enduml

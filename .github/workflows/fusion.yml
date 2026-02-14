@@ -552,6 +552,42 @@ jobs:
         name: logs-demo-someipy-${{ matrix.os }}
         path: logs/
 
+  # ============================================
+  # Stage 2.5: Virtual Network Tests (Linux-only)
+  # ============================================
+  vnet-test:
+    needs: [build-core]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest
+    - name: Download Core Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-core-ubuntu-latest
+        path: target
+    - name: Setup Virtual Network
+      run: sudo bash tools/fusion/scripts/setup_vnet.sh
+    - name: Run VNET Tests
+      run: |
+        sudo python3 -m pytest tests/test_vnet_sd.py -v --junitxml=logs/vnet-results.xml 2>&1 | tee logs/vnet-test.log
+    - name: Teardown Virtual Network
+      if: always()
+      run: sudo bash tools/fusion/scripts/teardown_vnet.sh
+    - name: Upload Logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: logs-vnet-test
+        path: logs/
+
   coverage:
     # Coverage typically easiest on Linux (lcov, llvm-cov)
     needs: [codegen, build-core, build-cpp]
@@ -602,7 +638,7 @@ jobs:
   # Stage 3: Generate Documentation (depends on build)
   # ============================================
   docs:
-    needs: [codegen, build-core, build-cpp, build-js, unit-test-rust, unit-test-cpp, unit-test-python, unit-test-js, demo-simple, demo-integrated, demo-pubsub, demo-someipy, coverage]
+    needs: [codegen, build-core, build-cpp, build-js, unit-test-rust, unit-test-cpp, unit-test-python, unit-test-js, demo-simple, demo-integrated, demo-pubsub, demo-someipy, vnet-test, coverage]
 
     runs-on: ubuntu-latest
     permissions:

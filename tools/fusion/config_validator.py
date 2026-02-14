@@ -1,24 +1,52 @@
 import ipaddress
 import collections
+import re
 from typing import List, Dict, Tuple, Any
 
 # --- JSON Schema Definition ---
 SCHEMA = {
     "type": "object",
-    "required": ["instances"],
+    "required": ["instances", "interfaces"],
     "properties": {
-        "endpoints": {
+        "interfaces": {
             "type": "object",
             "patternProperties": {
                 "^.*$": {
                     "type": "object",
-                    "required": ["ip", "interface", "port", "protocol"],
+                    "required": ["name", "endpoints"],
                     "properties": {
-                        "ip": {"type": "string"},
-                        "interface": {"type": "string"},
-                        "version": {"type": "integer", "enum": [4, 6]},
-                        "port": {"type": "integer"},
-                        "protocol": {"type": "string", "enum": ["udp", "tcp"]}
+                        "name": {"type": "string"},
+                        "endpoints": {
+                            "type": "object",
+                            "patternProperties": {
+                                "^.*$": {
+                                    "type": "object",
+                                    "required": ["ip", "port", "protocol"],
+                                    "properties": {
+                                        "ip": {"type": "string"},
+                                        "port": {"type": "integer"},
+                                        "protocol": {"type": "string", "enum": ["udp", "tcp"]},
+                                        "version": {"type": "integer", "enum": [4, 6]}
+                                    }
+                                }
+                            }
+                        },
+                        "sd": {
+                            "type": "object",
+                            "properties": {
+                                "endpoint": {"type": "string"},
+                                "endpoint_v4": {"type": "string"},
+                                "endpoint_v6": {"type": "string"}
+                            }
+                        },
+                        "server": {
+                            "type": "object",
+                            "properties": {
+                                "endpoint": {"type": "string"},
+                                "endpoint_v4": {"type": "string"},
+                                "endpoint_v6": {"type": "string"}
+                            }
+                        }
                     }
                 }
             }
@@ -29,21 +57,51 @@ SCHEMA = {
                 "^.*$": {
                     "type": "object",
                     "properties": {
-                        "ip": {"type": "string"},
-                        "ip_v6": {"type": "string"},
-                        "ip_version": {"type": "integer"},
+                        "unicast_bind": {
+                            "type": "object",
+                            "patternProperties": {
+                                "^.*$": {"type": "string"}
+                            }
+                        },
                         "providing": {
                             "type": "object",
                             "patternProperties": {
                                 "^.*$": {
                                     "type": "object",
-                                    "required": ["service_id", "endpoint"],
+                                    "required": ["service_id", "offer_on"],
                                     "properties": {
                                         "service_id": {"type": "integer"},
                                         "instance_id": {"type": "integer"},
                                         "major_version": {"type": "integer"},
                                         "minor_version": {"type": "integer"},
-                                        "endpoint": {"type": "string"}
+                                        "offer_on": {
+                                            "type": "object",
+                                            "patternProperties": {
+                                                 "^.*$": {"type": "string"}
+                                            }
+                                        },
+                                        "eventgroups": {
+                                            "type": "object",
+                                            "patternProperties": {
+                                                "^.*$": {
+                                                    "type": "object",
+                                                    "required": ["eventgroup_id", "events"],
+                                                    "properties": {
+                                                        "eventgroup_id": {"type": "integer"},
+                                                        "events": {
+                                                            "type": "array",
+                                                            "items": {"type": "integer"}
+                                                        },
+                                                        "multicast": {
+                                                            "type": "object",
+                                                            "patternProperties": {
+                                                                "^.*$": {"type": "string"}
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     },
                                     "additionalProperties": False
                                 }
@@ -60,7 +118,11 @@ SCHEMA = {
                                         "instance_id": {"type": "integer"},
                                         "major_version": {"type": "integer"},
                                         "minor_version": {"type": "integer"},
-                                        "endpoint": {"type": "string"}
+                                        "find_on": {
+                                            "type": "array",
+                                            "items": {"type": "string"}
+                                        },
+                                        "preferred_interface": {"type": "string"} # Deprecated but allow for now? No, stick to design.
                                     },
                                     "additionalProperties": False
                                 }
@@ -69,10 +131,6 @@ SCHEMA = {
                         "sd": {
                             "type": "object",
                             "properties": {
-                                "multicast_ip": {"type": "string"},
-                                "multicast_port": {"type": "integer"},
-                                "multicast_endpoint": {"type": "string"},
-                                "multicast_endpoint_v6": {"type": "string"},
                                 "cycle_offer_ms": {"type": "integer"},
                                 "request_response_delay_ms": {"type": "integer"},
                                 "request_timeout_ms": {"type": "integer"}
@@ -117,24 +175,37 @@ def validate_json_structure(data: Any, schema: Dict[str, Any], path: str = "") -
 
     # Properties check (for objects)
     if expected_type == "object" and isinstance(data, dict):
-        # Check defined properties
-        if "properties" in schema:
-            for prop, sub_schema in schema["properties"].items():
-                if prop in data:
-                    errors.extend(validate_json_structure(data[prop], sub_schema, f"{path}.{prop}" if path else prop))
+        properties = schema.get("properties", {})
+        pattern_properties = schema.get("patternProperties", {})
         
-        # Check pattern properties
-        if "patternProperties" in schema:
-            import re
-            for pattern, sub_schema in schema["patternProperties"].items():
-                regex = re.compile(pattern)
-                for key, value in data.items():
-                    # Skip if already validated by exact 'properties' (optional, but good for overlap)
-                    if "properties" in schema and key in schema["properties"]:
-                        continue
-                        
-                    if regex.match(key):
-                        errors.extend(validate_json_structure(value, sub_schema, f"{path}.{key}" if path else key))
+        # 1. Check for unexpected fields (Strictness)
+        for key in data:
+            is_defined = key in properties
+            if not is_defined:
+                # Check pattern properties
+                for pattern in pattern_properties:
+                    if re.match(pattern, key):
+                        is_defined = True
+                        break
+            
+            if not is_defined:
+                errors.append(f"{path}: Unexpected field '{key}'")
+
+        # 2. Recurse into properties
+        for prop, sub_schema in properties.items():
+            if prop in data:
+                errors.extend(validate_json_structure(data[prop], sub_schema, f"{path}.{prop}" if path else prop))
+        
+        # 3. Recurse into pattern properties
+        for pattern, sub_schema in pattern_properties.items():
+            regex = re.compile(pattern)
+            for key, value in data.items():
+                # Skip if already validated by exact 'properties'
+                if key in properties:
+                    continue
+                    
+                if regex.match(key):
+                    errors.extend(validate_json_structure(value, sub_schema, f"{path}.{key}" if path else key))
 
     return errors
 
@@ -151,74 +222,121 @@ def validate_config(data: Dict[str, Any]) -> List[str]:
     # Level 2: Semantic Validation
     errors = []
     
-    endpoints = data.get("endpoints", {})
+    interfaces = data.get("interfaces", {})
     instances = data.get("instances", {})
 
-    # Validate Endpoints Logic
-    for ep_name, ep_cfg in endpoints.items():
-        if "ip" in ep_cfg:
+    # 1. Validate Interfaces block
+    for iface_key, iface_cfg in interfaces.items():
+        eps = iface_cfg.get("endpoints", {})
+        
+        # Validate SD endpoints
+        sd_cfg = iface_cfg.get("sd", {})
+        for key in ["endpoint", "endpoint_v4", "endpoint_v6"]:
+            if key in sd_cfg:
+                sd_ep_name = sd_cfg[key]
+                if sd_ep_name not in eps:
+                    errors.append(f"Interface '{iface_key}' SD {key} references unknown endpoint '{sd_ep_name}'")
+                elif sd_ep_name:
+                    sd_ep = eps[sd_ep_name]
+                    if sd_ep.get("port", 0) == 0:
+                        errors.append(f"Interface '{iface_key}' SD endpoint '{sd_ep_name}' must have a non-zero port.")
+                    # Validate version match for endpoint_v4/v6
+                    if key == "endpoint_v4" and sd_ep.get("version") != 4:
+                        errors.append(f"Interface '{iface_key}' SD endpoint_v4 '{sd_ep_name}' must reference a version 4 endpoint (got version {sd_ep.get('version')})")
+                    elif key == "endpoint_v6" and sd_ep.get("version") != 6:
+                        errors.append(f"Interface '{iface_key}' SD endpoint_v6 '{sd_ep_name}' must reference a version 6 endpoint (got version {sd_ep.get('version')})")
+
+        # Validate Server endpoints
+        srv_cfg = iface_cfg.get("server", {})
+        for key in ["endpoint", "endpoint_v4", "endpoint_v6"]:
+            if key in srv_cfg:
+                srv_ep_name = srv_cfg[key]
+                if srv_ep_name not in eps:
+                    errors.append(f"Interface '{iface_key}' server {key} references unknown endpoint '{srv_ep_name}'")
+
+        # Validate IP addresses in endpoints
+        for ep_name, ep_cfg in eps.items():
             try:
                 ipaddress.ip_address(ep_cfg["ip"])
             except ValueError:
-                errors.append(f"Endpoint '{ep_name}' has invalid IP: '{ep_cfg['ip']}'")
+                errors.append(f"Interface '{iface_key}' endpoint '{ep_name}' has invalid IP: '{ep_cfg['ip']}'")
 
-    # Trackers for global conflict detection
-    # (service_id, instance_id, major_version) -> list of instance_names providing it
+    # 2. Validate Instances block
+    # (service_id, instance_id, major_version) -> list of providers
     provided_services: Dict[Tuple[int, int, int], List[str]] = collections.defaultdict(list)
-    
-    # (ip, port, protocol) -> list of usage descriptions (instance:service)
-    used_ports: Dict[Tuple[str, int, str], List[str]] = collections.defaultdict(list)
+    # (iface, ip, port, protocol) -> list of users
+    used_ports: Dict[Tuple[str, str, int, str], List[str]] = collections.defaultdict(list)
 
     for inst_name, inst_cfg in instances.items():
-        # Instance IP (Legacy or Fallback)
-        inst_ip = inst_cfg.get("ip", "127.0.0.1")
-        
-        # Validate Providing Services
+        # Validate SD Unicast Bindings
+        unicast_bind = inst_cfg.get("unicast_bind", {})
+        for iface_key, ep_name in unicast_bind.items():
+            if iface_key not in interfaces:
+                errors.append(f"Instance '{inst_name}' unicast_bind references unknown interface '{iface_key}'")
+                continue
+            if ep_name not in interfaces[iface_key].get("endpoints", {}):
+                errors.append(f"Instance '{inst_name}' unicast_bind references unknown endpoint '{ep_name}' on interface '{iface_key}'")
+            else:
+                 # Check port usage (Control Plane)
+                ep = interfaces[iface_key]["endpoints"][ep_name]
+                if ep["port"] != 0:
+                    used_ports[(iface_key, ep["ip"], ep["port"], ep["protocol"].lower())].append(f"{inst_name}:SD")
+
+        # Providing Services
         if "providing" in inst_cfg:
             for svc_name, svc_cfg in inst_cfg["providing"].items():
                 sid = svc_cfg.get("service_id")
-                iid = svc_cfg.get("instance_id", 1) 
+                iid = svc_cfg.get("instance_id", 1)
                 major = svc_cfg.get("major_version", 0)
-                
-                # Check for duplicates
+                offer_on = svc_cfg.get("offer_on", {})
+
                 provided_services[(sid, iid, major)].append(f"{inst_name}:{svc_name}")
-                
-                # Resolve Endpoint
-                resolved_ip = inst_ip
-                resolved_port = svc_cfg.get("port", 0)
-                resolved_proto = svc_cfg.get("protocol", "udp").lower()
-                
-                ep_name = svc_cfg.get("endpoint")
-                if ep_name:
-                    if ep_name not in endpoints:
-                        errors.append(f"Instance '{inst_name}' service '{svc_name}' references unknown endpoint '{ep_name}'.")
-                    else:
-                        ep = endpoints[ep_name]
-                        resolved_ip = ep.get("ip", resolved_ip)
-                        if "port" in ep and ep["port"] != 0:
-                            resolved_port = ep["port"]
-                        if "protocol" in ep:
-                            resolved_proto = ep["protocol"].lower()
 
-                # Override if service specifically sets port/protocol even with endpoint?
-                # Usually service config overrides endpoint config.
-                if svc_cfg.get("port"): resolved_port = svc_cfg["port"]
-                if svc_cfg.get("protocol"): resolved_proto = svc_cfg["protocol"].lower()
+                for iface_key, ep_name in offer_on.items():
+                    if iface_key not in interfaces:
+                        errors.append(f"Instance '{inst_name}' service '{svc_name}' offer_on references unknown interface '{iface_key}'")
+                        continue
+                    
+                    iface_eps = interfaces[iface_key].get("endpoints", {})
+                    if ep_name not in iface_eps:
+                        errors.append(f"Instance '{inst_name}' service '{svc_name}' offer_on references unknown endpoint '{ep_name}' on interface '{iface_key}'")
+                        continue
+                    
+                    ep = iface_eps[ep_name]
+                    if ep["port"] != 0:
+                        used_ports[(iface_key, ep["ip"], ep["port"], ep["protocol"].lower())].append(f"{inst_name}:{svc_name}")
 
-                if resolved_port != 0:
-                    used_ports[(resolved_ip, resolved_port, resolved_proto)].append(f"{inst_name}:{svc_name}")
+                # Validate Eventgroups
+                evgs = svc_cfg.get("eventgroups", {})
+                for evg_name, evg_cfg in evgs.items():
+                    mcast_map = evg_cfg.get("multicast", {})
+                    for if_key, m_ep_name in mcast_map.items():
+                        if if_key not in interfaces:
+                            errors.append(f"Eventgroup '{evg_name}' in '{inst_name}' references unknown interface '{if_key}'")
+                            continue
+                        if m_ep_name not in interfaces[if_key].get("endpoints", {}):
+                            errors.append(f"Eventgroup '{evg_name}' in '{inst_name}' references unknown endpoint '{m_ep_name}' on interface '{if_key}'")
 
-    # Analyze Global Conflicts
+        # Required Services
+        if "required" in inst_cfg:
+            for req_name, req_cfg in inst_cfg["required"].items():
+                find_on = req_cfg.get("find_on", [])
+                for if_key in find_on:
+                    if if_key not in interfaces:
+                        errors.append(f"Instance '{inst_name}' required service '{req_name}' find_on references unknown interface '{if_key}'")
+
+    # 3. Analyze Global Conflicts
     for (sid, iid, major), providers in provided_services.items():
         if len(providers) > 1:
-            if not f"Duplicate Service (ID: {sid}, Instance: {iid}, Major: {major})" in errors: # Avoid spam
-                 errors.append(f"Duplicate Service (ID: {sid}, Instance: {iid}, Major: {major}) provided by: {', '.join(providers)}")
+            errors.append(f"Duplicate Service (ID: {sid}, Instance: {iid}, Major: {major}) provided by: {', '.join(providers)}")
             
-    for (ip, port, proto), users in used_ports.items():
-        # Check if users are from different instances
+    for (iface, ip, port, proto), users in used_ports.items():
         insts = set(u.split(':')[0] for u in users)
         if len(insts) > 1:
-            errors.append(f"Port Conflict on {ip}:{port}/{proto}: Used by {', '.join(users)}")
+             # Allow sharing if all usages are for SD (e.g. SO_REUSEADDR on 0.0.0.0:30890)
+            if all(u.endswith(":SD") for u in users):
+                continue
+            errors.append(f"Port Conflict on {iface}/{ip}:{port}/{proto}: Used by {', '.join(users)}")
 
     return errors
 

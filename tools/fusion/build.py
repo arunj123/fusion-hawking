@@ -36,25 +36,38 @@ class Builder:
         ]
         return self.run_command(cmd, "codegen_all")
 
-    def build_rust(self):
+    def build_rust(self, packet_dump=False):
         # Core + simple bins
         cmd = ["cargo", "build", "--examples", "--bins"]
+        if packet_dump:
+            cmd.extend(["--features", "packet-dump"])
+            
         if not self.run_command(cmd, "build_rust_core"):
             return False
         
         # Standalone Demo
         cmd_demo = ["cargo", "build"]
+        if packet_dump:
+            cmd_demo.extend(["--features", "packet-dump"])
+            
         return self.run_command(cmd_demo, "build_rust_demo", cwd="examples/integrated_apps/rust_app")
 
-    def build_cpp(self, with_coverage=False):
+    def build_cpp(self, with_coverage=False, packet_dump=False):
         # Core Library + Simple Bins + Tests (Root CMake)
+        # Use separate build directory for non-Windows (or WSL) to avoid CMakeCache conflicts
+        # when switching between environments on the same filesystem.
         build_dir = "build"
+        if os.name != 'nt':
+            build_dir = "build_linux"
+            
         if not os.path.exists(build_dir):
             os.makedirs(build_dir)
             
         cmake_config = ["cmake", "..", "-DCMAKE_BUILD_TYPE=Release"]
         if with_coverage:
             cmake_config.append("-DFUSION_ENABLE_COVERAGE=ON")
+        if packet_dump:
+            cmake_config.append("-DFUSION_PACKET_DUMP=ON")
             
         if not self.run_command(cmake_config, "build_cpp_config", cwd=build_dir):
             return False

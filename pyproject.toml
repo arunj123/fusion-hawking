@@ -10,6 +10,15 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src/python"]
 
+[tool.pytest.ini_options]
+markers = [
+    "needs_netns: test requires Linux network namespaces",
+    "needs_multicast: test requires multicast networking support",
+    "needs_ipv6: test requires IPv6 connectivity",
+    "needs_veth: test requires virtual ethernet pairs",
+    "integration: marks tests as integration tests",
+]
+
 [tool.ruff]
 line-length = 100
 target-version = "py38"

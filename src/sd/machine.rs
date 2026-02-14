@@ -109,64 +109,66 @@ pub struct RemoteService {
     pub ttl: u32,
 }
 
+#[derive(Debug)]
+pub struct SdListener {
+    pub alias: String,
+    pub transport_v4: Option<UdpTransport>,
+    pub transport_v6: Option<UdpTransport>,
+    pub multicast_group_v4: Option<SocketAddr>,
+    pub multicast_group_v6: Option<SocketAddr>,
+    pub local_ip_v4: Option<Ipv4Addr>,
+    pub local_ip_v6: Option<std::net::Ipv6Addr>,
+}
+
 pub struct ServiceDiscovery {
-    transport_v4: Option<UdpTransport>,
-    transport_v6: Option<UdpTransport>,
-    multicast_group_v4: Option<SocketAddr>,
-    multicast_group_v6: Option<SocketAddr>,
+    pub(crate) listeners: HashMap<String, SdListener>,
     pub(crate) local_services: HashMap<(u16, u16), LocalService>, // (ServiceId, InstanceId) -> Service
     pub(crate) remote_services: HashMap<(u16, u16), RemoteService>,
     // Event subscriptions: (ServiceId, EventgroupId) -> list of subscriber endpoints
     pub(crate) subscriptions: HashMap<(u16, u16), Vec<SocketAddr>>,
-    // Pending subscription requests: (ServiceId, EventgroupId) -> callback/flag
     pub(crate) pending_subscriptions: HashMap<(u16, u16), bool>,
-    pub local_ip: Option<Ipv4Addr>,
-    pub local_ip_v6: Option<std::net::Ipv6Addr>,
 }
 
 impl ServiceDiscovery {
-    pub fn new(transport_v4: Option<UdpTransport>, transport_v6: Option<UdpTransport>, 
-               local_ip: Option<Ipv4Addr>, local_ip_v6: Option<std::net::Ipv6Addr>,
-               multicast_group_v4: Option<SocketAddr>, multicast_group_v6: Option<SocketAddr>) -> Self {
-        
-        if let Some(ref t4) = transport_v4 {
-            let _ = t4.set_nonblocking(true);
-        }
-        if let Some(ref t6) = transport_v6 {
-            let _ = t6.set_nonblocking(true);
-        }
-        
+    pub fn new() -> Self {
         ServiceDiscovery {
-            transport_v4,
-            transport_v6,
-            multicast_group_v4,
-            multicast_group_v6,
+            listeners: HashMap::new(),
             local_services: HashMap::new(),
             remote_services: HashMap::new(),
             subscriptions: HashMap::new(),
             pending_subscriptions: HashMap::new(),
-            local_ip,
-            local_ip_v6,
         }
     }
 
-    pub fn offer_service(&mut self, service_id: u16, instance_id: u16, major: u8, minor: u32, port: u16, proto: u8, multicast: Option<(std::net::IpAddr, u16)>) {
+    pub fn add_listener(&mut self, listener: SdListener) {
+        if let Some(ref t4) = listener.transport_v4 {
+            let _ = t4.set_nonblocking(true);
+        }
+        if let Some(ref t6) = listener.transport_v6 {
+            let _ = t6.set_nonblocking(true);
+        }
+        self.listeners.insert(listener.alias.clone(), listener);
+    }
+
+    pub fn offer_service(&mut self, service_id: u16, instance_id: u16, major: u8, minor: u32, iface_alias: &str, port: u16, proto: u8, multicast: Option<(std::net::IpAddr, u16)>) {
         let mut options = Vec::new();
 
-        if let Some(ip_v4) = self.local_ip {
-            options.push(SdOption::Ipv4Endpoint {
-                address: ip_v4,
-                transport_proto: proto,
-                port,
-            });
-        }
+        if let Some(listener) = self.listeners.get(iface_alias) {
+            if let Some(ip_v4) = listener.local_ip_v4 {
+                options.push(SdOption::Ipv4Endpoint {
+                    address: ip_v4,
+                    transport_proto: proto,
+                    port,
+                });
+            }
 
-        if let Some(ip_v6) = self.local_ip_v6 {
-            options.push(SdOption::Ipv6Endpoint {
-                address: ip_v6,
-                transport_proto: proto,
-                port,
-            });
+            if let Some(ip_v6) = listener.local_ip_v6 {
+                options.push(SdOption::Ipv6Endpoint {
+                    address: ip_v6,
+                    transport_proto: proto,
+                    port,
+                });
+            }
         }
 
         if let Some((mcast_ip, mcast_port)) = multicast {
@@ -263,9 +265,7 @@ impl ServiceDiscovery {
         None
     }
 
-    /// Subscribe to an eventgroup from a remote service.
-    /// Sends a SubscribeEventgroup entry and waits for SubscribeEventgroupAck.
-    pub fn subscribe_eventgroup(&mut self, service_id: u16, instance_id: u16, eventgroup_id: u16, ttl: u32, port_v4: u16, port_v6: u16) {
+    pub fn subscribe_eventgroup(&mut self, service_id: u16, instance_id: u16, eventgroup_id: u16, ttl: u32, iface_alias: &str, port_v4: u16, port_v6: u16) {
         let entry = SdEntry {
             entry_type: EntryType::SubscribeEventgroup,
             index_1: 0,
@@ -280,19 +280,21 @@ impl ServiceDiscovery {
         };
 
         let mut opts = Vec::new();
-        if let Some(ip_v4) = self.local_ip {
-            opts.push(SdOption::Ipv4Endpoint {
-                address: ip_v4,
-                transport_proto: 0x11, // UDP
-                port: port_v4,
-            });
-        }
-        if let Some(ip_v6) = self.local_ip_v6 {
-            opts.push(SdOption::Ipv6Endpoint {
-                address: ip_v6,
-                transport_proto: 0x11,
-                port: port_v6,
-            });
+        if let Some(listener) = self.listeners.get(iface_alias) {
+            if let Some(ip_v4) = listener.local_ip_v4 {
+                opts.push(SdOption::Ipv4Endpoint {
+                    address: ip_v4,
+                    transport_proto: 0x11, // UDP
+                    port: port_v4,
+                });
+            }
+            if let Some(ip_v6) = listener.local_ip_v6 {
+                opts.push(SdOption::Ipv6Endpoint {
+                    address: ip_v6,
+                    transport_proto: 0x11,
+                    port: port_v6,
+                });
+            }
         }
 
         self.pending_subscriptions.insert((service_id, eventgroup_id), false);
@@ -300,8 +302,8 @@ impl ServiceDiscovery {
     }
 
     /// Unsubscribe from an eventgroup (sends SubscribeEventgroup with TTL=0).
-    pub fn unsubscribe_eventgroup(&mut self, service_id: u16, instance_id: u16, eventgroup_id: u16) {
-        self.subscribe_eventgroup(service_id, instance_id, eventgroup_id, 0, 0, 0);
+    pub fn unsubscribe_eventgroup(&mut self, service_id: u16, instance_id: u16, eventgroup_id: u16, iface_alias: &str) {
+        self.subscribe_eventgroup(service_id, instance_id, eventgroup_id, 0, iface_alias, 0, 0);
         self.pending_subscriptions.remove(&(service_id, eventgroup_id));
     }
 
@@ -379,24 +381,30 @@ impl ServiceDiscovery {
         // Separate transport polling to avoid borrow conflict
         {
             let mut buf = [0u8; 1500];
-            // Poll IPv4
-            if let Some(ref t4) = self.transport_v4 {
-                while let Ok((len, _addr)) = t4.receive(&mut buf) {
-                    if len > 16 {
-                        let mut payload_reader = &buf[16..len];
-                        if let Ok(packet) = SdPacket::deserialize(&mut payload_reader) {
-                            incoming_packets.push(packet);
+            for listener in self.listeners.values() {
+                // Poll IPv4
+                if let Some(ref t4) = listener.transport_v4 {
+                    while let Ok((len, _addr)) = t4.receive(&mut buf) {
+                        if len > 16 {
+                            let mut payload_reader = &buf[16..len];
+                            if let Ok(packet) = SdPacket::deserialize(&mut payload_reader) {
+                                #[cfg(feature = "packet-dump")]
+                                packet.dump(addr);
+                                incoming_packets.push(packet);
+                            }
                         }
                     }
                 }
-            }
-            // Poll IPv6
-            if let Some(ref t6) = self.transport_v6 {
-                while let Ok((len, _addr)) = t6.receive(&mut buf) {
-                    if len > 16 {
-                        let mut payload_reader = &buf[16..len];
-                        if let Ok(packet) = SdPacket::deserialize(&mut payload_reader) {
-                            incoming_packets.push(packet);
+                // Poll IPv6
+                if let Some(ref t6) = listener.transport_v6 {
+                    while let Ok((len, _addr)) = t6.receive(&mut buf) {
+                        if len > 16 {
+                            let mut payload_reader = &buf[16..len];
+                            if let Ok(packet) = SdPacket::deserialize(&mut payload_reader) {
+                                #[cfg(feature = "packet-dump")]
+                                packet.dump(addr);
+                                incoming_packets.push(packet);
+                            }
                         }
                     }
                 }
@@ -429,15 +437,17 @@ impl ServiceDiscovery {
         message.extend_from_slice(&header.serialize());
         message.extend_from_slice(&payload);
         
-        // Send on both V4 and V6
-        if let Some(ref t4) = self.transport_v4 {
-            if let Some(mcast_v4) = self.multicast_group_v4 {
-                let _ = t4.send(&message, Some(mcast_v4));
+        // Send on all listeners
+        for listener in self.listeners.values() {
+            if let Some(ref t4) = listener.transport_v4 {
+                if let Some(mcast_v4) = listener.multicast_group_v4 {
+                    let _ = t4.send(&message, Some(mcast_v4));
+                }
             }
-        }
-        if let Some(ref t6) = self.transport_v6 {
-            if let Some(mcast_v6) = self.multicast_group_v6 {
-                let _ = t6.send(&message, Some(mcast_v6));
+            if let Some(ref t6) = listener.transport_v6 {
+                if let Some(mcast_v6) = listener.multicast_group_v6 {
+                    let _ = t6.send(&message, Some(mcast_v6));
+                }
             }
         }
         Ok(())
@@ -621,7 +631,16 @@ mod tests {
         let local_ip_v6 = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1);
         let m_v4: std::net::SocketAddr = "127.0.0.1:30490".parse().unwrap();
         let m_v6: std::net::SocketAddr = "[::1]:30490".parse().unwrap();
-        let mut sd = ServiceDiscovery::new(Some(transport_v4), Some(transport_v6), Some(local_ip), Some(local_ip_v6), Some(m_v4), Some(m_v6));
+        let mut sd = ServiceDiscovery::new();
+        sd.add_listener(SdListener {
+            alias: "primary".to_string(),
+            transport_v4: Some(transport_v4),
+            transport_v6: Some(transport_v6),
+            multicast_group_v4: Some(m_v4),
+            multicast_group_v6: Some(m_v6),
+            local_ip_v4: Some(local_ip),
+            local_ip_v6: Some(local_ip_v6),
+        });
 
         let remote = RemoteService {
             service_id: 0x5678,
@@ -683,7 +702,16 @@ mod tests {
         let local_ip_v6 = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1);
         let m_v4: std::net::SocketAddr = "127.0.0.1:30490".parse().unwrap();
         let m_v6: std::net::SocketAddr = "[::1]:30490".parse().unwrap();
-        let mut sd = ServiceDiscovery::new(Some(transport_v4), Some(transport_v6), Some(local_ip), Some(local_ip_v6), Some(m_v4), Some(m_v6));
+        let mut sd = ServiceDiscovery::new();
+        sd.add_listener(SdListener {
+            alias: "primary".to_string(),
+            transport_v4: Some(transport_v4),
+            transport_v6: Some(transport_v6),
+            multicast_group_v4: Some(m_v4),
+            multicast_group_v6: Some(m_v6),
+            local_ip_v4: Some(local_ip),
+            local_ip_v6: Some(local_ip_v6),
+        });
         
         // Add a remote service
         let remote = RemoteService {
@@ -723,9 +751,18 @@ mod tests {
         let m_v4: std::net::SocketAddr = "127.0.0.1:30490".parse().unwrap();
         
         // IPv4 Only
-        let mut sd = ServiceDiscovery::new(Some(transport_v4), None, Some(local_ip), None, Some(m_v4), None);
+        let mut sd = ServiceDiscovery::new();
+        sd.add_listener(SdListener {
+            alias: "primary".to_string(),
+            transport_v4: Some(transport_v4),
+            transport_v6: None,
+            multicast_group_v4: Some(m_v4),
+            multicast_group_v6: None,
+            local_ip_v4: Some(local_ip),
+            local_ip_v6: None,
+        });
         
-        sd.offer_service(0x1234, 1, 1, 0, 30500, 0x11, None);
+        sd.offer_service(0x1234, 1, 1, 0, "primary", 30500, 0x11, None);
         let services = sd.local_services.values().next().unwrap();
         // Should only have IPv4 option
         assert_eq!(services.endpoint_options.len(), 1);
@@ -742,9 +779,18 @@ mod tests {
         let m_v6: std::net::SocketAddr = "[::1]:30490".parse().unwrap();
         
         // IPv6 Only
-        let mut sd = ServiceDiscovery::new(None, Some(transport_v6), None, Some(local_ip_v6), None, Some(m_v6));
+        let mut sd = ServiceDiscovery::new();
+        sd.add_listener(SdListener {
+            alias: "primary".to_string(),
+            transport_v4: None,
+            transport_v6: Some(transport_v6),
+            multicast_group_v4: None,
+            multicast_group_v6: Some(m_v6),
+            local_ip_v4: None,
+            local_ip_v6: Some(local_ip_v6),
+        });
         
-        sd.offer_service(0x1234, 1, 1, 0, 30500, 0x11, None);
+        sd.offer_service(0x1234, 1, 1, 0, "primary", 30500, 0x11, None);
         let services = sd.local_services.values().next().unwrap();
         // Should only have IPv6 option
         assert_eq!(services.endpoint_options.len(), 1);
@@ -763,9 +809,18 @@ mod tests {
         let m4: std::net::SocketAddr = "127.0.0.1:30490".parse().unwrap();
         let m6: std::net::SocketAddr = "[::1]:30490".parse().unwrap();
         
-        let mut sd = ServiceDiscovery::new(Some(t4), Some(t6), Some(ip4), Some(ip6), Some(m4), Some(m6));
+        let mut sd = ServiceDiscovery::new();
+        sd.add_listener(SdListener {
+            alias: "primary".to_string(),
+            transport_v4: Some(t4),
+            transport_v6: Some(t6),
+            multicast_group_v4: Some(m4),
+            multicast_group_v6: Some(m6),
+            local_ip_v4: Some(ip4),
+            local_ip_v6: Some(ip6),
+        });
         
-        sd.offer_service(0x1234, 1, 1, 0, 30500, 0x11, None);
+        sd.offer_service(0x1234, 1, 1, 0, "primary", 30500, 0x11, None);
         let services = sd.local_services.values().next().unwrap();
         // Should have both
         assert_eq!(services.endpoint_options.len(), 2);

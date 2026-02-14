@@ -102,12 +102,18 @@ public:
     }
 };
 
-int main() {
+int main(int argc, char* argv[]) {
     auto logger = std::make_shared<ConsoleLogger>();
     logger->Log(LogLevel::INFO, "Main", "Starting C++ Demo (Core Library)");
     
-    // Load config from parent directory in the integrated_apps bundle
-    SomeIpRuntime rt("../config.json", "cpp_app_instance", logger);
+    std::string config_path = "../config.json";
+    if (argc > 1) {
+        config_path = argv[1];
+        logger->Log(LogLevel::INFO, "Main", "Using custom config from: " + config_path);
+    }
+
+    // Load config
+    SomeIpRuntime rt(config_path, "cpp_app_instance", logger);
     
     logger->Log(LogLevel::INFO, "Main", "Offering SortService...");
     SortServiceImpl sort_svc(logger, &rt);

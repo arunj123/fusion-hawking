@@ -6,7 +6,7 @@ using namespace fusion_hawking;
 
 class TCPMathService : public RequestHandler {
 public:
-    uint16_t get_service_id() override { return 0x1234; }
+    uint16_t get_service_id() override { return 4097; }
     uint32_t get_major_version() override { return 1; }
     uint32_t get_minor_version() override { return 0; }
 

@@ -4,6 +4,11 @@ project(FusionHawking)
 set(CMAKE_CXX_STANDARD 23)
 
 option(FUSION_ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
+option(FUSION_PACKET_DUMP "Enable Wireshark-like packet dumping in runtime" OFF)
+
+if(FUSION_PACKET_DUMP)
+    add_compile_definitions(FUSION_PACKET_DUMP)
+endif()
 
 if(FUSION_ENABLE_COVERAGE)
     if(NOT WIN32)
@@ -60,7 +65,7 @@ if(WIN32)
 
     # Enable PDB generation for Release builds (Required for OpenCppCoverage)
     if(MSVC)
-        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Zi")
+        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Zi /FS")
         set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /DEBUG /OPT:REF /OPT:ICF")
         set(CMAKE_STATIC_LINKER_FLAGS_RELEASE "${CMAKE_STATIC_LINKER_FLAGS_RELEASE}")
     endif()

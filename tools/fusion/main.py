@@ -9,7 +9,7 @@ from tools.fusion.build import Builder
 from tools.fusion.test import Tester
 from tools.fusion.coverage import CoverageManager
 from tools.fusion.server import ProgressServer
-from tools.fusion.utils import get_local_ip, patch_configs
+from tools.fusion.utils import get_local_ip, patch_configs, detect_environment
 from tools.fusion.diagrams import DiagramManager
 
 
@@ -34,7 +34,7 @@ def run_diagrams(root_dir, reporter, server):
     return diagrams.run()
 
 
-def run_build(root_dir, reporter, builder, tool_status, target, server, skip_codegen=False, with_coverage=False):
+def run_build(root_dir, reporter, builder, tool_status, target, server, skip_codegen=False, with_coverage=False, packet_dump=False):
     """Stage: Build Rust and C++"""
     if server: server.update({"current_step": "Building"})
     reporter.generate_index({"current_step": "Building", "overall_status": "RUNNING", "tools": tool_status})
@@ -46,11 +46,11 @@ def run_build(root_dir, reporter, builder, tool_status, target, server, skip_cod
             raise Exception("Bindings Generation Failed")
     
     if target in ["all", "rust", "python"]:
-        if not builder.build_rust(): 
+        if not builder.build_rust(packet_dump): 
             raise Exception("Rust Build Failed")
     
     if tool_status.get("cmake") and target in ["all", "cpp", "python"]:
-        if not builder.build_cpp(with_coverage):
+        if not builder.build_cpp(with_coverage, packet_dump):
             raise Exception("C++ Build Failed")
 
     if target in ["all", "js"]:
@@ -130,6 +130,8 @@ def main():
     parser.add_argument("--no-codegen", action="store_true", help="Skip codegen (assume artifacts exist)")
     parser.add_argument("--base-port", type=int, default=0, help="Port offset for test isolation")
     parser.add_argument("--with-coverage", action="store_true", help="Build C++ with coverage instrumentation")
+    parser.add_argument("--packet-dump", action="store_true", help="Enable Wireshark-like packet dumping in runtimes")
+    parser.add_argument("--vnet", action="store_true", help="Enable virtual network tests (Linux only, requires setup_vnet.sh)")
     parser.add_argument("--stage", type=str, 
                         choices=["diagrams", "codegen", "build", "test", "coverage", "docs", "demos", "all"],
                         default="all", help="Run specific build stage (for CI)")
@@ -153,32 +155,73 @@ def main():
     tools = ToolchainManager()
     tool_status = tools.check_all()
     
-    # Patch configs with local IP and Port Offset
-    local_ip = get_local_ip()
+    # Detect environment capabilities
+    env_caps = detect_environment()
+    print("\n--- Environment Capabilities ---")
+    for key, val in env_caps.items():
+        if key == 'interfaces':
+            print(f"  interfaces: {', '.join(val) if val else '(none)'}")
+        else:
+            icon = '[v]' if val else '[x]' if isinstance(val, bool) else '   '
+            print(f"  {icon} {key}: {val}")
+    # Auto-enable veth/netns on Linux if requested or interactive
+    if env_caps['os'] == 'Linux' and (not env_caps['has_veth'] or not env_caps['has_netns']):
+        setup_script = os.path.join(root_dir, "tools", "fusion", "scripts", "setup_vnet.sh")
+        if os.path.exists(setup_script) and sys.stdin.isatty():
+             print(f"\n[INFO] {env_caps['os']} detected but veth/netns support is missing/incomplete.")
+             print(f"       Tests requiring virtual networks will fail.")
+             print(f"       Do you want to run the setup script? (Requires sudo)")
+             response = input("       Run setup_vnet.sh? [y/N]: ").strip().lower()
+             if response == 'y':
+                 print("\n[INFO] Running setup_vnet.sh (Please enter sudo password if prompted)...")
+                 try:
+                     ret = subprocess.call(["sudo", "bash", setup_script])
+                     if ret == 0:
+                         print("[PASS] Network setup complete. Re-detecting capabilities...")
+                         env_caps = detect_environment() # Refresh caps
+                     else:
+                         print("[FAIL] Network setup failed.")
+                 except Exception as e:
+                     print(f"[ERROR] Failed to run setup script: {e}")
     
-    # Force loopback in GitHub Actions or WSL
-    # Internal networking in WSL2/CI is often unreliable for UDP SD multicast
-    is_wsl = False
-    try:
-        if os.path.exists("/proc/version"):
-            with open("/proc/version", "r") as f:
-                if "microsoft" in f.read().lower():
-                    is_wsl = True
-    except: pass
-
-    if os.environ.get("GITHUB_ACTIONS") == "true" or is_wsl:
-        print(f"[INFO] {'CI' if not is_wsl else 'WSL'} detected: forcing loopback (127.0.0.1) for stability")
-        local_ip = "127.0.0.1"
+    # Default local IP
+    local_ip = env_caps['primary_ipv4'] or get_local_ip()
+    
+    # Force loopback in CI/WSL where multicast is unrestricted
+    # On WSL, if the user has set up veth/netns (via setup_vnet.sh), we should prefer real interfaces for multicast tests.
+    force_lo_env = os.environ.get('FUSION_FORCE_LOOPBACK') == '1'
+    wsl_needs_lo = env_caps['is_wsl'] and not (env_caps['has_veth'] or env_caps['has_netns'])
+    
+    if env_caps['is_ci'] or wsl_needs_lo or force_lo_env:
+        reason = 'CI' if env_caps['is_ci'] else ('WSL(No VNet)' if wsl_needs_lo else 'forced')
+        print(f"[INFO] {reason} detected: forcing 127.0.0.1 for stability")
+        local_ip = '127.0.0.1'
         
     patch_configs(local_ip, root_dir, args.base_port)
     
     if server: server.update({"tools": tool_status})
     tools.print_status()
-    reporter.generate_index({"current_step": "Toolchains Checked", "overall_status": "RUNNING", "tools": tool_status})
+    
+    # Check Network Capabilities
+    caps = tools.check_network_capabilities()
+    print("\n--- Network Capabilities ---")
+    for cap, supported in caps.items():
+        icon = "[v]" if supported else "[x]"
+        print(f"{icon} {cap.upper()}")
+        if not supported:
+            print(f"    [WARN] {cap.upper()} support is missing. Some demos may fail.")
+
+    reporter.generate_index({
+        "current_step": "Toolchains Checked", 
+        "overall_status": "RUNNING", 
+        "tools": tool_status,
+        "capabilities": caps,
+        "environment": env_caps
+    })
 
     builder = Builder(reporter)
-    tester = Tester(reporter, builder)
-    cover = CoverageManager(reporter, tools)
+    tester = Tester(reporter, builder, env_caps=env_caps)
+    cover = CoverageManager(reporter, tools, env_caps=env_caps)
     
     test_results = {}
 
@@ -245,8 +288,10 @@ def main():
             # Find all config.json files
             config_errors = []
             for root, _, files in os.walk(root_dir):
-                if "config.json" in files and "build" not in root:
-                    config_path = os.path.join(root, "config.json")
+                config_files = [file for file in files if (file == "config.json" or file.endswith("_config.json")) and "tsconfig" not in file and file != "someipyd_config.json"]
+                for config_file in config_files:
+                    if "build" in root: continue
+                    config_path = os.path.join(root, config_file)
                     try:
                         with open(config_path, "r") as f:
                             data = json.load(f)
@@ -270,7 +315,7 @@ def main():
         
         # BUILD stage
         if stage in ["build", "all"]:
-            build_results = run_build(root_dir, reporter, builder, tool_status, args.target, server, args.no_codegen, args.with_coverage)
+            build_results = run_build(root_dir, reporter, builder, tool_status, args.target, server, args.no_codegen, args.with_coverage, args.packet_dump)
             test_results.update(build_results)
         
         # TEST stage

@@ -118,4 +118,13 @@ export class UdpTransport implements ITransport {
     setMulticastLoopback(enabled: boolean): void {
         this.socket.setMulticastLoopback(enabled);
     }
+
+    /** Set the interface for outgoing multicast packets. */
+    setMulticastInterface(address: string): void {
+        try {
+            this.socket.setMulticastInterface(address);
+        } catch (err: any) {
+            this.logger?.log(LogLevel.WARN, 'Transport', `Failed to set multicast interface: ${err.message}`);
+        }
+    }
 }

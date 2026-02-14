@@ -14,6 +14,10 @@ package "Integrated Apps Demo" {
     component "C++ App" as CppApp {
         port "UDP:0" as CppUDP
     }
+
+    component "JS App" as JsApp {
+        port "UDP:0" as JsUDP
+    }
 }
 
 cloud "Service Discovery" as SD {
@@ -22,6 +26,7 @@ cloud "Service Discovery" as SD {
 RustApp -down-> SD : Multicast Offer/Find
 PyApp -down-> SD : Multicast Offer/Find
 CppApp -down-> SD : Multicast Offer/Find
+JsApp -down-> SD : Multicast Offer/Find
 
 note right of RustApp
   Provides:
@@ -53,8 +58,17 @@ note right of CppApp
   - StringClient
 end note
 
+note right of JsApp
+  Provides:
+  - EchoService (UDP)
+  Required:
+  - MathClient
+  - StringClient
+end note
+
 RustUDP <--> CppUDP : Math (UDP)
 RustTCP <--> PyTCP : Eco/Complex (TCP)
 PyTCP <--> CppUDP : String/Diag (TCP/UDP Bridge)
+JsUDP <--> RustUDP : Math (UDP Discovery)
 
 @enduml

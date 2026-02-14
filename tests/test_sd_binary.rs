@@ -52,8 +52,8 @@ fn test_sd_packet_binary_layout() {
     // [24..28] Options Len (CRITICAL: Should be 12)
     assert_eq!(buf[24..28], [0, 0, 0, 12]);
 
-    // [28..30] Option Len (10)
-    assert_eq!(buf[28..30], [0, 10]);
+    // [28..30] Option Len (9, excludes Type)
+    assert_eq!(buf[28..30], [0, 9]);
 
     // [30] Option Type (0x04)
     assert_eq!(buf[30], 0x04);

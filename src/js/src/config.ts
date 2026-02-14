@@ -26,6 +26,10 @@ export interface ServiceConfigEntry {
     protocol: string;
     eventgroups?: number[];
     multicastEndpoint?: string;
+    interfaces?: string[];
+    cycleOfferMs?: number;
+    offerOn?: Record<string, string>;
+    findOn?: string[];
 }
 
 /** SD-specific configuration. */
@@ -37,14 +41,31 @@ export interface SdConfig {
     requestTimeout: number;
 }
 
+export interface InterfaceSdConfig {
+    endpoint: string;
+    endpointV6?: string;
+    bindEndpointV4?: string;
+    bindEndpointV6?: string;
+}
+
+export interface InterfaceConfig {
+    name: string;
+    endpoints: Record<string, EndpointConfig>;
+    sd: InterfaceSdConfig;
+}
+
 /** Top-level application configuration. */
 export interface AppConfig {
     sd: SdConfig;
     providing: Record<string, ServiceConfigEntry>;
     required: Record<string, ServiceConfigEntry>;
     endpoints: Record<string, EndpointConfig>;
+    interfaces: Record<string, InterfaceConfig>;
     ip: string;
     ipV6?: string;
+    instanceEndpoint?: string;
+    unicastBind?: Record<string, string>;
+    activeInterfaceAliases?: string[];
 }
 
 /**
@@ -55,17 +76,44 @@ export function loadConfig(path: string, instanceName?: string): AppConfig {
     const raw = JSON.parse(readFileSync(path, 'utf-8'));
     const endpoints: Record<string, EndpointConfig> = {};
 
-    if (raw.endpoints) {
-        for (const [name, ep] of Object.entries(raw.endpoints)) {
+    const parseEndpointsRecursive = (section: any): Record<string, EndpointConfig> => {
+        const res: Record<string, EndpointConfig> = {};
+        if (!section) return res;
+        for (const [name, ep] of Object.entries(section)) {
             const e = ep as any;
-            endpoints[name] = {
-                ip: e.ip ?? '127.0.0.1',
+            res[name] = {
+                ip: e.ip,
                 port: e.port ?? 0,
                 version: e.version ?? 4,
                 interface: e.interface,
+                protocol: e.protocol ?? 'udp'
+            } as any;
+        }
+        return res;
+    };
+
+    if (raw.endpoints) {
+        Object.assign(endpoints, parseEndpointsRecursive(raw.endpoints));
+    }
+
+    const parseInterfaces = (section: any): Record<string, InterfaceConfig> => {
+        const res: Record<string, InterfaceConfig> = {};
+        if (!section) return res;
+        for (const [key, val] of Object.entries(section)) {
+            const v = val as any;
+            res[key] = {
+                name: v.name ?? key,
+                endpoints: parseEndpointsRecursive(v.endpoints),
+                sd: {
+                    endpoint: v.sd?.endpoint ?? '',
+                    endpointV6: v.sd?.endpoint_v6 ?? '',
+                    bindEndpointV4: v.sd?.bind_endpoint_v4,
+                    bindEndpointV6: v.sd?.bind_endpoint_v6
+                }
             };
         }
-    }
+        return res;
+    };
 
     const parseServices = (section: any): Record<string, ServiceConfigEntry> => {
         const result: Record<string, ServiceConfigEntry> = {};
@@ -81,6 +129,10 @@ export function loadConfig(path: string, instanceName?: string): AppConfig {
                 protocol: s.protocol ?? 'udp',
                 eventgroups: s.eventgroups,
                 multicastEndpoint: s.multicast_endpoint,
+                interfaces: s.interfaces,
+                cycleOfferMs: s.cycle_offer_ms,
+                offerOn: s.offer_on,
+                findOn: s.find_on,
             };
         }
         return result;
@@ -94,27 +146,37 @@ export function loadConfig(path: string, instanceName?: string): AppConfig {
         if (!inst) {
             throw new Error(`Instance '${instanceName}' not found in config. Available: ${Object.keys(raw.instances).join(', ')}`);
         }
+        console.log(`[Config] Loading instance '${instanceName}'. Interfaces in instance config:`, inst.interfaces);
         configSource = {
             ...inst,
-            endpoints: raw.endpoints,
+            endpoints: { ...raw.endpoints, ...inst.endpoints },
             ip: inst.ip ?? raw.ip,
             ip_v6: inst.ip_v6 ?? raw.ip_v6,
+            unicast_bind: inst.unicast_bind,
         };
     }
 
     const sdRaw = configSource.sd ?? {};
+    if (Object.keys(sdRaw).length === 0) {
+        console.warn("[Config] Warning: 'sd' section is empty. Service Discovery settings (multicast, offer interval) may be missing.");
+    }
+
     return {
         sd: {
-            multicastEndpoint: sdRaw.multicast_endpoint ?? sdRaw.multicastEndpoint ?? 'sd-mcast',
+            multicastEndpoint: sdRaw.multicast_endpoint ?? sdRaw.multicastEndpoint,
             multicastEndpointV6: sdRaw.multicast_endpoint_v6 ?? sdRaw.multicastEndpointV6,
             initialDelay: sdRaw.initial_delay ?? 100,
-            offerInterval: sdRaw.offer_interval ?? sdRaw.cycle_offer_ms ?? 1000,
+            offerInterval: sdRaw.offer_interval ?? sdRaw.cycle_offer_ms ?? 2000,
             requestTimeout: sdRaw.request_timeout_ms ?? 3000,
         },
         providing: parseServices(configSource.providing),
-        required: parseServices(configSource.required),
+        required: parseServices(configSource.required == null ? configSource.requiring : configSource.required),
         endpoints,
-        ip: configSource.ip ?? '127.0.0.1',
+        interfaces: parseInterfaces(raw.interfaces),
+        activeInterfaceAliases: Array.isArray(configSource.interfaces) ? configSource.interfaces : undefined,
+        ip: configSource.ip,
         ipV6: configSource.ip_v6,
+        instanceEndpoint: configSource.endpoint,
+        unicastBind: configSource.unicast_bind,
     };
 }

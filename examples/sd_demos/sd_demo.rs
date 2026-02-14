@@ -1,4 +1,5 @@
-use fusion_hawking::{ServiceDiscovery, UdpTransport}; // Removed others
+use fusion_hawking::sd::machine::{ServiceDiscovery, SdListener};
+use fusion_hawking::transport::UdpTransport;
 use std::net::{SocketAddr, Ipv4Addr, Ipv6Addr};
 use std::thread;
 use std::time::Duration;
@@ -8,40 +9,27 @@ fn main() {
 
     // 1. Provider
     let _provider_handle = thread::spawn(|| {
-        let _multicast_group: SocketAddr = "224.0.0.1:30490".parse().unwrap();
-        // Bind to a distinct port for sending (e.g., 50000) but we need to receive on 30490?
-        // Multicast requires REUSEADDR. 
-        // Our UdpTransport doesn't configure REUSEADDR by default?
-        // If two processes/threads bind to 30490, we need SO_REUSEADDR.
-        // For this demo, let's try binding to different ports and sending to multicast.
-        // But SD receivers MUST listen on 30490.
-        // If we can't bind multiple sockets to 30490, we can't run two peers on same machine unless we use proper multicast setup.
-        // Let's assume Provider binds to 30490. Consumer binds to 30490?
-        // This fails on Windows usually without SO_REUSEADDR.
-        
-        // Simulating:
-        // Provider: Binds to 30490.
-        // Consumer: Listens on 30490?
-        
-        // Let's check if UdpTransport supports this.
-        // udp.rs: UdpSocket::bind(addr).
-        // It does not set SO_REUSEADDR.
-        
-        // Workaround: Run Provider and Consumer sequentially in same process? No.
-        // Or one binds to 30490, acts as listener.
-        // In SOME/IP, everyone listens on 30490 for multicast.
-        
         let transport_v4 = UdpTransport::new("0.0.0.0:0".parse().unwrap()).unwrap();
         let transport_v6 = UdpTransport::new("[::]:0".parse().unwrap()).unwrap();
         
         let local_ip = Ipv4Addr::new(127, 0, 0, 1);
-        let local_ip_v6 = Some("::1".parse::<Ipv6Addr>().unwrap());
+        let local_ip_v6 = "::1".parse::<Ipv6Addr>().unwrap();
         let m_v4: SocketAddr = "224.0.0.1:30490".parse().unwrap();
         let m_v6: SocketAddr = "[FF02::4:C]:30490".parse().unwrap();
-        let mut sd = ServiceDiscovery::new(Some(transport_v4), Some(transport_v6), Some(local_ip), local_ip_v6, Some(m_v4), Some(m_v6));
+        
+        let mut sd = ServiceDiscovery::new();
+        sd.add_listener(SdListener {
+            alias: "primary".to_string(),
+            transport_v4: Some(transport_v4),
+            transport_v6: Some(transport_v6),
+            multicast_group_v4: Some(m_v4),
+            multicast_group_v6: Some(m_v6),
+            local_ip_v4: Some(local_ip),
+            local_ip_v6: Some(local_ip_v6),
+        });
         
         println!("Provider offering Service 0x1234");
-        sd.offer_service(0x1234, 1, 1, 0, 30501, 0x11, None); // TCP/UDP? 0x11 UDP
+        sd.offer_service(0x1234, 1, 1, 0, "primary", 30501, 0x11, None); 
         
         loop {
             sd.poll();
@@ -55,10 +43,20 @@ fn main() {
         let transport_v6 = UdpTransport::new("[::]:0".parse().unwrap()).unwrap();
         
         let local_ip = Ipv4Addr::new(127, 0, 0, 1);
-        let local_ip_v6 = Some("::1".parse::<Ipv6Addr>().unwrap());
+        let local_ip_v6 = "::1".parse::<Ipv6Addr>().unwrap();
         let m_v4: SocketAddr = "224.0.0.1:30490".parse().unwrap();
         let m_v6: SocketAddr = "[FF02::4:C]:30490".parse().unwrap();
-        let mut sd = ServiceDiscovery::new(Some(transport_v4), Some(transport_v6), Some(local_ip), local_ip_v6, Some(m_v4), Some(m_v6));
+        
+        let mut sd = ServiceDiscovery::new();
+        sd.add_listener(SdListener {
+            alias: "primary".to_string(),
+            transport_v4: Some(transport_v4),
+            transport_v6: Some(transport_v6),
+            multicast_group_v4: Some(m_v4),
+            multicast_group_v6: Some(m_v6),
+            local_ip_v4: Some(local_ip),
+            local_ip_v6: Some(local_ip_v6),
+        });
         
         loop {
             sd.poll();

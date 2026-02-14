@@ -5,13 +5,18 @@ from tools.fusion.config_validator import validate_config
 class TestConfigValidator(unittest.TestCase):
     def setUp(self):
         self.valid_config = {
-            "endpoints": {
-                "test_ep": {
-                    "ip": "127.0.0.1",
-                    "interface": "lo",
-                    "port": 12345,
-                    "protocol": "udp",
-                    "version": 4
+            "interfaces": {
+                "lo": {
+                    "name": "lo",
+                    "endpoints": {
+                        "test_ep": {
+                            "ip": "127.0.0.1",
+                            "port": 12345,
+                            "protocol": "udp",
+                            "version": 4
+                        }
+                    },
+                    "sd": {}
                 }
             },
             "instances": {
@@ -20,7 +25,9 @@ class TestConfigValidator(unittest.TestCase):
                         "test_svc": {
                             "service_id": 100,
                             "instance_id": 1,
-                            "endpoint": "test_ep"
+                            "offer_on": {
+                                "lo": "test_ep"
+                            }
                         }
                     },
                     "required": {},
@@ -35,18 +42,18 @@ class TestConfigValidator(unittest.TestCase):
 
     def test_missing_required_field(self):
         # Remove 'ip' from endpoint
-        del self.valid_config["endpoints"]["test_ep"]["ip"]
+        del self.valid_config["interfaces"]["lo"]["endpoints"]["test_ep"]["ip"]
         errors = validate_config(self.valid_config)
         self.assertTrue(any("Missing required field 'ip'" in e for e in errors))
 
     def test_invalid_type(self):
         # Set port to string
-        self.valid_config["endpoints"]["test_ep"]["port"] = "12345"
+        self.valid_config["interfaces"]["lo"]["endpoints"]["test_ep"]["port"] = "12345"
         errors = validate_config(self.valid_config)
         self.assertTrue(any("Expected integer" in e for e in errors))
 
     def test_invalid_ip(self):
-        self.valid_config["endpoints"]["test_ep"]["ip"] = "999.999.999.999"
+        self.valid_config["interfaces"]["lo"]["endpoints"]["test_ep"]["ip"] = "999.999.999.999"
         errors = validate_config(self.valid_config)
         self.assertTrue(any("invalid IP" in e for e in errors))
 
@@ -57,7 +64,9 @@ class TestConfigValidator(unittest.TestCase):
                 "test_svc_dup": {
                     "service_id": 100, 
                     "instance_id": 1,
-                    "endpoint": "test_ep"
+                    "offer_on": {
+                        "lo": "test_ep"
+                    }
                 }
             }
         }
@@ -65,7 +74,7 @@ class TestConfigValidator(unittest.TestCase):
         self.assertTrue(any("Duplicate Service" in e for e in errors))
 
     def test_unknown_endpoint(self):
-        self.valid_config["instances"]["test_inst"]["providing"]["test_svc"]["endpoint"] = "missing_ep"
+        self.valid_config["instances"]["test_inst"]["providing"]["test_svc"]["offer_on"]["lo"] = "missing_ep"
         errors = validate_config(self.valid_config)
         self.assertTrue(any("references unknown endpoint" in e for e in errors))
 

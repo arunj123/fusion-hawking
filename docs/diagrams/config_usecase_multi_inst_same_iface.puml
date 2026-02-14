@@ -1,0 +1,21 @@
+@startuml
+node "Host (eth0)" {
+  component "Instance 1" as Inst1
+  component "Instance 2" as Inst2
+}
+
+interface "eth0 Mcast" as Mcast
+
+Inst1 -> Mcast : SD Offer (Src: 192.168.1.10:40000)
+Inst2 -> Mcast : SD Offer (Src: 192.168.1.10:40002)
+
+note bottom of Inst1
+  <b>Unicast Bind</b>: inst1_sd_ep
+  <b>Offer On</b>: inst1_data_ep
+end note
+
+note bottom of Inst2
+  <b>Unicast Bind</b>: inst2_sd_ep
+  <b>Offer On</b>: inst2_data_ep
+end note
+@enduml

@@ -256,4 +256,22 @@ impl SomeIpHeader {
             return_code: buffer[15],
         })
     }
+
+    #[cfg(feature = "packet-dump")]
+    pub fn dump(&self, addr: std::net::SocketAddr) {
+        let mt_str = match self.message_type {
+            0x00 => "REQ",
+            0x01 => "REQ_NO_RET",
+            0x02 => "NOTIF",
+            0x80 => "RESP",
+            0x81 => "ERR",
+            _ => "UNKNOWN",
+        };
+        log::debug!(target: "DUMP", "\n[DUMP] --- SOME/IP Message from {} ---", addr);
+        log::debug!(target: "DUMP", "  [Header] Service:0x{:04X} Method:0x{:04X} Len:{} Client:0x{:04X} Session:0x{:04X}",
+            self.service_id, self.method_id, self.length, self.client_id, self.session_id);
+        log::debug!(target: "DUMP", "  [Header] Proto:v{} Iface:v{} Type:{} Return:0x{:02X}",
+            self.protocol_version, self.interface_version, mt_str, self.return_code);
+        log::debug!(target: "DUMP", "--------------------------------------\n");
+    }
 }

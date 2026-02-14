@@ -20,6 +20,7 @@ This diagram shows how the external `someipy` service integrates with Fusion cli
   - `client_fusion.py` (Fusion Python)
   - `client_fusion.cpp` (Fusion C++)
   - `client_fusion.rs` (Fusion Rust)
+  - `js_client/` (Fusion JavaScript/TypeScript)
 
 ## Prerequisites
 

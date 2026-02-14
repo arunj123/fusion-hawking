@@ -121,14 +121,14 @@ class TestSomeIpHeaderGoldenBytes(unittest.TestCase):
 
     def test_return_code_enum_values(self):
         """[PRS_SOMEIP_00043] Verify Python ReturnCode enum matches spec."""
-        self.assertEqual(ReturnCode.OK, 0x00)
-        self.assertEqual(ReturnCode.NOT_OK, 0x01)
-        self.assertEqual(ReturnCode.UNKNOWN_SERVICE, 0x02)
-        self.assertEqual(ReturnCode.UNKNOWN_METHOD, 0x03)
-        self.assertEqual(ReturnCode.NOT_READY, 0x04)
-        self.assertEqual(ReturnCode.WRONG_PROTOCOL_VERSION, 0x07)
-        self.assertEqual(ReturnCode.WRONG_INTERFACE_VERSION, 0x08)
-        self.assertEqual(ReturnCode.MALFORMED_MESSAGE, 0x09)
+        self.assertEqual(ReturnCode.E_OK, 0x00)
+        self.assertEqual(ReturnCode.E_NOT_OK, 0x01)
+        self.assertEqual(ReturnCode.E_UNKNOWN_SERVICE, 0x02)
+        self.assertEqual(ReturnCode.E_UNKNOWN_METHOD, 0x03)
+        self.assertEqual(ReturnCode.E_NOT_READY, 0x04)
+        self.assertEqual(ReturnCode.E_WRONG_PROTOCOL_VERSION, 0x07)
+        self.assertEqual(ReturnCode.E_WRONG_INTERFACE_VERSION, 0x08)
+        self.assertEqual(ReturnCode.E_MALFORMED_MESSAGE, 0x09)
 
 
 class TestSdOfferGoldenBytes(unittest.TestCase):
@@ -162,9 +162,9 @@ class TestSdOfferGoldenBytes(unittest.TestCase):
         "01ffffff"  # major_version=1, TTL=0xFFFFFF (infinite)
         "0000000a"  # minor_version=10
         # Options Array Length (4 bytes)
-        "0000000c"  # 12 bytes (1 IPv4 option)
+        "0000000c"  # 12 bytes (1 IPv4 option: 2 len + 1 type + 9 data)
         # IPv4 Endpoint Option (12 bytes)
-        "000a"      # length = 10 [PRS_SOMEIPSD_00280]
+        "0009"      # length = 9 [PRS_SOMEIPSD_00280] (excludes Type field)
         "04"        # type = IPv4 Endpoint (0x04)
         "00"        # reserved
         "7f000001"  # IP = 127.0.0.1
@@ -194,7 +194,7 @@ class TestSdOfferGoldenBytes(unittest.TestCase):
         opt_offset = 16 + 4 + 4 + 16 + 4
         opt_len = struct.unpack(">H", h[opt_offset:opt_offset+2])[0]
         opt_type = h[opt_offset + 2]
-        self.assertEqual(opt_len, 10, "[PRS_SOMEIPSD_00280] IPv4 option length MUST be 10")
+        self.assertEqual(opt_len, 9, "[PRS_SOMEIPSD_00280] IPv4 option length MUST be 9 (excludes Type)")
         self.assertEqual(opt_type, 0x04, "IPv4 Endpoint type MUST be 0x04")
 
     def test_offer_entry_type(self):
@@ -261,7 +261,7 @@ class TestSdIpv6OptionGoldenBytes(unittest.TestCase):
 
     # IPv6 Endpoint Option standalone golden bytes (24 bytes total)
     GOLDEN_IPV6_OPTION = bytes.fromhex(
-        "0016"      # length = 22 [PRS_SOMEIPSD_00280]
+        "0015"      # length = 21 [PRS_SOMEIPSD_00280] (excludes Type field)
         "06"        # type = IPv6 Endpoint (0x06)
         "00"        # reserved
         "00000000000000000000000000000001"  # IPv6 = ::1
@@ -271,16 +271,16 @@ class TestSdIpv6OptionGoldenBytes(unittest.TestCase):
     )
 
     def test_ipv6_option_length(self):
-        """[PRS_SOMEIPSD_00280] IPv6 Endpoint Option length MUST be 22 (0x0016)."""
+        """[PRS_SOMEIPSD_00280] IPv6 Endpoint Option length MUST be 21 (0x0015)."""
         opt_len = struct.unpack(">H", self.GOLDEN_IPV6_OPTION[0:2])[0]
-        self.assertEqual(opt_len, 22, "[PRS_SOMEIPSD_00280] IPv6 option length MUST be 22")
+        self.assertEqual(opt_len, 21, "[PRS_SOMEIPSD_00280] IPv6 option length MUST be 21")
 
     def test_ipv6_option_type(self):
         """IPv6 Endpoint Option type MUST be 0x06."""
         self.assertEqual(self.GOLDEN_IPV6_OPTION[2], 0x06)
 
     def test_ipv6_option_total_wire_size(self):
-        """Total wire size = 2 (len field) + 22 (data) = 24 bytes."""
+        """Total wire size = 2 (len field) + 1 (type) + 21 (data) = 24 bytes."""
         self.assertEqual(len(self.GOLDEN_IPV6_OPTION), 24)
 
 
@@ -298,14 +298,14 @@ class TestStandardCompliantAssertions(unittest.TestCase):
         self.assertEqual(SD_METHOD_ID, 0x8100)
 
     def test_ipv4_endpoint_option_length(self):
-        """[PRS_SOMEIPSD_00280] IPv4 Endpoint Option length field = 10."""
-        IPV4_OPTION_LENGTH = 10
-        self.assertEqual(IPV4_OPTION_LENGTH, 10)
+        """[PRS_SOMEIPSD_00280] IPv4 Endpoint Option length field = 9."""
+        IPV4_OPTION_LENGTH = 9
+        self.assertEqual(IPV4_OPTION_LENGTH, 9)
 
     def test_ipv6_endpoint_option_length(self):
-        """[PRS_SOMEIPSD_00280] IPv6 Endpoint Option length field = 22."""
-        IPV6_OPTION_LENGTH = 22
-        self.assertEqual(IPV6_OPTION_LENGTH, 22)
+        """[PRS_SOMEIPSD_00280] IPv6 Endpoint Option length field = 21."""
+        IPV6_OPTION_LENGTH = 21
+        self.assertEqual(IPV6_OPTION_LENGTH, 21)
 
     def test_offer_entry_type_value(self):
         """OfferService entry type = 0x01."""

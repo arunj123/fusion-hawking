@@ -63,6 +63,25 @@ class ToolchainManager:
             
         return self.status
 
+    def check_network_capabilities(self):
+        """Checks if the system supports required network features (IPv6, Multicast)."""
+        caps = {"ipv6": False, "multicast": False}
+        import socket
+        try:
+            s = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+            s.close()
+            caps["ipv6"] = True
+        except: pass
+
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1)
+            s.close()
+            caps["multicast"] = True
+        except: pass
+        
+        return caps
+
     def _check_command(self, cmd, arg):
         if shutil.which(cmd):
             return True

@@ -5,9 +5,9 @@ A lightweight, dependency-free SOME/IP library implemented in Rust, adhering to 
 ## Features
 
 - **Core Protocol**: SOME/IP Header parsing and serialization.
-- **Service Discovery**: Full SOME/IP-SD support with dynamic discovery, Offering, Subscribe/EventGroup, and TTL management.
-- **Events & Fields**: Support for Publish/Subscribe pattern and Field notifications.
 - **Transport**: UDP Support with Multicast capabilities.
+- **Service Discovery**: Full SOME/IP-SD support with multi-interface discovery, offering, and TTL management.
+- **Packet Dump**: Native protocol-level packet dumping for diagnostics across all runtimes.
 - **Concurrency**: ThreadPool for handling concurrent requests.
 - **Cross-Language Support**:
     - **Rust**: Native implementation with fully async-compatible SD machine.
@@ -77,7 +77,7 @@ python -m tools.fusion.main --stage test --target js         # Test JS only
 - **`tools/fusion/`**: Automation infrastructure (Python).
 - **`examples/`**: Demo applications.
 
-> **Detailed Architecture:** See [Architecture Document](docs/architecture.md) for diagrams covering deployment, layers, data flow, and service discovery.
+> **Detailed Architecture:** See [Architecture Document](docs/architecture.md) for diagrams covering the interface-centric deployment model, layers, and service discovery.
 
 ## Documentation
 

@@ -27,3 +27,6 @@ path = "examples/simple_no_sd/rust/client.rs"
 [[bin]]
 name = "someipy_client"
 path = "examples/someipy_demo/client_fusion.rs"
+
+[features]
+packet-dump = []

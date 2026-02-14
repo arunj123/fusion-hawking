@@ -3,7 +3,7 @@ import subprocess
 import time
 import pytest
 import sys
-from fusion_hawking import SomeIpRuntime, LogLevel
+from fusion_hawking import SomeIpRuntime, LogLevel, ConsoleLogger
 
 # Add project root to path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -55,8 +55,8 @@ def test_tcp_transport_cpp_server():
         time.sleep(2)
         
         # Start Python Client
-        logger = None # Default logger
-        rt = SomeIpRuntime(config_path, "tcp_client", logger)
+        os.environ["FUSION_PACKET_DUMP"] = "1"
+        rt = SomeIpRuntime(config_path, "tcp_client", ConsoleLogger())
         rt.start()
         
         # Wait for SD discovery

@@ -14,11 +14,9 @@ examples/
 ├── integrated_apps/    # 3. Full Runtime Integration (RPC)
 │   ├── rust_app/
 │   ├── python_app/
-│   └── cpp_app/
-├── automotive_pubsub/         # 4. Automotive Pub-Sub Pattern
-│   ├── cpp_radar/      # Publisher (C++)
-│   ├── rust_fusion/    # Subscriber + Publisher (Rust)
-│   └── python_adas/    # Subscriber (Python)
+│   ├── cpp_app/
+│   └── js_app/         # Node.js implementation
+├── automotive_pubsub/  # 4. Automotive Pub-Sub Pattern
 └── someipy_demo/       # 5. External Interop (someipy)
 ```
 
@@ -26,7 +24,7 @@ examples/
 
 ## 1. Raw Service Discovery (`sd_demos/`)
 **Purpose**: To demonstrate the Service Discovery State Machine in isolation.
-- `sd_demo.rs`: A single Rust binary that spawns a **Provider** thread and a **Consumer** thread. They discover each other via Multicast UDP (`224.0.0.1:30490`).
+- `sd_demo.rs`: A single Rust binary that spawns a **Provider** thread and a **Consumer** thread. They discover each other via Multicast UDP (`224.0.0.1:30490` by default).
 
 ![SD Demo Sequence](../docs/images/sd_demo_sequence.png)
 
@@ -35,6 +33,7 @@ examples/
 
 [sd_demo_sequence.puml](../docs/diagrams/sd_demo_sequence.puml)
 </details>
+
 ---
 
 ## 2. Simple No-SD (`simple_no_sd/`)
@@ -45,11 +44,6 @@ These examples manually construct the **16-byte SOME/IP Header** and send raw UD
 - **Python**: `python/server.py` (Port 40001) & `python/client.py`
 - **C++**: `cpp/server.cpp` (Port 40002) & `cpp/client.cpp`
 
-**Key Concepts**:
-- Manually packing bytes (Big Endian).
-- Handling Request (0x00) and Response (0x80) Message Types.
-- No config files, no discovery delays.
-
 ![Simple No-SD Sequence](../docs/images/simple_no_sd_sequence.png)
 
 <details>
@@ -57,22 +51,36 @@ These examples manually construct the **16-byte SOME/IP Header** and send raw UD
 
 [simple_no_sd_sequence.puml](../docs/diagrams/simple_no_sd_sequence.puml)
 </details>
+
 ---
 
 ## 3. Integrated Apps (`integrated_apps/`)
 **Purpose**: To demonstrate the full **Production-Ready** usage of the library.
 These apps use the `SomeIpRuntime`, which handles:
-- **Configuration Loading** (`config.json`).
-- **Service Discovery** (Auto-discovery of peers).
+- **Interface-Centric Configuration** (`config.json`).
+- **Service Discovery** (Multi-interface discovery).
 - **Code Generation** (Typed Interfaces).
 
 ### Configuration (`config.json`)
-The `config.json` defines the network topology.
+The `config.json` defines the network topology per interface.
 ```json
 {
+  "interfaces": {
+    "lo": {
+      "name": "lo",
+      "sd": { "endpoint_v4": "sd_mcast" },
+      "endpoints": {
+        "sd_mcast": { "ip": "224.0.0.1", "port": 30490, "version": 4 },
+        "service_ep": { "ip": "127.0.0.1", "port": 40001, "version": 4 }
+      }
+    }
+  },
   "instances": {
-    "rust_app_instance": { "ip": "127.0.0.1", "providing": { ... } },
-    "python_app_instance": { "required": { "math-service": { ... } } }
+    "python_app": {
+      "providing": {
+        "math-service": { "service_id": 4660, "endpoint": "service_ep", "interfaces": ["lo"] }
+      }
+    }
   }
 }
 ```
@@ -106,7 +114,7 @@ cargo run --bin codegen -- --idl interface.json --lang python --out src/python/g
 This example shows a realistic automotive data flow:
 - **RadarService** (C++): Publishes radar object detections at 10Hz
 - **FusionService** (Rust): Subscribes to radar, publishes fused tracks
-- **ADAS App** (Python): Subscribes to fusion events, logs warnings
+- **ADAS App** (Python/JS): Subscribes to fusion events, logs warnings
 
 **Key APIs**:
 - `@event` decorator for defining events in IDL

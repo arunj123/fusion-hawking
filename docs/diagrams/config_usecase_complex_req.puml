@@ -1,0 +1,13 @@
+@startuml
+component "Fusion Algo" as Inst {
+  port "Unicast Bind (eth0)" as U_ETH
+  port "Unicast Bind (wan0)" as U_WAN
+}
+
+cloud "Radar Service" as Radar
+cloud "Cloud Service" as Cloud
+
+U_ETH ..> Radar : Finds on eth0
+U_WAN ..> Cloud : Finds on wan0
+
+@enduml

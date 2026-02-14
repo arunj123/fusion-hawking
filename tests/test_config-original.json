@@ -1,0 +1,75 @@
+{
+    "interfaces": {
+        "primary": {
+            "name": "Loopback Pseudo-Interface 1",
+            "endpoints": {
+                "test_ep": {
+                    "ip": "127.0.0.1",
+                    "port": 0,
+                    "version": 4,
+                    "protocol": "udp"
+                },
+                "sd_multicast": {
+                    "ip": "224.0.0.3",
+                    "port": 30890,
+                    "version": 4,
+                    "protocol": "udp"
+                }
+            },
+            "sd": {
+                "endpoint": "sd_multicast"
+            },
+            "server": {
+                "endpoint": "test_ep"
+            }
+        }
+    },
+    "instances": {
+        "test_instance": {
+            "providing": {
+                "math-service": {
+                    "service_id": 4097,
+                    "instance_id": 1,
+                    "offer_on": {
+                        "primary": "test_ep"
+                    }
+                }
+            },
+            "required": {
+                "math-client": {
+                    "service_id": 4097,
+                    "instance_id": 1,
+                    "find_on": [
+                        "primary"
+                    ]
+                }
+            },
+            "sd": {
+                "cycle_offer_ms": 100
+            }
+        },
+        "python_test_client": {
+            "required": {
+                "sort-service": {
+                    "service_id": 12289,
+                    "instance_id": 1,
+                    "find_on": [
+                        "primary"
+                    ]
+                }
+            },
+            "sd": {}
+        },
+        "cpp_app_instance": {
+            "providing": {
+                "sort-service": {
+                    "service_id": 12289,
+                    "instance_id": 1,
+                    "offer_on": {
+                        "primary": "test_ep"
+                    }
+                }
+            }
+        }
+    }
+}

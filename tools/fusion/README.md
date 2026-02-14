@@ -11,6 +11,8 @@ The tool is designed as a modular Python package:
 - **`build.py`**: Handles building Rust/C++ and code generation.
 - **`test.py`**: Runs unit tests and the complex integration demos.
 - **`coverage.py`**: Orchestrates coverage generation for all languages.
+- **`tests/`**: Unit test suites for all languages.
+- **`config_validator.py`**: Validates `config.json` against the interface-centric schema.
 - **`server.py`**: A simple background HTTP server for the live dashboard.
 - **`report.py`**: Generates HTML reports and manages the `logs/` directory.
 
@@ -18,11 +20,20 @@ The tool is designed as a modular Python package:
 
 ### Direct Usage
 ```bash
-python -m tools.fusion.main [options]
+# Recommended - run everything
+python -m tools.fusion.main
+
+# Granular execution
+python -m tools.fusion.main --stage build --target rust
+python -m tools.fusion.main --stage test --target python
+python -m tools.fusion.main --stage demos --demo integrated
 ```
 
 ### Options
-- `--skip-demos`: Skip the integration demo suite (faster).
+- `--packet-dump`: Enable protocol-level packet dumping for all runtimes.
+- `--clean`: Clean build 1and log directories before starting.
+- `--stage <name>`: Run a specific stage (`toolchain`, `codegen`, `build`, `test`, `demos`).
+- `--target <lang>`: Limit stage to a specific language (`rust`, `python`, `cpp`, `js`).
 - `--skip-coverage`: Skip coverage generation.
 - `--server`: Enable/Disable the live dashboard server (Default: Enabled).
 

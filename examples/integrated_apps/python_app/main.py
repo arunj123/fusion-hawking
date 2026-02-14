@@ -38,10 +38,12 @@ class MathImpl(MathServiceStub):
         return a - b
 
 def main():
-    # Load config from parent directory (as this is a sub-project demo)
-    config_path = os.path.join(os.path.dirname(__file__), "..", "config.json")
+    # Default config from parent directory
+    default_config = os.path.join(os.path.dirname(__file__), "..", "config.json")
+    config_path = sys.argv[1] if len(sys.argv) > 1 else default_config
+    
     rt = SomeIpRuntime(config_path, "python_app_instance")
-    rt.logger.log(LogLevel.INFO, "Main", "--- Python Runtime Expanded Demo ---")
+    rt.logger.log(LogLevel.INFO, "Main", f"--- Python Runtime Expanded Demo (Config: {config_path}) ---")
     rt.start()
     
     rt.offer_service("string-service", StringImpl(rt.logger))
