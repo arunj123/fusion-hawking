@@ -480,7 +480,13 @@ bool SomeIpRuntime::wait_for_service(uint16_t service_id, uint16_t instance_id) 
     int timeout_ms = config.sd.request_timeout_ms;
     auto start = std::chrono::steady_clock::now();
     auto timeout = std::chrono::milliseconds(timeout_ms);
-    while (std::chrono::steady_clock::now() - start < timeout) {
+    while (true) {
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start);
+        if (elapsed >= timeout) {
+             std::cout << "[Runtime] wait_for_service TIMEOUT after " << elapsed.count() << "ms (limit was " << timeout_ms << "ms)" << std::endl;
+             break;
+        }
         {
             std::lock_guard<std::mutex> lock(remote_services_mutex);
             std::pair<uint16_t, uint16_t> key = {service_id, instance_id};

@@ -103,7 +103,7 @@ export function loadConfig(path: string, instanceName?: string): AppConfig {
                 name: v.name ?? key,
                 endpoints: parseEndpointsRecursive(v.endpoints),
                 sd: {
-                    endpoint: v.sd?.endpoint ?? '',
+                    endpoint: v.sd?.endpoint ?? v.sd?.endpoint_v4 ?? '',
                     endpointV6: v.sd?.endpoint_v6 ?? '',
                 }
             };

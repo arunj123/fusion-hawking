@@ -1,0 +1,186 @@
+import os
+import sys
+import subprocess
+import threading
+import queue
+import datetime
+import time
+import re
+import logging
+
+logger = logging.getLogger("fusion.execution")
+
+class AppRunner:
+    """
+    Standardized runner for Fusion application instances (Python, C++, Rust, JS).
+    Handles process lifecycle, logging (tee), and synchronization.
+    Supports network namespaces on Linux and sudo execution.
+    """
+    def __init__(self, name, cmd, log_dir, cwd=None, env=None, ns=None, use_sudo=False):
+        self.name = name
+        self.cmd = cmd
+        self.log_dir = log_dir
+        self.cwd = cwd or os.getcwd()
+        self.env = env or os.environ.copy()
+        self.ns = ns
+        self.use_sudo = use_sudo
+        
+        self.is_ci = bool(os.environ.get('CI') or os.environ.get('GITHUB_ACTIONS'))
+        self.proc = None
+        self.log_file = None
+        self.output_queue = queue.Queue()
+        self._stop_event = threading.Event()
+        self.reader_thread = None
+        
+        # Ensure log directory exists
+        os.makedirs(self.log_dir, exist_ok=True)
+        self.log_path = os.path.join(self.log_dir, f"{self.name}.log")
+
+    def _prepare_cmd(self):
+        final_cmd = self.cmd.copy()
+        
+        # Handle sudo and namespaces
+        if sys.platform == "linux":
+            prefix = []
+            if self.use_sudo:
+                prefix = ["sudo"]
+                if self.is_ci:
+                    prefix.append("-n") # Non-interactive in CI
+            
+            if self.ns:
+                prefix.extend(["ip", "netns", "exec", self.ns])
+                # If we use netns, we almost certainly need sudo unless running as root
+                if not self.use_sudo and os.geteuid() != 0:
+                    prefix = ["sudo"] + (["-n"] if self.is_ci else []) + ["ip", "netns", "exec", self.ns]
+            
+            final_cmd = prefix + final_cmd
+            
+        return final_cmd
+
+    def start(self):
+        """Starts the application process."""
+        self.log_file = open(self.log_path, "w", encoding='utf-8', errors='ignore')
+        self.log_file.write(f"=== FUSION APP RUNNER: {self.name} ===\n")
+        self.log_file.write(f"START_TIME: {datetime.datetime.now()}\n")
+        self.log_file.write(f"COMMAND: {' '.join(self.cmd)}\n")
+        self.log_file.write(f"CWD: {self.cwd}\n")
+        if self.ns: self.log_file.write(f"NS: {self.ns}\n")
+        self.log_file.write("="*40 + "\n\n")
+        self.log_file.flush()
+
+        final_cmd = self._prepare_cmd()
+        
+        try:
+            self.proc = subprocess.Popen(
+                final_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                cwd=self.cwd,
+                env=self.env,
+                text=True,
+                bufsize=1,
+                universal_newlines=True
+            )
+        except Exception as e:
+            msg = f"Failed to start process {self.name}: {e}"
+            self.log_file.write(f"\n[ERROR] {msg}\n")
+            self.log_file.close()
+            raise RuntimeError(msg)
+
+        self.reader_thread = threading.Thread(target=self._reader_loop, name=f"Reader-{self.name}")
+        self.reader_thread.daemon = True
+        self.reader_thread.start()
+        
+        logger.info(f"Started {self.name} (PID: {self.proc.pid})")
+
+    def _reader_loop(self):
+        """Internal loop to read output and tee to log file and queue."""
+        try:
+            for line in iter(self.proc.stdout.readline, ''):
+                if self._stop_event.is_set():
+                    break
+                
+                # Write to log
+                self.log_file.write(line)
+                self.log_file.flush()
+                
+                # Put to queue for wait_for_output
+                self.output_queue.put(line)
+            
+            # Ensure we consume remaining output if process exited
+            if self.proc:
+                self.proc.stdout.close()
+        except Exception as e:
+            if not self._stop_event.is_set():
+                 logger.error(f"Reader loop error for {self.name}: {e}")
+        finally:
+            if self.log_file:
+                self.log_file.write(f"\n--- Process Exited with code {self.proc.poll()} ---\n")
+                self.log_file.flush()
+
+    def wait_for_output(self, pattern, timeout=30):
+        """
+        Waits for a specific regex pattern in the output.
+        Returns the matching line or None if timeout.
+        """
+        start_time = time.time()
+        regex = re.compile(pattern)
+        
+        while time.time() - start_time < timeout:
+            try:
+                # Use a small block to keep the loop responsive to timeouts
+                line = self.output_queue.get(timeout=0.1)
+                if regex.search(line):
+                    return line
+            except queue.Empty:
+                if self.proc.poll() is not None:
+                    # Process died before pattern was found
+                    break
+                continue
+        
+        return None
+    
+    def clear_output(self):
+        """Clears the output queue."""
+        while not self.output_queue.empty():
+            try:
+                self.output_queue.get_nowait()
+            except queue.Empty:
+                break
+
+    def stop(self, timeout=5):
+        """Stops the application process."""
+        if not self.proc:
+            return
+
+        self._stop_event.set()
+        
+        logger.info(f"Stopping {self.name}...")
+        
+        # Try graceful termination
+        try:
+            self.proc.terminate()
+            self.proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            logger.warning(f"{self.name} did not terminate gracefully, killing...")
+            self.proc.kill()
+            self.proc.wait()
+        except Exception as e:
+            logger.error(f"Error stopping {self.name}: {e}")
+
+        if self.reader_thread:
+            self.reader_thread.join(timeout=1)
+            
+        if self.log_file:
+            self.log_file.close()
+            self.log_file = None
+            
+        self.proc = None
+
+    def is_running(self):
+        return self.proc is not None and self.proc.poll() is None
+
+    def get_return_code(self):
+        if self.proc:
+            return self.proc.poll()
+        return None

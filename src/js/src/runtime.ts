@@ -310,8 +310,10 @@ export class SomeIpRuntime {
                     if (sdEpV6 && sdEpV6.version === 6) {
                         const sdTransportV6 = new UdpTransport('udp6', this.logger);
                         // Bind to local interface IPv6 from config.
-                        // Strict Binding: Bind ONLY to the configured unicast address
-                        await sdTransportV6.bind(bindIpV6, sdEpV6.port);
+                        // Linux: Bind to '::' to allow multicast reception
+                        // Windows/Other: Bind to specific interface address
+                        const bindTargetV6 = os.platform() === 'linux' ? '::' : bindIpV6;
+                        await sdTransportV6.bind(bindTargetV6!, sdEpV6.port);
                         await sdTransportV6.joinMulticast(sdEpV6.ip, bindIpV6);
                         sdTransportV6.setMulticastLoopback(true);
                         sdTransportV6.onMessage((data, rinfo) => this.handleMessage(data, rinfo, ctx));
@@ -503,11 +505,15 @@ export class SomeIpRuntime {
     // ── Private Methods ──
 
     private handleMessage(data: Buffer, rinfo: RemoteInfo, ctx?: InterfaceContext): void {
-        this._dumpPacket(data, rinfo);
+        if (this.packetDump) {
+            console.log(`[Runtime] handleMessage: ${data.length} bytes from ${rinfo.address}:${rinfo.port}`);
+            this._dumpPacket(data, rinfo);
+        }
         const header = deserializeHeader(data);
         if (!header) return;
 
         if (header.serviceId === SD_SERVICE_ID && header.methodId === SD_METHOD_ID) {
+            this.logger.log(LogLevel.DEBUG, 'Runtime', `[DEBUG] SD Packet from ${rinfo.address}:${rinfo.port}`);
             this.handleSdMessage(data, rinfo, ctx);
             return;
         }
@@ -576,6 +582,7 @@ export class SomeIpRuntime {
         const options = parseSdOptions(payload, 4 + 4 + entriesLen);
 
         for (const entry of entries) {
+            this.logger.log(LogLevel.DEBUG, 'Runtime', `[DEBUG] Entry: type=${entry.type} sid=${entry.serviceId} inst=${entry.instanceId}`);
             if (entry.type === SdEntryType.OFFER_SERVICE && entry.ttl > 0) {
                 if (options.length > 0) {
                     // Check find_on

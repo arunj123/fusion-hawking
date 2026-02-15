@@ -80,6 +80,7 @@ class SomeIpRuntime:
         self.interfaces: Dict[str, Dict] = {}
         self.sd_listeners: Dict[str, socket.socket] = {}
         self.listeners: Dict[Tuple[str, int, str], socket.socket] = {}
+        self.listeners_by_name: Dict[str, socket.socket] = {}
         self.endpoint_routing: Dict[Tuple[str, int, str], Set[int]] = collections.defaultdict(set)
         
         self.pending_requests: Dict[Tuple[int, int, int], threading.Event] = {}
@@ -213,7 +214,8 @@ class SomeIpRuntime:
                         s.setblocking(False)
                         actual_port = s.getsockname()[1]
                         self.listeners[(ip, actual_port, proto)] = s
-                        self.logger.log(LogLevel.INFO, "Runtime", f"Bound {ip}:{actual_port} ({proto}) on {alias}")
+                        self.listeners_by_name[ep_name] = s
+                        self.logger.log(LogLevel.INFO, "Runtime", f"Bound {ip}:{actual_port} ({proto}) on {alias} (endpoint={ep_name})")
                     except Exception as e:
                         self.logger.log(LogLevel.WARN, "Runtime", f"Failed to bind {ip}:{port} on {alias}: {e}")
                         continue
@@ -239,6 +241,18 @@ class SomeIpRuntime:
                     if not ep and target_ep_name in self.endpoints: ep = self.endpoints[target_ep_name] # Global fallback
                     
                     if not ep: continue
+                    ip, proto = ep["ip"], ep.get("protocol", "udp").lower()
+                    
+                    # Use listeners_by_name if available for this specific endpoint
+                    if target_ep_name in self.listeners_by_name:
+                        s = self.listeners_by_name[target_ep_name]
+                        l_ip, l_p = s.getsockname()[:2]
+                        l_pr = proto
+                        self.endpoint_routing[(l_ip, l_p, l_pr)].add(sid)
+                        self.offered_services.append((sid, cfg.get('instance_id', 1), cfg.get('major_version', 1), cfg.get('minor_version', 0), l_ip, l_p, l_pr, a))
+                        print(f"DEBUG: Offered service {sid} on {l_ip}:{l_p} {l_pr} (from {target_ep_name})")
+                        continue
+
                     ip, proto = ep["ip"], ep.get("protocol", "udp").lower()
                     # Find the listener that was bound for this (ip, proto, alias)
                     # Since we might have bound port 0, we match on ip/proto
@@ -420,6 +434,7 @@ class SomeIpRuntime:
         eps = self.interfaces.get(alias, {}).get("endpoints", {})
         if not sd or not eps: return
         is6, prid = (":" in ip), (6 if pr == 'tcp' else 0x11)
+        print(f"DEBUG: _send_offer sid={sid} ip={ip} p={p} pr={pr} -> prid={prid}")
         pld = bytearray([0x80, 0, 0, 0]) + struct.pack(">I", 16) + struct.pack(">BBBBHHII", 0x01, 0, 0, 1<<4, sid, iid, (maj<<24)|0xFFFFFF, min)
         opt = struct.pack(">HBB", 0x0015 if is6 else 0x0009, 0x06 if is6 else 0x04, 0) + (socket.inet_pton(socket.AF_INET6, ip) if is6 else socket.inet_aton(ip)) + struct.pack(">BBH", 0, prid, p)
         pld += struct.pack(">I", len(opt)) + opt

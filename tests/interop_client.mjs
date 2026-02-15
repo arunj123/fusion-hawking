@@ -4,11 +4,17 @@ import process from 'node:process';
 
 async function main() {
     const logger = new ConsoleLogger();
-    const runtime = new SomeIpRuntime(logger);
+    const runtime = new SomeIpRuntime(undefined, undefined, logger);
 
     const configPath = process.argv[2] || './tests/interop_multi_config.json';
+    console.log(`[JS Client] VERSION 999`);
     console.log(`[JS Client] Loading config from ${configPath}...`);
-    await runtime.loadConfigFile(configPath, 'js_client');
+    try {
+        await runtime.loadConfigFile(configPath, 'js_client');
+    } catch (err) {
+        console.error(`[JS Client] Failed to load config: ${err.message}`);
+        process.exit(1);
+    }
 
     console.log("[JS Client] Starting runtime...");
     await runtime.start();

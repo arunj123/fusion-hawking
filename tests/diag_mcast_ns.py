@@ -25,6 +25,8 @@ def run_receiver(bind_ip):
 def run_sender(send_ip):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(send_ip))
+    s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
+    s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1)
     s.sendto(b"MCAST_TEST_MSG", (MCAST_GRP, MCAST_PORT))
     print(f"SENT from {send_ip}")
 

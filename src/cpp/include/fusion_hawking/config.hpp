@@ -89,9 +89,9 @@ public:
         std::string json = buffer.str();
 
         // 1. Parse Endpoints (Global)
-        size_t endp_pos = json.find("\"endpoints\"");
+        size_t endp_pos = json.find("\"endpoints\":");
         if (endp_pos != std::string::npos) {
-             size_t e_start = json.find("{", endp_pos);
+             size_t e_start = json.find("{", endp_pos + 12);
              size_t e_end = e_start + 1; int e_depth = 1;
              while (e_depth > 0 && e_end < json.length()) {
                  if (json[e_end] == '{') e_depth++;
@@ -101,7 +101,28 @@ public:
              ParseEndpoints(json.substr(e_start, e_end - e_start), config.endpoints);
         }
 
-        size_t inst_pos = json.find("\"" + instance_name + "\"");
+        // Parse Global SD (Root level)
+        size_t global_sd_pos = json.find("\"sd\":");
+        if (global_sd_pos != std::string::npos) {
+            std::cout << "[ConfigLoader] Found global sd block at " << global_sd_pos << std::endl;
+            // Only parse if it's likely a root-level key (avoid parsing instance-level sd here)
+            size_t s_start = json.find("{", global_sd_pos + 5);
+            size_t s_end = s_start + 1; int s_depth = 1;
+            while (s_depth > 0 && s_end < json.length()) {
+                if (json[s_end] == '{') s_depth++;
+                else if (json[s_end] == '}') s_depth--;
+                s_end++;
+            }
+            std::string sd_block = json.substr(s_start, s_end - s_start);
+            int cycle = ExtractInt(sd_block, "cycle_offer_ms"); if (cycle > 0) config.sd.cycle_offer_ms = cycle;
+            int delay = ExtractInt(sd_block, "request_response_delay_ms"); if (delay > 0) config.sd.request_response_delay_ms = delay;
+            int timeout = ExtractInt(sd_block, "request_timeout_ms"); if (timeout > 0) config.sd.request_timeout_ms = timeout;
+            int hops = ExtractInt(sd_block, "multicast_hops"); if (hops > 0) config.sd.multicast_hops = (uint16_t)hops;
+            std::cout << "[ConfigLoader] Global SD timeout: " << config.sd.request_timeout_ms << "ms" << std::endl;
+        }
+
+        size_t inst_pos = json.find("\"" + instance_name + "\":");
+        if (inst_pos == std::string::npos) inst_pos = json.find("\"" + instance_name + "\""); // fallback
         if (inst_pos == std::string::npos) return config;
         
         size_t start = json.find("{", inst_pos);
@@ -128,9 +149,9 @@ public:
             ParseStringMap(block.substr(ub_start, ub_end - ub_start), config.unicast_bind);
         }
 
-        size_t prov_pos = block.find("\"providing\"");
+        size_t prov_pos = block.find("\"providing\":");
         if (prov_pos != std::string::npos) {
-            size_t p_start = block.find("{", prov_pos);
+            size_t p_start = block.find("{", prov_pos + 12);
             int p_depth = 1; size_t p_end = p_start + 1;
             while (p_depth > 0 && p_end < block.length()) {
                 if (block[p_end] == '{') p_depth++;
@@ -140,9 +161,9 @@ public:
             ParseProviding(block.substr(p_start, p_end - p_start), config.providing);
         }
 
-        size_t req_pos = block.find("\"required\"");
+        size_t req_pos = block.find("\"required\":");
         if (req_pos != std::string::npos) {
-            size_t r_start = block.find("{", req_pos);
+            size_t r_start = block.find("{", req_pos + 11);
             int r_depth = 1; size_t r_end = r_start + 1;
             while (r_depth > 0 && r_end < block.length()) {
                 if (block[r_end] == '{') r_depth++;
@@ -152,9 +173,10 @@ public:
             ParseRequired(block.substr(r_start, r_end - r_start), config.required);
         }
 
-        size_t sd_pos = block.find("\"sd\"");
+        size_t sd_pos = block.find("\"sd\":");
         if (sd_pos != std::string::npos) {
-            size_t sd_start = block.find("{", sd_pos);
+            std::cout << "[ConfigLoader] Found instance-level sd block for " << instance_name << std::endl;
+            size_t sd_start = block.find("{", sd_pos + 5);
             int sd_depth = 1; size_t sd_end = sd_start + 1;
             while (sd_depth > 0 && sd_end < block.length()) {
                 if (block[sd_end] == '{') sd_depth++;
@@ -169,6 +191,7 @@ public:
             int delay = ExtractInt(sd_block, "request_response_delay_ms"); if (delay > 0) config.sd.request_response_delay_ms = delay;
             int timeout = ExtractInt(sd_block, "request_timeout_ms"); if (timeout > 0) config.sd.request_timeout_ms = timeout;
             int hops = ExtractInt(sd_block, "multicast_hops"); if (hops > 0) config.sd.multicast_hops = (uint16_t)hops;
+            std::cout << "[ConfigLoader] Instance SD timeout: " << config.sd.request_timeout_ms << "ms" << std::endl;
         }
         
         config.ip = ExtractString(block, "ip");
@@ -177,9 +200,9 @@ public:
         config.ip_version = ExtractInt(block, "ip_version");
 
         // 2. Parse Interfaces (Global)
-        size_t iface_pos = json.find("\"interfaces\"");
+        size_t iface_pos = json.find("\"interfaces\":");
         if (iface_pos != std::string::npos) {
-             size_t i_start = json.find("{", iface_pos);
+             size_t i_start = json.find("{", iface_pos + 13);
              size_t i_end = i_start + 1; int i_depth = 1;
              while (i_depth > 0 && i_end < json.length()) {
                  if (json[i_end] == '{') i_depth++;

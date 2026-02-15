@@ -47,6 +47,9 @@ export class UdpTransport implements ITransport {
         });
 
         this.socket.on('message', (msg, rinfo) => {
+            if (process.env.FUSION_PACKET_DUMP === "1") {
+                console.log(`[Transport] RECV ${msg.length} bytes from ${rinfo.address}:${rinfo.port}`);
+            }
             const remote: RemoteInfo = {
                 address: rinfo.address,
                 port: rinfo.port,
@@ -103,6 +106,7 @@ export class UdpTransport implements ITransport {
     async joinMulticast(multicastAddress: string, iface?: string): Promise<void> {
         try {
             this.socket.addMembership(multicastAddress, iface);
+            console.log(`[Transport] Joined multicast ${multicastAddress} on interface ${iface || 'default'}`);
             this.logger?.log(LogLevel.INFO, 'Transport', `Joined multicast ${multicastAddress}`);
         } catch (err: any) {
             this.logger?.log(LogLevel.WARN, 'Transport', `Failed to join multicast: ${err.message}`);

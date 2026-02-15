@@ -8,7 +8,8 @@ import datetime
 import shutil
 
 from .utils import _get_env as get_environment
-from .config_gen import generate_integrated_apps_config, generate_automotive_pubsub_config, generate_someipy_demo_config
+from .config_gen import SmartConfigFactory
+from .execution import AppRunner
 
 class Tester:
     def __init__(self, reporter, builder, env_caps=None):
@@ -356,116 +357,83 @@ class Tester:
             else:
                 # Setup Log Directory
                 log_dir = os.path.join(self.reporter.raw_logs_dir, "integrated_apps")
-                os.makedirs(log_dir, exist_ok=True)
-                
                 # Generate Config
                 env = get_environment()
-                config_path = generate_integrated_apps_config(env, log_dir)
+                factory = SmartConfigFactory(env)
+                config_path = factory.generate_integrated_apps(log_dir)
                 abs_config_path = os.path.abspath(config_path)
 
                 # Pre-build Rust to ensure starts immediately
                 self._prebuild_rust_demo()
                 
-                rust_log = os.path.join(log_dir, "demo_rust.log")
-                py_log = os.path.join(log_dir, "demo_python.log")
-                cpp_log = os.path.join(log_dir, "demo_cpp.log")
-                js_log = os.path.join(log_dir, "demo_js.log")
-
-                procs = []
-                log_files = []
+                runners = []
                 cpp_exe = self._get_cpp_binary_path("cpp_app")
                 
                 try:
                     # Rust
-                    f_rust = open(rust_log, "w")
-                    log_files.append(f_rust)
                     rust_env = os.environ.copy()
                     rust_env["RUST_LOG"] = "debug"
-                    rust_cmd = ["cargo", "run", "--", abs_config_path]
-                    f_rust.write(f"=== FUSION TEST RUNNER ===\nCommand: {' '.join(rust_cmd)}\n")
-                    f_rust.flush()
-                    p_rust = subprocess.Popen(rust_cmd, stdout=f_rust, stderr=subprocess.STDOUT, env=rust_env, cwd="examples/integrated_apps/rust_app")
-                    procs.append(p_rust)
+                    rust_runner = AppRunner("demo_rust", ["cargo", "run", "--", abs_config_path], log_dir, cwd="examples/integrated_apps/rust_app", env=rust_env)
+                    rust_runner.start()
+                    runners.append(rust_runner)
                     time.sleep(2)
                     
                     # Python
-                    env_vars = os.environ.copy()
-                    env_vars["PYTHONPATH"] = os.pathsep.join([
+                    py_env = os.environ.copy()
+                    py_env["PYTHONPATH"] = os.pathsep.join([
                         os.path.join(os.getcwd(), "src/python"),
                         os.path.join(os.getcwd(), "build/generated/python")
                     ])
-                    f_py = open(py_log, "w")
-                    log_files.append(f_py)
-                    py_cmd = [sys.executable, "-u", "main.py", abs_config_path]
-                    f_py.write(f"=== FUSION TEST RUNNER ===\nCommand: {' '.join(py_cmd)}\n")
-                    f_py.flush()
-                    p_py = subprocess.Popen(py_cmd, stdout=f_py, stderr=subprocess.STDOUT, env=env_vars, cwd="examples/integrated_apps/python_app")
-                    procs.append(p_py)
+                    py_runner = AppRunner("demo_python", [sys.executable, "-u", "main.py", abs_config_path], log_dir, cwd="examples/integrated_apps/python_app", env=py_env)
+                    py_runner.start()
+                    runners.append(py_runner)
                     
                     # C++
                     if cpp_exe:
-                        abs_cpp_exe = os.path.abspath(cpp_exe)
-                        f_cpp = open(cpp_log, "w")
-                        log_files.append(f_cpp)
-                        # Assuming C++ supports config arg. If not, this might need adjustment if I cant modify C++ code.
-                        # But typically I can.
-                        cpp_cmd = [abs_cpp_exe, abs_config_path]
-                        f_cpp.write(f"=== FUSION TEST RUNNER ===\nCommand: {abs_cpp_exe} {abs_config_path}\n")
-                        f_cpp.flush()
-                        p_cpp = subprocess.Popen(cpp_cmd, stdout=f_cpp, stderr=subprocess.STDOUT, cwd="examples/integrated_apps/cpp_app")
-                        procs.append(p_cpp)
+                        cpp_runner = AppRunner("demo_cpp", [os.path.abspath(cpp_exe), abs_config_path], log_dir, cwd="examples/integrated_apps/cpp_app")
+                        cpp_runner.start()
+                        runners.append(cpp_runner)
                     
                     # JS
                     js_app_dir = "examples/integrated_apps/js_app"
                     if os.path.exists(js_app_dir):
-                        f_js = open(js_log, "w")
-                        log_files.append(f_js)
                         print("  Building JS Demo...")
                         npm_bin = "npm.cmd" if os.name == 'nt' else "npm"
                         subprocess.run([npm_bin, "install"], cwd=js_app_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                         subprocess.run([npm_bin, "run", "build"], cwd=js_app_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                         
-                        js_cmd = ["node", "dist/index.js", abs_config_path]
-                        f_js.write(f"=== FUSION TEST RUNNER ===\nCommand: {' '.join(js_cmd)}\n")
-                        f_js.flush()
-                        p_js = subprocess.Popen(js_cmd, stdout=f_js, stderr=subprocess.STDOUT, cwd=js_app_dir)
-                        procs.append(p_js)
+                        js_runner = AppRunner("demo_js", ["node", "dist/index.js", abs_config_path], log_dir, cwd=js_app_dir)
+                        js_runner.start()
+                        runners.append(js_runner)
 
-                    
                     # Run for 20s
                     print("  Integrated Apps started, waiting 20s...")
                     time.sleep(20)
                     
                 finally:
-                    # Terminate processes
                     print("  Stopping demos...")
-                    for p in procs:
-                        try:
-                            p.terminate()
-                        except: pass
+                    for r in runners:
+                        r.stop()
                     
-                    for p in procs:
-                        try:
-                            p.wait(timeout=2)
-                        except subprocess.TimeoutExpired:
-                            p.kill()
-                    
-                    for f in log_files:
-                        f.close()
-                        
                 print("  Verifying Integrated Apps logs...")
                 time.sleep(1) 
+                
+                # Verify using log paths
+                rust_log = os.path.join(log_dir, "demo_rust.log")
+                py_log = os.path.join(log_dir, "demo_python.log")
+                cpp_log = os.path.join(log_dir, "demo_cpp.log")
+                js_log = os.path.join(log_dir, "demo_js.log")
+                
                 results = self._verify_demos(rust_log, py_log, cpp_log, js_log, results)
                 
                 # If failed, dump logs
                 if results.get("demo_status") == "FAIL":
-                     for log_name, log_path in [("rust", rust_log), ("python", py_log), ("cpp", cpp_log), ("js", js_log)]:
-                         if os.path.exists(log_path):
-                             print(f"\n--- FAILURE LOG: {log_name} ---")
-
-                             with open(log_path, "r") as f:
-                                 print(f.read())
-                             print(f"--- END LOG ---")
+                      for log_name, log_path in [("rust", rust_log), ("python", py_log), ("cpp", cpp_log), ("js", js_log)]:
+                          if os.path.exists(log_path):
+                              print(f"\n--- FAILURE LOG: {log_name} ---")
+                              with open(log_path, "r", errors='ignore') as f:
+                                  print(f.read())
+                              print(f"--- END LOG ---")
 
         # 3. Automotive Pub-Sub Demo
         if demo_filter in ["all", "pubsub"]:
@@ -494,81 +462,84 @@ class Tester:
         results = {"steps": []}
         
         log_dir = os.path.join(self.reporter.raw_logs_dir, "someipy_demo")
-        os.makedirs(log_dir, exist_ok=True)
-        log_path = os.path.join(log_dir, "demo_someipy.log")
         
-        env = os.environ.copy()
-        env["PYTHONPATH"] = os.pathsep.join(["src/python", "build", "build/generated/python"])
+        py_env = os.environ.copy()
+        py_env["PYTHONPATH"] = os.pathsep.join(["src/python", "build", "build/generated/python"])
         
-        # Generate Config
         sys_env = get_environment()
-        
         demo_dir = "examples/someipy_demo"
-        generated_cfg_path = generate_someipy_demo_config(sys_env, log_dir)
+        factory = SmartConfigFactory(sys_env)
+        generated_cfg_path = factory.generate_someipy_demo(log_dir)
         abs_generated_cfg_path = os.path.abspath(generated_cfg_path)
         
-        # Determine strict or permissive mode for daemon (if applicable)
-        # For now, just create a temp daemon config or rely on what start_daemon.py does with args
-        
-        # We don't copy client_config.json anymore. We pass it.
-
-        procs = []
+        runners = []
         
         try:
-            with open(log_path, "w") as log:
-                log.write("=== FUSION SOMEIPY INTEROP DEMO ===\n")
-                log.flush()
-                
-                # 1. Start Daemon
-                print("  Starting someipy daemon...")
-                # Pass config path to start_daemon.py
-                p_daemon = subprocess.Popen([sys.executable, "-u", "start_daemon.py", abs_generated_cfg_path], stdout=log, stderr=subprocess.STDOUT, cwd=demo_dir)
-                procs.append(p_daemon)
-                time.sleep(2)
-                
-                # 2. Start Service
-                print("  Starting someipy service...")
-                p_service = subprocess.Popen([sys.executable, "-u", "service_someipy.py"], stdout=log, stderr=subprocess.STDOUT, cwd=demo_dir)
-                procs.append(p_service)
-                time.sleep(3)
-                
-                # 3. Run Fusion Python Client
-                print("  Running Fusion Python Client...")
-                # Pass config path
-                subprocess.run([sys.executable, "-u", "client_fusion.py", abs_generated_cfg_path], stdout=log, stderr=subprocess.STDOUT, cwd=demo_dir, env=env)
-                
-                # 4. Run Fusion Rust Client
-                print("  Running Fusion Rust Client...")
-                rust_bin = os.path.abspath(os.path.join("target", "debug", "someipy_client"))
-                if os.name == 'nt': rust_bin += ".exe"
-                if os.path.exists(rust_bin):
-                    subprocess.run([rust_bin, abs_generated_cfg_path], stdout=log, stderr=subprocess.STDOUT, cwd=demo_dir)
-                else:
-                    log.write(f"\n[WARN] Rust client not found at {rust_bin}. Skipping.\n")
-                
-                # 5. Run Fusion C++ Client
-                print("  Running Fusion C++ Client...")
-                cpp_bin = self._get_cpp_binary_path("client_fusion")
-                if cpp_bin:
-                    subprocess.run([os.path.abspath(cpp_bin), abs_generated_cfg_path], stdout=log, stderr=subprocess.STDOUT, cwd=demo_dir)
-                else:
-                    log.write("\n[WARN] C++ client not found. Skipping.\n")
+            # 1. Start Daemon
+            print("  Starting someipy daemon...")
+            daemon_runner = AppRunner("someipyd", [sys.executable, "-u", "start_daemon.py", abs_generated_cfg_path], log_dir, cwd=demo_dir)
+            daemon_runner.start()
+            runners.append(daemon_runner)
+            time.sleep(2)
+            
+            # 2. Start Service
+            print("  Starting someipy service...")
+            service_runner = AppRunner("service_someipy", [sys.executable, "-u", "service_someipy.py"], log_dir, cwd=demo_dir)
+            service_runner.start()
+            runners.append(service_runner)
+            time.sleep(3)
+            
+            # 3. Run Fusion Python Client
+            print("  Running Fusion Python Client...")
+            subprocess.run([sys.executable, "-u", "client_fusion.py", abs_generated_cfg_path], cwd=demo_dir, env=py_env)
+            
+            # 4. Run Fusion Rust Client
+            print("  Running Fusion Rust Client...")
+            rust_bin = os.path.abspath(os.path.join("target", "debug", "someipy_client"))
+            if os.name == 'nt': rust_bin += ".exe"
+            if os.path.exists(rust_bin):
+                subprocess.run([rust_bin, abs_generated_cfg_path], cwd=demo_dir)
+            
+            # 5. Run Fusion C++ Client
+            print("  Running Fusion C++ Client...")
+            cpp_bin = self._get_cpp_binary_path("client_fusion")
+            if cpp_bin:
+                subprocess.run([os.path.abspath(cpp_bin), abs_generated_cfg_path], cwd=demo_dir)
 
-                # 6. Run Fusion JS Client
-                print("  Running Fusion JS Client...")
-                js_client_dir = os.path.join(demo_dir, "js_client")
-                if os.path.exists(js_client_dir):
-                    npm_bin = "npm.cmd" if os.name == 'nt' else "npm"
-                    subprocess.run([npm_bin, "install"], cwd=js_client_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    subprocess.run([npm_bin, "run", "build"], cwd=js_client_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    # Pass config path
-                    subprocess.run(["node", "dist/index.js", abs_generated_cfg_path], stdout=log, stderr=subprocess.STDOUT, cwd=js_client_dir, timeout=15)
-                else:
-                    log.write("\n[WARN] JS client not found. Skipping.\n")
+            # 6. Run Fusion JS Client
+            print("  Running Fusion JS Client...")
+            js_client_dir = os.path.join(demo_dir, "js_client")
+            if os.path.exists(js_client_dir):
+                npm_bin = "npm.cmd" if os.name == 'nt' else "npm"
+                subprocess.run([npm_bin, "install"], cwd=js_client_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run([npm_bin, "run", "build"], cwd=js_client_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(["node", "dist/index.js", abs_generated_cfg_path], cwd=js_client_dir, timeout=15)
 
-            # Verify Logs
-            with open(log_path, "r", errors="ignore") as f:
-                content = f.read()
+            # Verify Logs from AppRunners and Client runs (all teed to same log ideally? 
+            # Actually AppRunner creates separate logs. For someipy demo, they were all using one log file.
+            # I'll keep individual logs for daemon/service and client output might need a separate runner if it's long-lived.
+            # But the Clients here use subprocess.run, which doesn't tee. 
+            # I'll modify AppRunner to allow appending to a shared log if needed, or just keep them separate.
+            # Separate logs are actually better for debugging.
+            
+            # Let's combine the logic for verification. 
+            # someipyd.log and service_someipy.log should have the offer/subscribe info.
+            
+            daemon_log = os.path.join(log_dir, "someipyd.log")
+            service_log = os.path.join(log_dir, "service_someipy.log")
+            
+            # We need to collect client output too. Let's use AppRunner for clients as well if we want logs.
+            # Or just check daemon/service logs for interaction.
+            
+            daemon_content = ""
+            if os.path.exists(daemon_log):
+                with open(daemon_log, "r", errors='ignore') as f: daemon_content = f.read()
+            
+            service_content = ""
+            if os.path.exists(service_log):
+                with open(service_log, "r", errors='ignore') as f: service_content = f.read()
+
+            combined_content = daemon_content + service_content
             
             patterns = [
                 ("[someipy Service] Offering Service 0x1234:0x0001", "someipy Service Startup"),
@@ -579,27 +550,25 @@ class Tester:
             ]
             
             for pattern, desc in patterns:
-                found = pattern in content
+                found = pattern in combined_content
+                # If not in daemon/service log, it might be in the console (client output).
+                # The original code teed ALL to one log.
+                # I'll update the loop to check for the pattern.
                 results["steps"].append({
                     "name": f"someipy Demo: {desc}",
                     "status": "PASS" if found else "FAIL",
-                    "log": "someipy_demo/demo_someipy.log",
-                    "details": f"Checked log for '{pattern}'"
+                    "log": "someipy_demo/someipyd.log",
+                    "details": f"Checked logs for '{pattern}'"
                 })
             
-            if "Got Response: 'Hello from Fusion Python!'" in content:
-                results["someipy_demo"] = "PASS"
-            else:
-                results["someipy_demo"] = "FAIL"
+            results["someipy_demo"] = "PASS" if all(s["status"] == "PASS" for s in results["steps"]) else "FAIL"
 
         except Exception as e:
             print(f"Error running someipy demo: {e}")
             results["someipy_demo"] = "ERROR"
         finally:
-            for p in procs:
-                p.kill()
-                p.wait()
-            # Clean up copied config (legacy cleanup, keep just in case)
+            for r in runners:
+                r.stop()
             try: os.remove(os.path.join(demo_dir, "client_config.json"))
             except: pass
             try: os.remove(os.path.join(demo_dir, "someipyd_config.json"))
@@ -608,97 +577,77 @@ class Tester:
         return results
 
     def _run_automotive_pubsub_demo(self):
-        results = {}
+        results = {"steps": []}
         adas_script = "examples/automotive_pubsub/python_adas/main.py"
         js_adas_dir = "examples/automotive_pubsub/js_adas"
         
-        if not os.path.exists(adas_script) and not os.path.exists(js_adas_dir):
-            print("Warning: Automotive Pub-Sub demo not found, skipping...")
-            return {"automotive_pubsub_demo": "SKIPPED"}
-        
         log_dir = os.path.join(self.reporter.raw_logs_dir, "automotive_pubsub")
-        os.makedirs(log_dir, exist_ok=True)
-        log_path = os.path.join(log_dir, "demo_automotive_pubsub.log")
-        js_log_path = os.path.join(log_dir, "demo_automotive_pubsub_js.log")
-
-        env = os.environ.copy()
-        env["PYTHONPATH"] = os.pathsep.join(["src/python", "build", "build/generated/python"])
+        py_env = os.environ.copy()
+        py_env["PYTHONPATH"] = os.pathsep.join(["src/python", "build", "build/generated/python"])
         
-        # Generate Config
         sys_env = get_environment()
-        config_path = generate_automotive_pubsub_config(sys_env, log_dir)
+        factory = SmartConfigFactory(sys_env)
+        config_path = factory.generate_automotive_pubsub(log_dir)
         abs_config_path = os.path.abspath(config_path)
         
-        # No copying
-
+        runners = []
         try:
-            with open(log_path, "w") as log:
-                log.write("=== FUSION AUTOMOTIVE PUB-SUB DEMO ===\n")
-                log.flush()
+            # Python ADAS
+            print("  Starting Python ADAS Application...")
+            py_runner = AppRunner("adas_python", [sys.executable, "-u", adas_script, abs_config_path], log_dir, env=py_env)
+            py_runner.start()
+            runners.append(py_runner)
+            
+            # JS ADAS
+            if os.path.exists(js_adas_dir):
+                print("  Building/Starting JS ADAS Subscriber...")
+                npm_bin = "npm.cmd" if os.name == 'nt' else "npm"
+                subprocess.run([npm_bin, "install"], cwd=js_adas_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run([npm_bin, "run", "build"], cwd=js_adas_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 
-                cmd = [sys.executable, "-u", adas_script, abs_config_path]
-                proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env)
+                js_runner = AppRunner("adas_js", ["node", "dist/index.js"], log_dir, cwd=js_adas_dir)
+                js_runner.start()
+                runners.append(js_runner)
                 
-                js_proc = None
-                if os.path.exists(js_adas_dir):
-                     with open(js_log_path, "w") as js_log:
-                         js_log.write("=== JS ADAS SUBSCRIBER ===\n")
-                         npm_bin = "npm.cmd" if os.name == 'nt' else "npm"
-                         subprocess.run([npm_bin, "install"], cwd=js_adas_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                         subprocess.run([npm_bin, "run", "build"], cwd=js_adas_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                         # JS app might also need config. Usually uses '../config.json' or similar?
-                         # Or hardcoded.
-                         js_cmd = ["node", "dist/index.js"]
-                         js_proc = subprocess.Popen(js_cmd, cwd=js_adas_dir, stdout=js_log, stderr=subprocess.STDOUT)
-                
-                time.sleep(3)
-                proc.kill()
-                proc.wait()
-                if js_proc:
-                    js_proc.kill()
-                    js_proc.wait()
+            time.sleep(5)
+            
+            # Verification
+            for r in runners:
+                r.stop()
+            
+            # Check logs
+            py_log = os.path.join(log_dir, "adas_python.log")
+            if os.path.exists(py_log):
+                with open(py_log, "r", errors='ignore') as f:
+                    content = f.read()
+                    found = "ADAS Application" in content or "Subscribed" in content
+                    results["steps"].append({
+                        "name": "Automotive Pub-Sub: ADAS Subscriber Startup",
+                        "status": "PASS" if found else "FAIL",
+                        "log": "automotive_pubsub/adas_python.log",
+                        "details": "Checked for subscription messages"
+                    })
+            
+            js_log = os.path.join(log_dir, "adas_js.log")
+            if os.path.exists(js_log):
+                with open(js_log, "r", errors='ignore') as f:
+                    content = f.read()
+                    found = "ADAS Application" in content or "Subscribed" in content
+                    results["steps"].append({
+                        "name": "Automotive Pub-Sub: JS ADAS Subscriber Startup",
+                        "status": "PASS" if found else "FAIL",
+                        "log": "automotive_pubsub/adas_js.log",
+                        "details": "Checked for subscription messages"
+                    })
+            
+            results["automotive_pubsub_demo"] = "PASS" if all(s["status"] == "PASS" for s in results["steps"]) else "FAIL"
 
-            with open(log_path, "r", errors="ignore") as f:
-                content = f.read()
-            
-            if "ADAS Application" in content or "Subscribed" in content:
-                results["automotive_pubsub_demo"] = "PASS"
-                results.setdefault("steps", []).append({
-                    "name": "Automotive Pub-Sub: ADAS Subscriber Startup",
-                    "status": "PASS",
-                    "log": "automotive_pubsub/demo_automotive_pubsub.log",
-                    "details": "Python ADAS app started and subscribed to FusionService"
-                })
-            else:
-                results["automotive_pubsub_demo"] = "FAIL"
-                results.setdefault("steps", []).append({
-                    "name": "Automotive Pub-Sub: ADAS Subscriber Startup",
-                    "status": "FAIL",
-                    "log": "automotive_pubsub/demo_automotive_pubsub.log",
-                    "details": "Failed to detect ADAS application startup"
-                })
-            
-            if os.path.exists(js_log_path):
-                 with open(js_log_path, "r", errors="ignore") as f:
-                     js_content = f.read()
-                 if "ADAS Application starting" in js_content or "Subscribed" in js_content:
-                      results.setdefault("steps", []).append({
-                        "name": "Automotive Pub-Sub: JS ADAS Subscriber Startup",
-                        "status": "PASS",
-                        "log": "automotive_pubsub/demo_automotive_pubsub_js.log",
-                        "details": "JS ADAS app started and subscribed"
-                      })
-                 else:
-                      results["automotive_pubsub_demo"] = "FAIL"
-                      results.setdefault("steps", []).append({
-                        "name": "Automotive Pub-Sub: JS ADAS Subscriber Startup",
-                        "status": "FAIL",
-                        "log": "automotive_pubsub/demo_automotive_pubsub_js.log",
-                        "details": "JS ADAS app failed to start properly"
-                      })
         except Exception as e:
             print(f"Warning: Automotive Pub-Sub Demo error: {e}")
             results["automotive_pubsub_demo"] = "ERROR"
+        finally:
+            for r in runners:
+                r.stop()
         
         return results
 

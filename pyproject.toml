@@ -11,6 +11,8 @@ build-backend = "setuptools.build_meta"
 where = ["src/python"]
 
 [tool.pytest.ini_options]
+norecursedirs = ["logs", "third_party", "build", "target", ".venv", ".venv_linux"]
+testpaths = ["tests"]
 markers = [
     "needs_netns: test requires Linux network namespaces",
     "needs_multicast: test requires multicast networking support",
