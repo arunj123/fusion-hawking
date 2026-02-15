@@ -9,7 +9,7 @@ from tools.fusion.build import Builder
 from tools.fusion.test import Tester
 from tools.fusion.coverage import CoverageManager
 from tools.fusion.server import ProgressServer
-from tools.fusion.utils import get_local_ip, patch_configs, detect_environment
+from tools.fusion.utils import get_local_ip, detect_environment
 from tools.fusion.diagrams import DiagramManager
 
 
@@ -197,7 +197,7 @@ def main():
         print(f"[INFO] {reason} detected: forcing 127.0.0.1 for stability")
         local_ip = '127.0.0.1'
         
-    patch_configs(local_ip, root_dir, args.base_port)
+    # patch_configs(local_ip, root_dir, args.base_port) # Removed
     
     if server: server.update({"tools": tool_status})
     tools.print_status()
@@ -287,24 +287,36 @@ def main():
             
             # Find all config.json files
             config_errors = []
-            for root, _, files in os.walk(root_dir):
-                config_files = [file for file in files if (file == "config.json" or file.endswith("_config.json")) and "tsconfig" not in file and file != "someipyd_config.json"]
-                for config_file in config_files:
-                    if "build" in root: continue
-                    config_path = os.path.join(root, config_file)
-                    try:
-                        with open(config_path, "r") as f:
-                            data = json.load(f)
-                        errs = validate_config(data)
-                        if errs:
-                            print(f"[FAIL] Config Validation Failed for {config_path}")
-                            for e in errs:
-                                print(f" - {e}")
-                                config_errors.append(f"{config_path}: {e}")
-                        else:
-                            print(f"[PASS] Validated {config_path}")
-                    except Exception as e:
-                        print(f"[WARN] Could not validate {config_path}: {e}")
+            
+            # Setup Log
+            val_log_path = os.path.join(reporter.raw_logs_dir, "build", "config_validation.log")
+            os.makedirs(os.path.dirname(val_log_path), exist_ok=True)
+            
+            with open(val_log_path, "w") as val_log:
+                def log_val(msg):
+                    print(msg)
+                    val_log.write(msg + "\n")
+                
+                log_val("=== Config Validation Log ===")
+                
+                for root, _, files in os.walk(root_dir):
+                    config_files = [file for file in files if (file == "config.json" or file.endswith("_config.json")) and "tsconfig" not in file and file != "someipyd_config.json"]
+                    for config_file in config_files:
+                        if "build" in root or "logs" in root or ".git" in root: continue
+                        config_path = os.path.join(root, config_file)
+                        try:
+                            with open(config_path, "r") as f:
+                                data = json.load(f)
+                            errs = validate_config(data)
+                            if errs:
+                                log_val(f"[FAIL] Config Validation Failed for {config_path}")
+                                for e in errs:
+                                    log_val(f" - {e}")
+                                    config_errors.append(f"{config_path}: {e}")
+                            else:
+                                log_val(f"[PASS] Validated {config_path}")
+                        except Exception as e:
+                            log_val(f"[WARN] Could not validate {config_path}: {e}")
             
             if config_errors:
                  raise Exception("Configuration Validation Failed (see logs)")

@@ -49,11 +49,14 @@ class GenericClient:
         return response
 
 def main():
-    config_path = os.path.join(os.path.dirname(__file__), "client_config.json")
+    if len(sys.argv) > 1:
+        config_path = sys.argv[1]
+    else:
+        config_path = os.path.join(os.path.dirname(__file__), "client_config.json")
     
     # Create client_config.json if missing (simplified fallback)
     if not os.path.exists(config_path):
-        print("Error: client_config.json missing")
+        print(f"Error: custom config missing at {config_path}")
         return
 
     runtime = SomeIpRuntime(config_path, "python_client")

@@ -44,8 +44,6 @@ export interface SdConfig {
 export interface InterfaceSdConfig {
     endpoint: string;
     endpointV6?: string;
-    bindEndpointV4?: string;
-    bindEndpointV6?: string;
 }
 
 export interface InterfaceConfig {
@@ -107,8 +105,6 @@ export function loadConfig(path: string, instanceName?: string): AppConfig {
                 sd: {
                     endpoint: v.sd?.endpoint ?? '',
                     endpointV6: v.sd?.endpoint_v6 ?? '',
-                    bindEndpointV4: v.sd?.bind_endpoint_v4,
-                    bindEndpointV6: v.sd?.bind_endpoint_v6
                 }
             };
         }

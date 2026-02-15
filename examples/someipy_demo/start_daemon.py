@@ -48,17 +48,39 @@ async def main():
     
     print("[someipy Daemon] Starting daemon on 127.0.0.1:30500...")
     
-    # Load SD port and IP from client_config.json if possible
+    # Load SD port and IP from config file
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("config_path", nargs="?", default="client_config.json", help="Path to client configuration")
+    args = parser.parse_args()
+    
+    config_path = args.config_path
+    
     sd_port = 30491
     sd_addr = "224.0.0.1"
     try:
-        with open("client_config.json", "r") as f:
+        with open(config_path, "r") as f:
             cfg = json.load(f)
-            sd_port = cfg["endpoints"]["sd_multicast"]["port"]
-            sd_addr = cfg["endpoints"]["sd_multicast"]["ip"]
-            print(f"[someipy Daemon] Isolated SD: {sd_addr}:{sd_port}")
+            # Support new config schema: interfaces -> default -> endpoints
+            if "interfaces" in cfg:
+                # Find first interface or specific one
+                if "default" in cfg["interfaces"]:
+                    endpoints = cfg["interfaces"]["default"]["endpoints"]
+                else:
+                    # Pick first available
+                    first_iface = next(iter(cfg["interfaces"].values()))
+                    endpoints = first_iface["endpoints"]
+                
+                sd_port = endpoints["sd_multicast"]["port"]
+                sd_addr = endpoints["sd_multicast"]["ip"]
+            else:
+                # Fallback to old schema
+                sd_port = cfg["endpoints"]["sd_multicast"]["port"]
+                sd_addr = cfg["endpoints"]["sd_multicast"]["ip"]
+                
+            print(f"[someipy Daemon] Isolated SD: {sd_addr}:{sd_port} (from {config_path})")
     except Exception as e:
-        print(f"[someipy Daemon] Could not read client_config.json, using defaults: {e}")
+        print(f"[someipy Daemon] Could not read {config_path} or find endpoints, using defaults: {e}")
 
     # Import someipyd and run it
     import someipy.someipyd as someipyd

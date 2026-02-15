@@ -14,9 +14,14 @@
 
 using namespace fusion_hawking;
 
-int main() {
+int main(int argc, char* argv[]) {
     try {
-        SomeIpRuntime runtime("client_config.json", "cpp_client");
+        std::string config_path = "client_config.json";
+        if (argc > 1) {
+            config_path = argv[1];
+        }
+        std::cout << "[Fusion C++ Client] Loading config from " << config_path << std::endl;
+        SomeIpRuntime runtime(config_path, "cpp_client");
         // runtime starts in constructor via jthread reactor
 
         std::cout << "[Fusion C++ Client] Waiting for Service 0x1234..." << std::endl;

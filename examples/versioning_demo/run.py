@@ -2,6 +2,7 @@ import sys
 import os
 import time
 import threading
+import json
 
 # Path setup (points to root library and generated code)
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -10,6 +11,63 @@ sys.path.insert(0, os.path.join(ROOT, 'src', 'python'))
 
 from fusion_hawking.runtime import SomeIpRuntime, RequestHandler
 from runtime import IVersionedService_v1Stub, IVersionedService_v1Client, IVersionedService_v2Stub, IVersionedService_v2Client
+
+def generate_config():
+    """Generate config.json if it doesn't exist or update it."""
+    config_path = os.path.join(os.path.dirname(__file__), "config.json")
+    
+    # Simple loopback config
+    if os.name == 'nt':
+        iface = "Loopback Pseudo-Interface 1"
+    else:
+        iface = "lo"
+        
+    config = {
+        "interfaces": {
+            "primary": {
+                "name": iface,
+                "endpoints": {
+                    "server_v1_ep": { "ip": "127.0.0.1", "port": 0, "protocol": "udp", "version": 4 },
+                    "server_v2_ep": { "ip": "127.0.0.1", "port": 0, "protocol": "udp", "version": 4 },
+                    "client_ep": { "ip": "127.0.0.1", "port": 0, "protocol": "udp", "version": 4 },
+                    "sd_multicast": { "ip": "224.0.0.4", "port": 30695, "protocol": "udp", "version": 4 }
+                },
+                "sd": { "endpoint": "sd_multicast" }
+            }
+        },
+        "instances": {
+            "server_v1": {
+                "unicast_bind": { "primary": "server_v1_ep" },
+                "providing": {
+                    "service_v1": {
+                        "service_id": 8192, "instance_id": 1, "major_version": 1,
+                        "offer_on": { "primary": "server_v1_ep" }
+                    }
+                }
+            },
+            "server_v2": {
+                "unicast_bind": { "primary": "server_v2_ep" },
+                "providing": {
+                    "service_v2": {
+                        "service_id": 8192, "instance_id": 1, "major_version": 2,
+                        "offer_on": { "primary": "server_v2_ep" }
+                    }
+                }
+            },
+            "client": {
+                "unicast_bind": { "primary": "client_ep" },
+                "required": {
+                    "service_v1": { "service_id": 8192, "instance_id": 1, "major_version": 1, "find_on": ["primary"] },
+                    "service_v2": { "service_id": 8192, "instance_id": 1, "major_version": 2, "find_on": ["primary"] }
+                }
+            }
+        }
+    }
+    
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=4)
+    print(f"[Config] Generated {config_path}")
+    return config_path
 
 class ServiceV1Impl(IVersionedService_v1Stub):
     def method_v1(self, x):
@@ -22,7 +80,7 @@ class ServiceV2Impl(IVersionedService_v2Stub):
         return x + y
 
 def run_server(instance_name, impl_cls):
-    config_path = os.path.join(os.path.dirname(__file__), "config.json")
+    config_path = generate_config()
     runtime = SomeIpRuntime(config_path, instance_name)
     
     alias = "service_v1" if "v1" in instance_name else "service_v2"
@@ -39,7 +97,7 @@ def run_server(instance_name, impl_cls):
         runtime.stop()
 
 def run_client():
-    config_path = os.path.join(os.path.dirname(__file__), "config.json")
+    config_path = generate_config()
     runtime = SomeIpRuntime(config_path, "client")
     runtime.start()
     

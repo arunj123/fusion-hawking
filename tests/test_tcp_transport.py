@@ -3,31 +3,105 @@ import subprocess
 import time
 import pytest
 import sys
+import json
 from fusion_hawking import SomeIpRuntime, LogLevel, ConsoleLogger
 
 # Add project root to path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.append(PROJECT_ROOT)
-from tools.fusion.utils import patch_configs
+if PROJECT_ROOT not in sys.path:
+    sys.path.append(PROJECT_ROOT)
 
-def setup_module(module):
-    """Patch configuration to use loopback for safe local testing"""
-    print("DEBUG: Patching configs to force loopback for TCP transport tests...")
-    patch_configs(ip_v4="127.0.0.1", root_dir=PROJECT_ROOT, ip_v6="::1")
+from tools.fusion.utils import _get_env as get_environment
+
+def generate_config(env, output_dir):
+    os.makedirs(output_dir, exist_ok=True)
+    config_path = os.path.join(output_dir, "tcp_test_config.json")
+    
+    # Force loopback for this test as it relies on 127.0.0.1 hardcoded in original
+    # But we should use env to be safe, though TCP test usually implies local.
+    
+    ipv4 = "127.0.0.1" # Force loopback for reliability in unit test
+    iface_name = "Loopback Pseudo-Interface 1" if os.name == 'nt' else "lo"
+    
+    config = {
+        "interfaces": {
+            "primary": {
+                "name": iface_name,
+                "endpoints": {
+                    "sd_multicast": {
+                        "ip": "224.0.0.5",
+                        "port": 30890,
+                        "version": 4,
+                        "protocol": "udp"
+                    },
+                    "server_tcp": {
+                        "ip": ipv4,
+                        "port": 0,
+                        "version": 4,
+                        "protocol": "tcp"
+                    }
+                },
+                "sd": {
+                    "endpoint": "sd_multicast"
+                }
+            }
+        },
+        "instances": {
+            "tcp_server": {
+                "providing": {
+                    "math-service": {
+                        "service_id": 4097,
+                        "instance_id": 1,
+                        "major_version": 1,
+                        "offer_on": {
+                            "primary": "server_tcp"
+                        }
+                    }
+                },
+                "sd": {
+                    "cycle_offer_ms": 100
+                },
+                "unicast_bind": {}
+            },
+            "tcp_client": {
+                "required": {
+                    "math-client": {
+                        "service_id": 4097,
+                        "instance_id": 1,
+                        "major_version": 1,
+                        "find_on": [
+                            "primary"
+                        ]
+                    }
+                },
+                "unicast_bind": {}
+            }
+        }
+    }
+    
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=4)
+        
+    return config_path
 
 def test_tcp_transport_cpp_server():
-    config_path = os.path.abspath("tests/tcp_test_config.json")
+    # Determine Log Dir
+    log_dir = os.environ.get("FUSION_LOG_DIR", os.path.join(PROJECT_ROOT, "logs", "test_tcp"))
+    os.makedirs(log_dir, exist_ok=True)
+    
+    env = get_environment()
+    config_path = generate_config(env, log_dir)
+    print(f"Generated config at: {config_path}")
     
     # Start C++ Server
     possible_paths = [
-        os.path.abspath("build/Release/tcp_server_test.exe"),
-        os.path.abspath("build/Debug/tcp_server_test.exe"),
-        os.path.abspath("build/tcp_server_test.exe"),
-        os.path.abspath("build/tcp_server_test"),
-        os.path.abspath("build_wsl/tcp_server_test"),
-        os.path.abspath("build_wsl/Release/tcp_server_test"),
-        os.path.abspath("build_cpp_debug/Release/tcp_server_test.exe"), # Legacy
-        os.path.abspath("build_cpp_debug/tcp_server_test") # Legacy
+        os.path.abspath(os.path.join(PROJECT_ROOT, "build_wsl/Release/tcp_server_test")),
+        os.path.abspath(os.path.join(PROJECT_ROOT, "build_wsl/tcp_server_test")),
+        os.path.abspath(os.path.join(PROJECT_ROOT, "build_linux/tcp_server_test")),
+        os.path.abspath(os.path.join(PROJECT_ROOT, "build/Release/tcp_server_test.exe")),
+        os.path.abspath(os.path.join(PROJECT_ROOT, "build/Debug/tcp_server_test.exe")),
+        os.path.abspath(os.path.join(PROJECT_ROOT, "build/tcp_server_test.exe")),
+        os.path.abspath(os.path.join(PROJECT_ROOT, "build/tcp_server_test")),
     ]
     
     import platform

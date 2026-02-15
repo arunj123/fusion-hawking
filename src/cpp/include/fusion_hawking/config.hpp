@@ -49,8 +49,6 @@ struct SdConfig {
 struct InterfaceSdConfig {
     std::string endpoint;
     std::string endpoint_v6;
-    std::string bind_endpoint_v4;
-    std::string bind_endpoint_v6;
     
     // Legacy/Direct bind support (if needed internally)
     std::string unicast_bind_endpoint; 
@@ -166,7 +164,6 @@ public:
             std::string sd_block = block.substr(sd_start, sd_end - sd_start);
             config.sd_multicast_endpoint = ExtractString(sd_block, "multicast_endpoint");
             config.sd_multicast_endpoint_v6 = ExtractString(sd_block, "multicast_endpoint_v6");
-            
             
             int cycle = ExtractInt(sd_block, "cycle_offer_ms"); if (cycle > 0) config.sd.cycle_offer_ms = cycle;
             int delay = ExtractInt(sd_block, "request_response_delay_ms"); if (delay > 0) config.sd.request_response_delay_ms = delay;
@@ -316,8 +313,7 @@ private:
                 cfg.sd.endpoint = ExtractString(sd_val, "endpoint_v4");
                 if (cfg.sd.endpoint.empty()) cfg.sd.endpoint = ExtractString(sd_val, "endpoint");
                 cfg.sd.endpoint_v6 = ExtractString(sd_val, "endpoint_v6");
-                cfg.sd.bind_endpoint_v4 = ExtractString(sd_val, "bind_endpoint_v4");
-                cfg.sd.bind_endpoint_v6 = ExtractString(sd_val, "bind_endpoint_v6");
+                cfg.sd.endpoint_v6 = ExtractString(sd_val, "endpoint_v6");
             }
 
             map[key] = cfg;

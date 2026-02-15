@@ -27,10 +27,12 @@ unsafe impl Sync for GenericClient {}
 
 #[tokio::main]
 async fn main() {
-    let config_path = "client_config.json";
+    let args: Vec<String> = std::env::args().collect();
+    let default_path = "client_config.json".to_string();
+    let config_path = if args.len() > 1 { &args[1] } else { &default_path };
     let instance_name = "rust_client";
 
-    println!("[Fusion Rust Client] Initializing...");
+    println!("[Fusion Rust Client] Initializing with config: {}", config_path);
     let runtime = SomeIpRuntime::load(config_path, instance_name);
     
     let rt_clone = runtime.clone();

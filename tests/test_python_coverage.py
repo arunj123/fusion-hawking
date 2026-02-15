@@ -1,8 +1,52 @@
 import unittest
 import struct
 import socket
+import json
+import os
 from unittest.mock import MagicMock, patch
+from tools.fusion.utils import _get_env as get_environment
 from fusion_hawking.runtime import SessionIdManager, SomeIpRuntime, MessageType
+
+def generate_config(env, output_dir):
+    """Generate configuration for Python Coverage Unit Tests"""
+    os.makedirs(output_dir, exist_ok=True)
+    config_path = os.path.join(output_dir, "coverage_test_config.json")
+    
+    # Use loopback for unit tests
+    ipv4 = "127.0.0.1" 
+    iface_name = "Loopback Pseudo-Interface 1" if os.name == 'nt' else "lo"
+    
+    config = {
+        "interfaces": {
+            "primary": {
+                "name": iface_name,
+                "endpoints": {
+                    "sd_multicast": {
+                        "ip": "224.0.0.3",
+                        "port": 30890,
+                        "version": 4,
+                        "protocol": "udp"
+                    }
+                },
+                "sd": {
+                    "endpoint": "sd_multicast"
+                }
+            }
+        },
+        "instances": {
+            "test_instance": {
+                "unicast_bind": {},
+                "providing": {},
+                "required": {},
+                "sd": {}
+            }
+        }
+    }
+    
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=4)
+        
+    return config_path
 
 class TestSessionIdManager(unittest.TestCase):
     def test_increment_and_wrap(self):
@@ -36,7 +80,13 @@ class TestSessionIdManager(unittest.TestCase):
 
 class TestRuntimeDetailed(unittest.TestCase):
     def setUp(self):
-        self.runtime = SomeIpRuntime("tests/test_config.json", "test_instance")
+        env = get_environment()
+        PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        log_dir = os.environ.get("FUSION_LOG_DIR", os.path.join(PROJECT_ROOT, "logs", "unit_test_coverage"))
+        os.makedirs(log_dir, exist_ok=True)
+        
+        self.config_path = generate_config(env, log_dir)
+        self.runtime = SomeIpRuntime(self.config_path, "test_instance")
         self.runtime.logger = MagicMock()
         # Mock sockets to prevent network activity
         # Close actual sockets created by init before mocking to avoid ResourceWarning

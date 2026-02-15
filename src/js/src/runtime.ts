@@ -107,9 +107,17 @@ export class SomeIpRuntime {
     private offerTimer: ReturnType<typeof setInterval> | null = null;
     private running = false;
 
-    constructor(logger?: ILogger) {
+    constructor(configPath?: string, instanceName?: string, logger?: ILogger) {
         this.logger = logger ?? new ConsoleLogger();
         this.packetDump = process.env.FUSION_PACKET_DUMP === "1" || process.env.FUSION_PACKET_DUMP === "true";
+        if (configPath) {
+            try {
+                this.config = loadConfig(configPath, instanceName);
+                this.logger.log(LogLevel.INFO, 'Runtime', `Config loaded from ${configPath}${instanceName ? ` (instance: ${instanceName})` : ''}`);
+            } catch (err: any) {
+                this.logger.log(LogLevel.ERROR, 'Runtime', `Failed to load config: ${err.message}`);
+            }
+        }
     }
 
     private _resolveInterfaceIp(ifaceName: string, family: 4 | 6): string | undefined {
@@ -244,16 +252,6 @@ export class SomeIpRuntime {
                         if (ep.version === 4) bindIpV4 = ep.ip;
                         else if (ep.version === 6) bindIpV6 = ep.ip;
                     }
-                }
-
-                // 2. Check SD bind endpoints (Legacy/Specific)
-                if (!bindIpV4 && ifaceCfg.sd.bindEndpointV4) {
-                    const epName = ifaceCfg.sd.bindEndpointV4;
-                    if (ifaceCfg.endpoints[epName]) bindIpV4 = ifaceCfg.endpoints[epName].ip;
-                }
-                if (!bindIpV6 && ifaceCfg.sd.bindEndpointV6) {
-                    const epName = ifaceCfg.sd.bindEndpointV6;
-                    if (ifaceCfg.endpoints[epName]) bindIpV6 = ifaceCfg.endpoints[epName].ip;
                 }
 
                 // 3. Fallback: Try to find IPs from any endpoint on this interface

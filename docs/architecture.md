@@ -56,7 +56,7 @@ The system uses a strict **Configuration-Driven Architecture** where deployment 
 
 The runtime binds services to endpoints defined in the configuration.
 *   **SD Multicast**: Uses a specific endpoint for the Multicast Group.
-*   **SD Bind**: Uses a dedicated `bind_endpoint` (if configured) or the interface's local unicast IP. This supports platform-specific binding requirements (e.g., Windows Loopback) without polluting runtime code with OS-specific logic.
+*   **SD Bind**: Uses a dedicated `unicast_bind` (if configured) or the interface's local unicast IP. This supports platform-specific binding requirements (e.g., Windows Loopback) without polluting runtime code with OS-specific logic.
 
 ![Configuration Architecture](images/config_architecture.png)
 

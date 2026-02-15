@@ -226,16 +226,13 @@ impl SomeIpRuntime {
             if let Some(ep) = v4_ep {
                 // Determine bind IP: 
                 // 1. Instance-level unicast_bind for this interface
-                // 2. Configured bind_endpoint in SD config
+                // 2. First Unicast Endpoint or Local IP
                 // 3. Local unicast IP
                 let instance_bind_ip = instance_config.unicast_bind.get(alias)
                     .and_then(|name| iface_cfg.endpoints.get(name))
                     .and_then(|e| e.ip.parse::<Ipv4Addr>().ok());
 
                 let bind_ip = instance_bind_ip
-                    .or_else(|| sd_cfg.bind_endpoint_v4.as_ref()
-                        .and_then(|name| iface_cfg.endpoints.get(name))
-                        .and_then(|e| e.ip.parse::<Ipv4Addr>().ok()))
                     .or(local_ip_v4);
 
                 let bind_ip = bind_ip.unwrap_or_else(|| {
@@ -271,9 +268,6 @@ impl SomeIpRuntime {
                     .and_then(|e| e.ip.parse::<Ipv6Addr>().ok());
 
                 let bind_ip = instance_bind_ip
-                    .or_else(|| sd_cfg.bind_endpoint_v6.as_ref()
-                        .and_then(|name| iface_cfg.endpoints.get(name))
-                        .and_then(|e| e.ip.parse::<Ipv6Addr>().ok()))
                     .or(local_ip_v6);
 
                 let bind_ip = bind_ip.unwrap_or_else(|| {

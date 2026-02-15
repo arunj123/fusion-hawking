@@ -20,8 +20,6 @@ pub struct MulticastConfig {
 pub struct InterfaceSdConfig {
     pub endpoint_v4: Option<String>,
     pub endpoint_v6: Option<String>,
-    pub bind_endpoint_v4: Option<String>,
-    pub bind_endpoint_v6: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

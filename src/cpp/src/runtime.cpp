@@ -133,12 +133,10 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
         ctx->alias = alias;
         ctx->ip = if_cfg.name; // Initial default
 
-        // Resolve Bind IP using unicast_bind > sd.bind_endpoint_v4 > First Unicast Endpoint
+        // Resolve Bind IP using unicast_bind > First Unicast Endpoint
         std::string bind_ep_name_v4 = "";
         if (config.unicast_bind.count(alias)) {
             bind_ep_name_v4 = config.unicast_bind.at(alias);
-        } else if (!if_cfg.sd.bind_endpoint_v4.empty()) {
-            bind_ep_name_v4 = if_cfg.sd.bind_endpoint_v4;
         }
 
         if (!bind_ep_name_v4.empty() && if_cfg.endpoints.count(bind_ep_name_v4)) {
@@ -157,9 +155,7 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
         // IPv6 Bind IP logic
         std::string bind_ep_name_v6 = "";
         // unicast_bind might point to v6? Check if the v4 lookup failed or yielded v6 (unlikely due to map type)
-        if (!if_cfg.sd.bind_endpoint_v6.empty()) {
-            bind_ep_name_v6 = if_cfg.sd.bind_endpoint_v6;
-        }
+        // unicast_bind might point to v6? Check if the v4 lookup failed or yielded v6 (unlikely due to map type)
         
         if (!bind_ep_name_v6.empty() && if_cfg.endpoints.count(bind_ep_name_v6)) {
              const auto& ep = if_cfg.endpoints.at(bind_ep_name_v6);

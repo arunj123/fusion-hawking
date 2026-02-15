@@ -6,8 +6,9 @@ async function main() {
     const logger = new ConsoleLogger();
     const runtime = new SomeIpRuntime(logger);
 
-    console.log("[JS Client] Loading config...");
-    await runtime.loadConfigFile('./tests/interop_multi_config.json', 'js_client');
+    const configPath = process.argv[2] || './tests/interop_multi_config.json';
+    console.log(`[JS Client] Loading config from ${configPath}...`);
+    await runtime.loadConfigFile(configPath, 'js_client');
 
     console.log("[JS Client] Starting runtime...");
     await runtime.start();

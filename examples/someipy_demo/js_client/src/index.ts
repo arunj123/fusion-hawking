@@ -14,7 +14,9 @@ const SERVICE_ID = 0x1234;
 const METHOD_ECHO = 0x0001;
 
 async function main(): Promise<void> {
-    const configPath = path.join(__dirname, '..', '..', 'client_config.json');
+    const args = process.argv.slice(2);
+    const configPath = args.length > 0 ? args[0] : path.join(__dirname, '..', '..', 'client_config.json');
+    console.log(`[Fusion JS Client] Loading config from ${configPath}`);
 
     const runtime = new SomeIpRuntime();
     await runtime.loadConfigFile(configPath, 'js_client');

@@ -71,7 +71,14 @@ def main():
     print("=== ADAS Application Demo (Python) ===")
     print("Subscribing to FusionService events...")
     
-    rt = SomeIpRuntime("examples/automotive_pubsub/config.json", "adas_python_instance")
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("config_path", nargs="?", default="examples/automotive_pubsub/config.json", help="Path to configuration")
+    args = parser.parse_args()
+    
+    config_path = args.config_path
+    
+    rt = SomeIpRuntime(config_path, "adas_python_instance")
     rt.logger.log(LogLevel.INFO, "Main", "ADAS Application starting...")
     rt.start()
     

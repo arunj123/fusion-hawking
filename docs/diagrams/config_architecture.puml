@@ -19,13 +19,11 @@ package "Deployment Configuration (config.json)" {
 
     class "SD Configuration" as SdCfg {
         multicast_group: Endpoint
-        bind_endpoint: Endpoint (Optional)
     }
 
     Iface *-- "1..*" Ep : Defines
     Iface *-- "0..1" SdCfg : Contains
     SdCfg --> Ep : References (Group)
-    SdCfg ..> Ep : References (Bind)
 }
 
 package "Application Runtime" {

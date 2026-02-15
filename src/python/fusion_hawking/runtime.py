@@ -102,13 +102,12 @@ class SomeIpRuntime:
             inst = data.get('instances', {}).get(name, {})
             ifaces = data.get('interfaces', {})
             eps = data.get('endpoints', {})
-            if not ifaces and eps:
-                ifaces = {"primary": {"name": "lo", "endpoints": eps, "sd": {}}}
-                if 'sd' in inst:
-                    if 'multicast_endpoint' in inst['sd']: ifaces["primary"]["sd"]["endpoint_v4"] = inst['sd']['multicast_endpoint']
-                    if 'multicast_endpoint_v6' in inst['sd']: ifaces["primary"]["sd"]["endpoint_v6"] = inst['sd']['multicast_endpoint_v6']
+            if not inst:
+                print(f"ERROR: Instance '{name}' not found in {path}")
             return inst, ifaces, eps
-        except: return {}, {}, {}
+        except Exception as e:
+            print(f"ERROR: Failed to load config from {path}: {e}")
+            return {}, {}, {}
 
     def _setup_sd(self):
         for alias, iface in self.interfaces.items():
