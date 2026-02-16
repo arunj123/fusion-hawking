@@ -59,8 +59,22 @@ class NetworkEnvironment:
         self.vnet_has_multicast = False
         
     def detect(self):
-        """Run full environment detection. Call once at startup."""
-        self._detect_os()
+        """Detect current network environment capabilities."""
+        # 0. Forced No-VNet Override
+        if os.environ.get("FUSION_NO_VNET") == "1":
+            self.platform = sys.platform
+            self.is_wsl = "microsoft" in platform.release().lower()
+            self.has_vnet = False # Forced False
+            self.has_netns = False
+            self.has_veth = False
+            self.interfaces = {} # Minimal/empty or re-scan properly without vnet assumptions
+            # Still detect basic interfaces for physical run
+            self._detect_network_interfaces() # Corrected from _detect_interfaces()
+            return
+
+        # 1. Platform & WSL
+        self.platform = sys.platform
+        self._detect_os() # Kept original _detect_os() call as it sets os_type and distro
         self._detect_privileges()
         self._detect_network_interfaces()
         self._detect_capabilities()

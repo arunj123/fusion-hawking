@@ -271,8 +271,7 @@ export class SomeIpRuntime {
                 const ctx: InterfaceContext = { alias, ip: bindIpV4 ?? '', ipV6: bindIpV6 ?? '', transport: null as any, sdTransport: null as any };
 
                 if (bindIpV4) {
-                    const isWindows = os.platform() === 'win32';
-                    const mainBindTarget = isWindows ? '0.0.0.0' : bindIpV4;
+                    const mainBindTarget = bindIpV4;
                     const mainTransport = new UdpTransport('udp4', this.logger);
                     await mainTransport.bind(mainBindTarget, bindPort);
                     mainTransport.onMessage((data, rinfo) => this.handleMessage(data, rinfo, ctx));
@@ -283,7 +282,9 @@ export class SomeIpRuntime {
                         // Bind to local interface IP from config.
 
                         const isWindows = os.platform() === 'win32';
-                        const bindTarget = isWindows ? '0.0.0.0' : sdEp.ip;
+                        // Windows: Bind to Unicast Interface IP (Strict)
+                        // Linux: Bind to Multicast Group IP
+                        const bindTarget = isWindows ? bindIpV4 : sdEp.ip;
 
                         await sdTransport.bind(bindTarget!, sdEp.port);
 

@@ -26,6 +26,7 @@ def _check_vnet_available():
         return False
 
 pytestmark = [
+    pytest.mark.needs_netns,
     pytest.mark.skipif(
         not _check_vnet_available(),
         reason="Requires VNet setup (run tools/fusion/scripts/setup_vnet.sh)"

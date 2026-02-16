@@ -27,14 +27,60 @@ class Builder:
 
     def generate_bindings(self):
         import sys
-        # Generate all bindings in one call to avoid overwriting files
-        cmd = [
-            sys.executable, "-m", "tools.codegen.main", 
+        
+        # IDL Files
+        idl_files = [
             "examples/integrated_apps/interface.py",
             "examples/automotive_pubsub/interface.py",
             "examples/versioning_demo/interface.py"
         ]
-        return self.run_command(cmd, "codegen_all")
+        
+        # Output directory and marker
+        output_dir = "build/generated"
+        marker_file = os.path.join(output_dir, ".codegen_timestamp")
+
+        # Check if we should regenerate
+        regenerate = False
+        if not os.path.exists(marker_file):
+            print("[codegen] Marker file not found. Regenerating...")
+            regenerate = True
+        else:
+            try:
+                marker_mtime = os.path.getmtime(marker_file)
+                for idl in idl_files:
+                    path = os.path.abspath(idl)
+                    if not os.path.exists(path):
+                         # If input file is missing, let the tool fail or handle it
+                         continue
+                    
+                    if os.path.getmtime(path) > marker_mtime:
+                        print(f"[codegen] File {idl} changed. Regenerating...")
+                        regenerate = True
+                        break
+            except Exception as e:
+                print(f"[codegen] Error checking timestamps: {e}. Regenerating...")
+                regenerate = True
+
+        if not regenerate:
+            print("[codegen] Bindings are up-to-date. Skipping generation.")
+            return True
+
+        # Generate all bindings in one call to avoid overwriting files
+        cmd = [sys.executable, "-m", "tools.codegen.main"] + idl_files
+        
+        success = self.run_command(cmd, "codegen_all")
+        
+        if success:
+             # Update marker
+             try:
+                 if not os.path.exists(output_dir): os.makedirs(output_dir)
+                 with open(marker_file, "w") as f:
+                     import datetime
+                     f.write(str(datetime.datetime.now()))
+             except Exception as e:
+                 print(f"[codegen] Warning: Could not update marker: {e}")
+                 
+        return success
 
     def build_rust(self, packet_dump=False):
         # Core + simple bins

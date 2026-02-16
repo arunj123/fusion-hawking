@@ -190,8 +190,8 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
             sockaddr_in sd_addr = {0};
             sd_addr.sin_family = AF_INET;
 #ifdef _WIN32
-            // Windows: Bind to INADDR_ANY to allow multiple processes to share the multicast port
-            sd_addr.sin_addr.s_addr = INADDR_ANY;
+            // Windows: Strict binding to the Interface IP (matches verification script)
+            sd_addr.sin_addr.s_addr = inet_addr(ctx->ip.c_str());
 #else
             // Linux: Bind to Multicast Group IP to allow reception
             // Binding to Unicast IP blocks multicast packets on Linux

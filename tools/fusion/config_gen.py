@@ -508,10 +508,14 @@ class SmartConfigFactory:
                 endpoints = {
                     "sd_mcast_v4": {"ip": self.SD_MCAST_V4, "port": 30892, "version": 4, "protocol": "udp"},
                     "event_mcast": {"ip": self.EVENT_MCAST_V4, "port": self.EVENT_MCAST_V4_PORT, "version": 4, "protocol": "udp"},
-                    "radar_ep":    self._make_endpoint(ecus['ecu1']['ipv4'], 0, "udp"),
-                    "fusion_ep":   self._make_endpoint(ecus['ecu2']['ipv4'], 0, "udp"),
                     "sd_uc_v4":    self._make_endpoint(ipv4, 0, "udp"),
                 }
+                
+                # Add instance-specific endpoints
+                if name == 'ecu1':
+                    endpoints["radar_ep"] = self._make_endpoint(ecus['ecu1']['ipv4'], 0, "udp")
+                elif name == 'ecu2':
+                    endpoints["fusion_ep"] = self._make_endpoint(ecus['ecu2']['ipv4'], 0, "udp")
                 
                 if include_v6:
                     endpoints["sd_mcast_v6"] = {"ip": self.SD_MCAST_V6, "port": 30892, "version": 6, "protocol": "udp"}

@@ -58,6 +58,7 @@ class TestUseCases:
     VNet-isolated configuration use-case tests.
     Each test creates its own IntegrationTestContext with a custom topology.
     """
+    pytestmark = [pytest.mark.needs_netns]
     
     def setup_method(self):
         """Ensure VNet is available before each test."""

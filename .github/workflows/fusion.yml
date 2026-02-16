@@ -576,8 +576,10 @@ jobs:
     - name: Setup Virtual Network
       run: sudo bash tools/fusion/scripts/setup_vnet.sh
     - name: Run VNET Tests
+      # Runs via main.py, which detects VNet and runs sequential tests (No-VNet -> VNet)
+      # We use --target python since VNet tests are primarily Python-based for now.
       run: |
-        sudo python3 -m pytest tests/test_vnet_sd.py -v --junitxml=logs/vnet-results.xml 2>&1 | tee logs/vnet-test.log
+        sudo python3 -m tools.fusion.main --stage test --target python --base-port 400 --no-dashboard
     - name: Teardown Virtual Network
       if: always()
       run: sudo bash tools/fusion/scripts/teardown_vnet.sh

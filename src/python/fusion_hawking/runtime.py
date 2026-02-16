@@ -157,8 +157,8 @@ class SomeIpRuntime:
                     except Exception as e:
                         self.logger.log(LogLevel.WARN, "Runtime", f"Failed to set SO_BINDTODEVICE on {iface_name}: {e}")
             else:
-                # On Windows/others, bind to "" to allow multiple processes to bind to the same port with SO_REUSEADDR
-                s.bind(("", port))
+                # Windows/others: Strict binding to interface IP
+                s.bind((iface_ip, port))
 
             print(f"DEBUG: Setting IP_ADD_MEMBERSHIP {m_ip} on {iface_ip} ({iface_name})")
             s.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, struct.pack("4s4s", socket.inet_aton(m_ip), socket.inet_aton(iface_ip)))
