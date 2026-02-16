@@ -370,6 +370,15 @@ class SmartConfigFactory:
                     "fusion-client": {"service_id": 28674, "instance_id": 1, "major_version": 1, "find_on": ["primary"]}
                 }
             )
+            
+            gen3.add_instance("js_app_instance",
+                unicast_bind={"primary": "sd_uc_v4"},
+                required={
+                    "math-client": {"service_id": 4097, "instance_id": 1, "major_version": 1, "find_on": ["primary"]},
+                    "string-client": {"service_id": 8193, "instance_id": 1, "major_version": 1, "find_on": ["primary"]},
+                }
+            )
+            
             gen3.save(os.path.join(output_dir, "config_ecu3.json"))
             logger.info("Generated distributed configs (ecu1,ecu2,ecu3) in " + output_dir)
             return output_dir

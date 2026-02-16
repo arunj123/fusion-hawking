@@ -43,8 +43,8 @@ class AdasApplication {
 async function main() {
     console.log("=== ADAS Application Demo (JS/TS) ===");
 
-    // Path to config in parent mock directory
-    const configPath = path.resolve('../config.json');
+    // Path to config from command line or default
+    const configPath = process.argv[2] || path.resolve('../config.json');
     const runtime = new SomeIpRuntime();
     await runtime.loadConfigFile(configPath);
 

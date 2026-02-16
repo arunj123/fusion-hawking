@@ -42,18 +42,33 @@ class AppRunner:
         # Handle sudo and namespaces
         if sys.platform == "linux":
             prefix = []
+            
+            # Root prefix
             if self.use_sudo:
                 prefix = ["sudo"]
                 if self.is_ci:
-                    prefix.append("-n") # Non-interactive in CI
+                    prefix.append("-n")
+            elif self.ns and os.geteuid() != 0:
+                # netns always needs sudo
+                prefix = ["sudo"]
+                if self.is_ci:
+                    prefix.append("-n")
             
             if self.ns:
                 prefix.extend(["ip", "netns", "exec", self.ns])
-                # If we use netns, we almost certainly need sudo unless running as root
-                if not self.use_sudo and os.geteuid() != 0:
-                    prefix = ["sudo"] + (["-n"] if self.is_ci else []) + ["ip", "netns", "exec", self.ns]
             
-            final_cmd = prefix + final_cmd
+            # Environment wrapper
+            # sudo -E is sometimes blocked, so we explicitly set key variables via 'env'
+            env_cmd = ["env"]
+            if "PYTHONPATH" in self.env:
+                env_cmd.append(f"PYTHONPATH={self.env['PYTHONPATH']}")
+            
+            # Always pass HOME so users can find .npm etc
+            home = self.env.get('HOME') or os.environ.get('HOME')
+            if home:
+                env_cmd.append(f"HOME={home}")
+            
+            final_cmd = prefix + env_cmd + final_cmd
             
         return final_cmd
 

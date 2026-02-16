@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import sys
 import os
@@ -65,6 +66,41 @@ async def main():
     set_someipy_log_level(logging.INFO)
     
     interface_ip = DEFAULT_INTERFACE_IP
+    config_path = None
+    
+    # Check for Fusion config (positional or --config)
+    if len(sys.argv) > 1 and not sys.argv[1].startswith("-"):
+        config_path = sys.argv[1]
+    elif "--config" in sys.argv:
+        idx = sys.argv.index("--config")
+        if idx + 1 < len(sys.argv):
+            config_path = sys.argv[idx+1]
+            
+    if config_path:
+        try:
+            with open(config_path, "r") as f:
+                cfg = json.load(f)
+                # Try to extract IP from instances (PythonService)
+                if "instances" in cfg and "PythonService" in cfg["instances"]:
+                    inst = cfg["instances"]["PythonService"]
+                    bind_key = inst.get("unicast_bind", {}).get("primary")
+                    if bind_key and "interfaces" in cfg:
+                        iface = cfg["interfaces"].get("primary")
+                        if iface and bind_key in iface["endpoints"]:
+                             interface_ip = iface["endpoints"][bind_key]["ip"]
+                             print(f"[someipy Service] Resolved IP from PythonService config: {interface_ip}")
+                elif "interfaces" in cfg:
+                    # Fallback to primary iface IP
+                    iface = cfg["interfaces"].get("primary") or next(iter(cfg["interfaces"].values()))
+                    # find first non-mcast endpoint
+                    for ep in iface["endpoints"].values():
+                        if not ep.get("ip", "").startswith("224.") and not ep.get("ip", "").startswith("ff"):
+                            interface_ip = ep["ip"]
+                            print(f"[someipy Service] Resolved IP from primary interface: {interface_ip}")
+                            break
+        except Exception as e:
+            print(f"[someipy Service] Error reading config {config_path}: {e}")
+
     if "--interface_ip" in sys.argv:
         idx = sys.argv.index("--interface_ip")
         if idx + 1 < len(sys.argv):

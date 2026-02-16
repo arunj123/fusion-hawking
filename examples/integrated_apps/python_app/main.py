@@ -8,7 +8,8 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')
 sys.path.insert(0, os.path.join(ROOT, 'build', 'generated', 'python'))
 sys.path.insert(0, os.path.join(ROOT, 'src', 'python'))
 
-from runtime import SomeIpRuntime, StringServiceStub, StringServiceClient, MathServiceClient, MathServiceStub, DiagnosticServiceStub, ComplexTypeServiceClient, SortServiceClient, LogLevel
+from fusion_hawking import SomeIpRuntime, LogLevel, ConsoleLogger
+from runtime import StringServiceStub, StringServiceClient, MathServiceClient, MathServiceStub, DiagnosticServiceStub, ComplexTypeServiceClient, SortServiceClient
 from bindings import *
 
 
@@ -40,9 +41,14 @@ class MathImpl(MathServiceStub):
 def main():
     # Default config from parent directory
     default_config = os.path.join(os.path.dirname(__file__), "..", "config.json")
-    config_path = sys.argv[1] if len(sys.argv) > 1 else default_config
-    
-    rt = SomeIpRuntime(config_path, "python_app_instance")
+    logger = ConsoleLogger()
+    logger.log(LogLevel.INFO, "Main", "=== Integrated Python Application ===")
+
+    config_path = "examples/integrated_apps/config.json"
+    if len(sys.argv) > 1:
+        config_path = sys.argv[1]
+
+    rt = SomeIpRuntime(config_path, "python_app_instance", logger)
     rt.logger.log(LogLevel.INFO, "Main", f"--- Python Runtime Expanded Demo (Config: {config_path}) ---")
     rt.start()
     

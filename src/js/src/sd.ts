@@ -91,7 +91,7 @@ export function parseSdOptions(buf: Buffer, offset: number): SdOption[] {
     const optsLen = buf.readUInt32BE(offset);
     const options: SdOption[] = [];
     let pos = offset + 4;
-    const end = pos + optsLen;
+    const end = Math.min(pos + optsLen, buf.length);
     while (pos + 4 <= end) {
         const optLen = buf.readUInt16BE(pos);
         const optType = buf[pos + 2] as SdOptionType;
@@ -121,7 +121,7 @@ export function parseSdOptions(buf: Buffer, offset: number): SdOption[] {
         }
 
         options.push({ length: optLen, type: optType, ipAddress, protocol, port });
-        pos += 3 + optLen; // Length excludes Type
+        pos += 3 + optLen; // Length field is 2 bytes, specifies remaining bytes AFTER Type(1)
     }
     return options;
 }

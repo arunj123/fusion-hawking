@@ -46,6 +46,9 @@ endif()
 # 3. Integrated App Demo (Required for CI Artifacts)
 add_subdirectory(examples/integrated_apps/cpp_app)
 
+# 4. Automotive PubSub Demo
+add_subdirectory(examples/automotive_pubsub/cpp_radar)
+
 # 3. C++ Unit Test
 add_executable(cpp_test tests/cpp_test.cpp)
 target_link_libraries(cpp_test fusion_hawking_cpp)

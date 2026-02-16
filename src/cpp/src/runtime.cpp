@@ -247,12 +247,18 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
                 // Bind SD socket to the local interface IPv6 from config.
                 if (!ctx->ip_v6.empty()) {
                     inet_pton(AF_INET6, ctx->ip_v6.c_str(), &sd_addr6.sin6_addr);
+                    if (bind(ctx->sd_sock_v6, (struct sockaddr*)&sd_addr6, sizeof(sd_addr6)) < 0) {
+                        this->logger->Log(LogLevel::WARN, "Runtime", "Failed to bind IPv6 SD socket on " + alias);
+                    }
                 } else {
-                    this->logger->Log(LogLevel::ERR, "Runtime", "No IPv6 address configured for SD bind on " + alias);
-                    continue;
-                }
-                if (bind(ctx->sd_sock_v6, (struct sockaddr*)&sd_addr6, sizeof(sd_addr6)) < 0) {
-                    this->logger->Log(LogLevel::WARN, "Runtime", "Failed to bind IPv6 SD socket on " + alias);
+                    this->logger->Log(LogLevel::WARN, "Runtime", "No IPv6 address configured for SD bind on " + alias + ". Skipping IPv6 SD.");
+                    // Close the socket as we won't use it
+#ifdef _WIN32
+                    closesocket(ctx->sd_sock_v6);
+#else
+                    close(ctx->sd_sock_v6);
+#endif
+                    ctx->sd_sock_v6 = -1;
                 }
 
                 int loop6 = 1;

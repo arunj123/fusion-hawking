@@ -76,12 +76,17 @@ private:
 };
 
 
-int main() {
+int main(int argc, char** argv) {
     auto logger = std::make_shared<ConsoleLogger>();
     logger->Log(LogLevel::INFO, "Main", "=== Radar Publisher Demo (C++) ===");
     logger->Log(LogLevel::INFO, "Main", "Simulating radar sensor, publishing detections...");
 
-    SomeIpRuntime rt("examples/automotive_pubsub/config.json", "radar_cpp_instance", logger);
+    std::string config_path = "examples/automotive_pubsub/config.json";
+    if (argc > 1) {
+        config_path = argv[1];
+    }
+
+    SomeIpRuntime rt(config_path, "radar_cpp_instance", logger);
 
     RadarServiceImpl radar_svc(&rt, logger);
     rt.offer_service("radar-service", &radar_svc);

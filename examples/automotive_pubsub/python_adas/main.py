@@ -14,10 +14,13 @@ import os
 import time
 
 # Path setup
-sys.path.insert(0, os.path.join(os.getcwd(), 'build', 'generated', 'python'))
-sys.path.insert(0, os.path.join(os.getcwd(), 'src', 'python'))
+# In the test environment, PYTHONPATH is set. We only add relative paths for local dev.
+if os.path.exists(os.path.join(os.getcwd(), 'src', 'python')):
+    sys.path.insert(0, os.path.join(os.getcwd(), 'src', 'python'))
+if os.path.exists(os.path.join(os.getcwd(), 'build', 'generated', 'python')):
+    sys.path.insert(0, os.path.join(os.getcwd(), 'build', 'generated', 'python'))
 
-from runtime import SomeIpRuntime, LogLevel
+from fusion_hawking import SomeIpRuntime, LogLevel, ConsoleLogger
 
 
 # Mock FusedTrack for demo purposes (would normally be generated)
@@ -72,13 +75,14 @@ def main():
     print("Subscribing to FusionService events...")
     
     import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("config_path", nargs="?", default="examples/automotive_pubsub/config.json", help="Path to configuration")
-    args = parser.parse_args()
-    
-    config_path = args.config_path
-    
-    rt = SomeIpRuntime(config_path, "adas_python_instance")
+    logger = ConsoleLogger()
+    logger.log(LogLevel.INFO, "Main", "=== ADAS Application (Python) ===")
+
+    config_path = "examples/automotive_pubsub/config.json"
+    if len(sys.argv) > 1:
+        config_path = sys.argv[1]
+
+    rt = SomeIpRuntime(config_path, "adas_py_instance", logger)
     rt.logger.log(LogLevel.INFO, "Main", "ADAS Application starting...")
     rt.start()
     

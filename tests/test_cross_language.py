@@ -75,6 +75,18 @@ def ctx():
                                             os.path.join(PROJECT_ROOT, "build", "generated", "python")])
         c.add_runner("python", [sys.executable, "-u", "main.py", py_config], cwd=py_demo_dir, env=env, ns=ns_python).start()
 
+        # 4. JS (ECU3 - collocated with Python)
+        js_app_dir = os.path.join(PROJECT_ROOT, "examples", "integrated_apps", "js_app")
+        if os.path.exists(js_app_dir):
+            npm_bin = "npm.cmd" if os.name == 'nt' else "npm"
+            # Build if needed - we'll assume it's pre-built or handle installation
+            # In a test, we might already have it built, but let's be safe
+            if os.name != 'nt':
+                 subprocess.run([npm_bin, "install"], cwd=js_app_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                 subprocess.run([npm_bin, "run", "build"], cwd=js_app_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            c.add_runner("js", ["node", "dist/index.js", py_config], cwd=js_app_dir, ns=ns_python).start()
+
         time.sleep(5)
         yield c
 
@@ -160,3 +172,23 @@ def test_python_to_cpp_sort(ctx):
     ctx.get_runner("cpp").clear_output()
     assert ctx.get_runner("python").wait_for_output("Sending Sort...", timeout=10)
     assert ctx.get_runner("cpp").wait_for_output("Sorting 5 items", timeout=10)
+
+@pytest.mark.needs_multicast
+def test_rust_to_cpp_sort(ctx):
+    """Verify Rust client calls C++ SortService"""
+    ctx.get_runner("cpp").clear_output()
+    assert ctx.get_runner("cpp").wait_for_output("Sorting 3 items", timeout=20)
+
+@pytest.mark.needs_multicast
+def test_js_rpc_to_rust(ctx):
+    """Verify JS client calls Rust MathService"""
+    if ctx.get_runner("js") is None: pytest.skip("JS runner not available")
+    # Don't clear output; the JS runner might have finished before we got here
+    assert ctx.get_runner("js").wait_for_output("Result:", timeout=30)
+
+@pytest.mark.needs_multicast
+def test_js_rpc_to_python(ctx):
+    """Verify JS client calls Python StringService"""
+    if ctx.get_runner("js") is None: pytest.skip("JS runner not available")
+    # Result: 'OLLEH'
+    assert ctx.get_runner("js").wait_for_output("Result: '", timeout=30)

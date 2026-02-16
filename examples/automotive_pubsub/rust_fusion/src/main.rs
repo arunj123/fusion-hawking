@@ -16,7 +16,7 @@ use std::thread;
 use std::time::Duration;
 
 pub mod generated {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/build/generated/rust/mod.rs"));
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../build/generated/rust/mod.rs"));
 }
 
 use generated::{
@@ -78,7 +78,14 @@ impl FusionServiceProvider for FusionImpl {
 }
 
 fn main() {
-    let rt = SomeIpRuntime::load("examples/automotive_pubsub/config.json", "fusion_rust_instance");
+    let args: Vec<String> = std::env::args().collect();
+    let config_path = if args.len() > 1 {
+        &args[1]
+    } else {
+        "examples/automotive_pubsub/config.json"
+    };
+
+    let rt = SomeIpRuntime::load(config_path, "fusion_rust_instance");
     let logger = rt.get_logger();
     
     logger.log(LogLevel::Info, "Main", "=== Fusion Node Demo (Rust) ===");
@@ -103,7 +110,8 @@ fn main() {
         RadarServiceClient::SERVICE_ID,
         1,  // instance_id
         1,  // eventgroup_id
-        100 // TTL
+        100, // TTL
+        "primary"
     );
 
     logger.log(LogLevel::Info, "Main", "FusionService offered. Waiting for radar events...");

@@ -7,9 +7,16 @@ import sys
 import datetime
 import shutil
 
-from .utils import _get_env as get_environment
-from .config_gen import SmartConfigFactory
-from .execution import AppRunner
+import sys
+import os
+
+# Ensure project root is in sys.path
+sys.path.insert(0, os.getcwd())
+
+from tools.fusion.utils import _get_env as get_environment
+from tools.fusion.config_gen import SmartConfigFactory
+from tools.fusion.report import Reporter as TestReporter
+from tools.fusion.execution import AppRunner
 
 class Tester:
     def __init__(self, reporter, builder, env_caps=None):
@@ -50,22 +57,65 @@ class Tester:
                     subprocess.run(["fuser", "-k", f"{port}/tcp"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except Exception: pass
 
+    def _get_flattened_caps(self):
+        """Flatten nested NetworkEnvironment capabilities into a simple dict."""
+        caps = {}
+        if not self.env_caps:
+            return caps
+            
+        # OS and Basic info
+        caps['os'] = self.env_caps.get('os')
+        caps['is_wsl'] = self.env_caps.get('is_wsl', False)
+        
+        # Determine if we are using the nested structure (NetworkEnvironment.to_dict)
+        # or the legacy flat structure (detect_environment)
+        is_nested = 'capabilities' in self.env_caps
+        
+        if is_nested:
+            # New format (NetworkEnvironment.to_dict)
+            base_caps = self.env_caps.get('capabilities', {})
+            caps['has_ipv4'] = base_caps.get('ipv4', False)
+            caps['has_ipv6'] = base_caps.get('ipv6', False)
+            caps['has_multicast'] = base_caps.get('multicast', False)
+            
+            vnet = self.env_caps.get('vnet', {})
+            caps['has_netns'] = vnet.get('available', False)
+            caps['has_veth'] = vnet.get('available', False)
+        else:
+            # Legacy flat format (detect_environment)
+            caps['has_ipv4'] = self.env_caps.get('has_ipv4', False)
+            caps['has_ipv6'] = self.env_caps.get('has_ipv6', False)
+            caps['has_multicast'] = self.env_caps.get('has_multicast', False)
+            caps['has_netns'] = self.env_caps.get('has_netns', False)
+            caps['has_veth'] = self.env_caps.get('has_veth', False)
+        
+        return caps
+
     def _build_pytest_marker_expr(self):
         """Build a pytest -m expression to deselect tests whose required
         capabilities are not present in the current environment."""
-        caps = self.env_caps
+        caps = self._get_flattened_caps()
+        
+        # Explicit check for mandatory capabilities used in markers
+        # If they are missing from detect, they default to False
+        has_netns = caps.get('has_netns', False)
+        has_multicast = caps.get('has_multicast', False)
+        has_ipv6 = caps.get('has_ipv6', False)
+        has_veth = caps.get('has_veth', False)
+
         excluded = []
-        if not caps.get('has_netns'):
+        if not has_netns:
             excluded.append('needs_netns')
-        if not caps.get('has_multicast'):
+        if not has_multicast:
             excluded.append('needs_multicast')
-        if not caps.get('has_ipv6'):
+        if not has_ipv6:
             excluded.append('needs_ipv6')
-        if not caps.get('has_veth'):
+        if not has_veth:
             excluded.append('needs_veth')
         
         # Always print caps for debugging
-        print(f"  [caps] Environment: {caps}")
+        print(f"  [caps] env_caps keys: {list(self.env_caps.keys())}")
+        print(f"  [caps] Flattened Caps: {caps}")
         
         if excluded:
             expr = ' and '.join(f'not {m}' for m in excluded)
@@ -111,7 +161,10 @@ class Tester:
                         f.write(line)
                         f.flush()
                 
-                return process.poll() == 0
+                return_code = process.wait()
+                if return_code != 0:
+                    print(f"  [error] Command failed with exit code {return_code}")
+                return return_code == 0
         except Exception as e:
             print(f"Error running {cmd}: {e}")
             return False
@@ -331,406 +384,105 @@ class Tester:
             return "FAIL"
 
 
-    def _prebuild_rust_demo(self):
-        """Builds the Rust demo app to avoid compilation delays during runtime."""
-        print("  Pre-building Rust Demo...")
-        cmd = ["cargo", "build"]
-        cwd = "examples/integrated_apps/rust_app"
-        subprocess.run(cmd, cwd=cwd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    def _run_demo_pytest(self, test_file, log_name, description):
+        """Helper to run a demo via pytest and capture results."""
+        results = {"steps": []}
+        log_dir = os.path.join(self.reporter.raw_logs_dir, "demos", log_name)
+        os.makedirs(log_dir, exist_ok=True)
+        
+        env = os.environ.copy()
+        # Ensure project modules and generated bindings are in path
+        env["PYTHONPATH"] = os.pathsep.join([
+            os.getcwd(),
+            os.path.join(os.getcwd(), "src/python"),
+            os.path.join(os.getcwd(), "build/generated/python")
+        ])
+        env["FUSION_LOG_DIR"] = log_dir
+        
+        pytest_cmd = [sys.executable, "-m", "pytest", test_file, "-v"]
+        marker_expr = self._build_pytest_marker_expr()
+        if marker_expr:
+            pytest_cmd.extend(["-m", marker_expr])
+        
+        log_path = os.path.join(log_dir, "pytest.log")
+        header = f"=== FUSION DEMO PYTEST: {description} ===\nCommand: {' '.join(pytest_cmd)}\nPWD: {os.getcwd()}\n========================================\n\n"
+        
+        success = self._run_and_tee(pytest_cmd, log_path, env=env, header=header)
+        status = "PASS" if success else "FAIL"
+        
+        results["steps"].append({
+            "name": description,
+            "status": status,
+            "log": f"demos/{log_name}/pytest.log",
+            "details": f"Executed integration tests for {description}"
+        })
+        return status, results
 
     def run_demos(self, demo_filter="all"):
-        print("\n--- Running Integration Demos ---")
+        print("\n--- Running Integration Demos (via Pytest) ---")
         
-        results = {}
+        all_results = {"steps": []}
         
-        # 1. Simple Demos (No SD)
-        if demo_filter in ["all", "simple"]:
-            print("Running Simple Demos (No SD)...")
-            simple_res = self._run_simple_demos()
-            results.update(simple_res)
+        # Mapping of demo names to their test files
+        demo_map = {
+            "simple": ("tests/test_simple_demo.py", "simple_demo", "Simple UDP Demo"),
+            "integrated": ("tests/test_cross_language.py", "integrated_apps", "Integrated Apps Demo"),
+            "pubsub": ("tests/test_pubsub_full.py", "automotive_pubsub", "Automotive Pub-Sub Demo"),
+            "someipy": ("tests/test_someipy_interop.py", "someipy_interop", "someipy Interop Demo")
+        }
         
-        # 2. Integrated Apps
-        if demo_filter in ["all", "integrated"]:
-            if os.name == 'nt' and not self.env_caps.get('has_multicast'):
-                print("Skipping Integrated Apps demo on Windows (no multicast/SD support)")
-                results["demo_status"] = "SKIPPED" 
-            else:
-                # Setup Log Directory
-                log_dir = os.path.join(self.reporter.raw_logs_dir, "integrated_apps")
-                # Generate Config
-                env = get_environment()
-                factory = SmartConfigFactory(env)
-                config_path = factory.generate_integrated_apps(log_dir)
-                abs_config_path = os.path.abspath(config_path)
-
-                # Pre-build Rust to ensure starts immediately
-                self._prebuild_rust_demo()
-                
-                runners = []
-                cpp_exe = self._get_cpp_binary_path("cpp_app")
-                
-                try:
-                    # Rust
-                    rust_env = os.environ.copy()
-                    rust_env["RUST_LOG"] = "debug"
-                    rust_runner = AppRunner("demo_rust", ["cargo", "run", "--", abs_config_path], log_dir, cwd="examples/integrated_apps/rust_app", env=rust_env)
-                    rust_runner.start()
-                    runners.append(rust_runner)
-                    time.sleep(2)
-                    
-                    # Python
-                    py_env = os.environ.copy()
-                    py_env["PYTHONPATH"] = os.pathsep.join([
-                        os.path.join(os.getcwd(), "src/python"),
-                        os.path.join(os.getcwd(), "build/generated/python")
-                    ])
-                    py_runner = AppRunner("demo_python", [sys.executable, "-u", "main.py", abs_config_path], log_dir, cwd="examples/integrated_apps/python_app", env=py_env)
-                    py_runner.start()
-                    runners.append(py_runner)
-                    
-                    # C++
-                    if cpp_exe:
-                        cpp_runner = AppRunner("demo_cpp", [os.path.abspath(cpp_exe), abs_config_path], log_dir, cwd="examples/integrated_apps/cpp_app")
-                        cpp_runner.start()
-                        runners.append(cpp_runner)
-                    
-                    # JS
-                    js_app_dir = "examples/integrated_apps/js_app"
-                    if os.path.exists(js_app_dir):
-                        print("  Building JS Demo...")
-                        npm_bin = "npm.cmd" if os.name == 'nt' else "npm"
-                        subprocess.run([npm_bin, "install"], cwd=js_app_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                        subprocess.run([npm_bin, "run", "build"], cwd=js_app_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                        
-                        js_runner = AppRunner("demo_js", ["node", "dist/index.js", abs_config_path], log_dir, cwd=js_app_dir)
-                        js_runner.start()
-                        runners.append(js_runner)
-
-                    # Run for 20s
-                    print("  Integrated Apps started, waiting 20s...")
-                    time.sleep(20)
-                    
-                finally:
-                    print("  Stopping demos...")
-                    for r in runners:
-                        r.stop()
-                    
-                print("  Verifying Integrated Apps logs...")
-                time.sleep(1) 
-                
-                # Verify using log paths
-                rust_log = os.path.join(log_dir, "demo_rust.log")
-                py_log = os.path.join(log_dir, "demo_python.log")
-                cpp_log = os.path.join(log_dir, "demo_cpp.log")
-                js_log = os.path.join(log_dir, "demo_js.log")
-                
-                results = self._verify_demos(rust_log, py_log, cpp_log, js_log, results)
-                
-                # If failed, dump logs
-                if results.get("demo_status") == "FAIL":
-                      for log_name, log_path in [("rust", rust_log), ("python", py_log), ("cpp", cpp_log), ("js", js_log)]:
-                          if os.path.exists(log_path):
-                              print(f"\n--- FAILURE LOG: {log_name} ---")
-                              with open(log_path, "r", errors='ignore') as f:
-                                  print(f.read())
-                              print(f"--- END LOG ---")
-
-        # 3. Automotive Pub-Sub Demo
-        if demo_filter in ["all", "pubsub"]:
-            print("\nRunning Automotive Pub-Sub Demo...")
-            pubsub_result = self._run_automotive_pubsub_demo()
-            pubsub_steps = pubsub_result.pop("steps", [])
-            results.update(pubsub_result)
-            results.setdefault("steps", []).extend(pubsub_steps)
-
-        # 4. someipy Demo
-        if demo_filter in ["all", "someipy"]:
-            if os.name == 'nt' and not self.env_caps.get('has_multicast'):
-                print("Skipping someipy demo on Windows (no multicast/SD support)")
-                results["someipy_demo"] = "SKIPPED"
-            else:
-                print("\nRunning someipy Interop Demo...")
-                someipy_res = self._run_someipy_demo()
-                someipy_steps = someipy_res.pop("steps", [])
-                results.update(someipy_res)
-                results.setdefault("steps", []).extend(someipy_steps)
-
-        return results
-
-    def _run_someipy_demo(self):
-        """Run the someipy interop demo."""
-        results = {"steps": []}
-        
-        log_dir = os.path.join(self.reporter.raw_logs_dir, "someipy_demo")
-        
-        py_env = os.environ.copy()
-        py_env["PYTHONPATH"] = os.pathsep.join(["src/python", "build", "build/generated/python"])
-        
-        sys_env = get_environment()
-        demo_dir = "examples/someipy_demo"
-        factory = SmartConfigFactory(sys_env)
-        generated_cfg_path = factory.generate_someipy_demo(log_dir)
-        abs_generated_cfg_path = os.path.abspath(generated_cfg_path)
-        
-        runners = []
-        
-        try:
-            # 1. Start Daemon
-            print("  Starting someipy daemon...")
-            daemon_runner = AppRunner("someipyd", [sys.executable, "-u", "start_daemon.py", abs_generated_cfg_path], log_dir, cwd=demo_dir)
-            daemon_runner.start()
-            runners.append(daemon_runner)
-            time.sleep(2)
-            
-            # 2. Start Service
-            print("  Starting someipy service...")
-            service_runner = AppRunner("service_someipy", [sys.executable, "-u", "service_someipy.py"], log_dir, cwd=demo_dir)
-            service_runner.start()
-            runners.append(service_runner)
-            time.sleep(3)
-            
-            # 3. Run Fusion Python Client
-            print("  Running Fusion Python Client...")
-            subprocess.run([sys.executable, "-u", "client_fusion.py", abs_generated_cfg_path], cwd=demo_dir, env=py_env)
-            
-            # 4. Run Fusion Rust Client
-            print("  Running Fusion Rust Client...")
-            rust_bin = os.path.abspath(os.path.join("target", "debug", "someipy_client"))
-            if os.name == 'nt': rust_bin += ".exe"
-            if os.path.exists(rust_bin):
-                subprocess.run([rust_bin, abs_generated_cfg_path], cwd=demo_dir)
-            
-            # 5. Run Fusion C++ Client
-            print("  Running Fusion C++ Client...")
-            cpp_bin = self._get_cpp_binary_path("client_fusion")
-            if cpp_bin:
-                subprocess.run([os.path.abspath(cpp_bin), abs_generated_cfg_path], cwd=demo_dir)
-
-            # 6. Run Fusion JS Client
-            print("  Running Fusion JS Client...")
-            js_client_dir = os.path.join(demo_dir, "js_client")
-            if os.path.exists(js_client_dir):
-                npm_bin = "npm.cmd" if os.name == 'nt' else "npm"
-                subprocess.run([npm_bin, "install"], cwd=js_client_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                subprocess.run([npm_bin, "run", "build"], cwd=js_client_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                subprocess.run(["node", "dist/index.js", abs_generated_cfg_path], cwd=js_client_dir, timeout=15)
-
-            # Verify Logs from AppRunners and Client runs (all teed to same log ideally? 
-            # Actually AppRunner creates separate logs. For someipy demo, they were all using one log file.
-            # I'll keep individual logs for daemon/service and client output might need a separate runner if it's long-lived.
-            # But the Clients here use subprocess.run, which doesn't tee. 
-            # I'll modify AppRunner to allow appending to a shared log if needed, or just keep them separate.
-            # Separate logs are actually better for debugging.
-            
-            # Let's combine the logic for verification. 
-            # someipyd.log and service_someipy.log should have the offer/subscribe info.
-            
-            daemon_log = os.path.join(log_dir, "someipyd.log")
-            service_log = os.path.join(log_dir, "service_someipy.log")
-            
-            # We need to collect client output too. Let's use AppRunner for clients as well if we want logs.
-            # Or just check daemon/service logs for interaction.
-            
-            daemon_content = ""
-            if os.path.exists(daemon_log):
-                with open(daemon_log, "r", errors='ignore') as f: daemon_content = f.read()
-            
-            service_content = ""
-            if os.path.exists(service_log):
-                with open(service_log, "r", errors='ignore') as f: service_content = f.read()
-
-            combined_content = daemon_content + service_content
-            
-            patterns = [
-                ("[someipy Service] Offering Service 0x1234:0x0001", "someipy Service Startup"),
-                ("Got Response: 'Hello from Fusion Python!'", "Python -> someipy Interop"),
-                ("Got Response: 'Hello from Fusion Rust!'", "Rust -> someipy Interop"),
-                ("Got Response: 'Hello from Fusion C++!'", "C++ -> someipy Interop"),
-                ("Got Response: 'Hello from Fusion JS!'", "JS -> someipy Interop")
-            ]
-            
-            for pattern, desc in patterns:
-                found = pattern in combined_content
-                # If not in daemon/service log, it might be in the console (client output).
-                # The original code teed ALL to one log.
-                # I'll update the loop to check for the pattern.
-                results["steps"].append({
-                    "name": f"someipy Demo: {desc}",
-                    "status": "PASS" if found else "FAIL",
-                    "log": "someipy_demo/someipyd.log",
-                    "details": f"Checked logs for '{pattern}'"
-                })
-            
-            results["someipy_demo"] = "PASS" if all(s["status"] == "PASS" for s in results["steps"]) else "FAIL"
-
-        except Exception as e:
-            print(f"Error running someipy demo: {e}")
-            results["someipy_demo"] = "ERROR"
-        finally:
-            for r in runners:
-                r.stop()
-            try: os.remove(os.path.join(demo_dir, "client_config.json"))
-            except: pass
-            try: os.remove(os.path.join(demo_dir, "someipyd_config.json"))
-            except: pass
-                
-        return results
-
-    def _run_automotive_pubsub_demo(self):
-        results = {"steps": []}
-        adas_script = "examples/automotive_pubsub/python_adas/main.py"
-        js_adas_dir = "examples/automotive_pubsub/js_adas"
-        
-        log_dir = os.path.join(self.reporter.raw_logs_dir, "automotive_pubsub")
-        py_env = os.environ.copy()
-        py_env["PYTHONPATH"] = os.pathsep.join(["src/python", "build", "build/generated/python"])
-        
-        sys_env = get_environment()
-        factory = SmartConfigFactory(sys_env)
-        config_path = factory.generate_automotive_pubsub(log_dir)
-        abs_config_path = os.path.abspath(config_path)
-        
-        runners = []
-        try:
-            # Python ADAS
-            print("  Starting Python ADAS Application...")
-            py_runner = AppRunner("adas_python", [sys.executable, "-u", adas_script, abs_config_path], log_dir, env=py_env)
-            py_runner.start()
-            runners.append(py_runner)
-            
-            # JS ADAS
-            if os.path.exists(js_adas_dir):
-                print("  Building/Starting JS ADAS Subscriber...")
-                npm_bin = "npm.cmd" if os.name == 'nt' else "npm"
-                subprocess.run([npm_bin, "install"], cwd=js_adas_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                subprocess.run([npm_bin, "run", "build"], cwd=js_adas_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                
-                js_runner = AppRunner("adas_js", ["node", "dist/index.js"], log_dir, cwd=js_adas_dir)
-                js_runner.start()
-                runners.append(js_runner)
-                
-            time.sleep(5)
-            
-            # Verification
-            for r in runners:
-                r.stop()
-            
-            # Check logs
-            py_log = os.path.join(log_dir, "adas_python.log")
-            if os.path.exists(py_log):
-                with open(py_log, "r", errors='ignore') as f:
-                    content = f.read()
-                    found = "ADAS Application" in content or "Subscribed" in content
-                    results["steps"].append({
-                        "name": "Automotive Pub-Sub: ADAS Subscriber Startup",
-                        "status": "PASS" if found else "FAIL",
-                        "log": "automotive_pubsub/adas_python.log",
-                        "details": "Checked for subscription messages"
-                    })
-            
-            js_log = os.path.join(log_dir, "adas_js.log")
-            if os.path.exists(js_log):
-                with open(js_log, "r", errors='ignore') as f:
-                    content = f.read()
-                    found = "ADAS Application" in content or "Subscribed" in content
-                    results["steps"].append({
-                        "name": "Automotive Pub-Sub: JS ADAS Subscriber Startup",
-                        "status": "PASS" if found else "FAIL",
-                        "log": "automotive_pubsub/adas_js.log",
-                        "details": "Checked for subscription messages"
-                    })
-            
-            results["automotive_pubsub_demo"] = "PASS" if all(s["status"] == "PASS" for s in results["steps"]) else "FAIL"
-
-        except Exception as e:
-            print(f"Warning: Automotive Pub-Sub Demo error: {e}")
-            results["automotive_pubsub_demo"] = "ERROR"
-        finally:
-            for r in runners:
-                r.stop()
-        
-        return results
-
-    def _run_simple_demos(self):
-        server_bin = "target/debug/simple_server.exe"
-        client_bin = "target/debug/simple_client.exe"
-        
-        if os.name != 'nt':
-            server_bin = server_bin.replace(".exe", "")
-            client_bin = client_bin.replace(".exe", "")
-
-        if not os.path.exists(server_bin) or not os.path.exists(client_bin):
-            print(f"[WARN] Simple demos not found at {server_bin}")
-            return {"simple_demo": "SKIPPED"}
-            
-        print(f"Starting {server_bin}...")
-        log_dir = os.path.join(self.reporter.raw_logs_dir, "simple_demo")
-        os.makedirs(log_dir, exist_ok=True)
-        log_path = os.path.join(log_dir, "demo_simple.log")
-        
-        with open(log_path, "w") as log:
-            server_cmd = [server_bin]
-            log.write(f"=== FUSION SIMPLE DEMO RUNNER ===\nServer Command: {' '.join(server_cmd)}\n")
-            server_proc = subprocess.Popen(server_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            time.sleep(0.5)
-            
-            try:
-                print(f"Running {client_bin}...")
-                client_cmd = [client_bin]
-                log.write(f"Client Command: {' '.join(client_cmd)}\nPWD: {os.getcwd()}\n=================================\n\n")
-                log.flush()
-                
-                result = subprocess.run(client_cmd, capture_output=True, text=True)
-                output = result.stdout + result.stderr
-                log.write(output)
-                
-                if "Success" in output:
-                    print("[PASS] Simple Demo PASS")
-                    return {"simple_demo": "PASS", "steps": [{"name": "Simple UDP Demo", "status": "PASS", "details": "Client received 'Success'"}]}
+        demos_to_run = []
+        if demo_filter == "all":
+            demos_to_run = ["simple", "integrated", "pubsub", "someipy"]
+        else:
+            # Handle comma-separated or single
+            for d in demo_filter.replace(",", " ").split():
+                if d in demo_map:
+                    demos_to_run.append(d)
                 else:
-                    print(f"[FAIL] Simple Demo FAIL: {output}")
-                    return {"simple_demo": "FAIL", "steps": [{"name": "Simple UDP Demo", "status": "FAIL", "details": "Client did not output 'Success'"}]}
-            finally:
-                server_proc.terminate()
-                server_proc.wait()
+                    print(f"Warning: Unknown demo '{d}'")
 
-    def _verify_demos(self, rust, py, cpp, js, initial_results):
-        results = initial_results
-        steps = results.get('steps', [])
+        overall_pass = True
+        for d in demos_to_run:
+            test_file, log_name, desc = demo_map[d]
+            print(f"\n>> Running Demo: {desc}")
+            status, res = self._run_demo_pytest(test_file, log_name, desc)
+            all_results["steps"].extend(res["steps"])
+            if status != "PASS":
+                overall_pass = False
+        
+        all_results["demo_status"] = "PASS" if overall_pass and demos_to_run else "FAIL"
+        if not demos_to_run:
+             all_results["demo_status"] = "SKIPPED"
 
-        def check(log_name, path, pattern, description):
-            found = False
-            content = ""
-            if os.path.exists(path):
-                with open(path, "r", errors="ignore") as f:
-                    content = f.read()
-                    found = pattern in content
-            
-            status = "PASS" if found else "FAIL"
-            # Get relative log path for report
-            rel_path = os.path.relpath(path, self.reporter.raw_logs_dir) if path else log_name
-            steps.append({
-                "name": description,
-                "status": status,
-                "log": rel_path,
-                "details": f"Checked '{log_name}' for '{pattern}'"
-            })
-            if not found:
-                print(f"\n[FAIL] {description} FAILED. Log '{log_name}':\n{'-'*40}\n{content}\n{'-'*40}\n")
-            return found
+        return all_results
+        
 
-        check("demo_rust", rust, "Math.Add", "RPC: Rust Provider (Math.Add)")
-        check("demo_rust", rust, "Received Notification", "Event: Rust Listener")
-        check("demo_python", py, "Sending Add", "RPC: Python Client (Sending Add)")
-        check("demo_python", py, "Reversing", "RPC: Python String Service")
-        check("demo_cpp", cpp, "Math.Add Result", "RPC: C++ Client -> Rust Math")
-        check("demo_cpp", cpp, "Sorting 5 items", "RPC: Python -> C++ Sort")
-        check("demo_cpp", cpp, "Sorting 3 items", "RPC: Rust -> C++ Sort")
-        check("demo_cpp", cpp, "Field 'status' changed", "Field: C++ Service Update")
-        check("demo_js", js, "Result:", "RPC: JS Client -> Rust Math")
-        check("demo_js", js, "Result: '", "RPC: JS Client -> Python String")
+if __name__ == "__main__":
+    import sys
+    import os
+    # Ensure project root is in sys.path
+    sys.path.append(os.getcwd())
 
-        pass_count = sum(1 for s in steps if s['status'] == 'PASS')
-        results['demo_status'] = "PASS" if pass_count == len(steps) else "FAIL"
-        results['steps'] = steps 
-        return results
+    import argparse
+    parser = argparse.ArgumentParser(description="Fusion Test Runner")
+    parser.add_argument("--test-filter", default="all", help="Filter for unit tests (rust, python, cpp, js, all)")
+    parser.add_argument("--demos", default="none", help="Run demos (simple, integrated, pubsub, someipy, all)")
+    parser.add_argument("--skip-unit", action="store_true", help="Skip unit tests")
+    parser.add_argument("--clean", action="store_true", help="Clean build artifacts before running")
+    
+    args = parser.parse_args()
+    
+    env = get_environment()
+    reporter = TestReporter(os.getcwd())
+    
+    # Initialize builder (dummy for now as we invoke builds directly or assume pre-built)
+    builder = None 
+    
+    tester = Tester(reporter, builder, env_caps=env.to_dict())
+    
+    if not args.skip_unit:
+        tester.run_unit_tests()
+        
+    if args.demos != "none":
+        tester.run_demos(args.demos)
