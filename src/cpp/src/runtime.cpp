@@ -190,8 +190,8 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
             sockaddr_in sd_addr = {0};
             sd_addr.sin_family = AF_INET;
 #ifdef _WIN32
-            // Windows: Bind to Unicast Interface IP (Strict Binding supported here)
-            sd_addr.sin_addr.s_addr = inet_addr(ctx->ip.c_str());
+            // Windows: Bind to INADDR_ANY to allow multiple processes to share the multicast port
+            sd_addr.sin_addr.s_addr = INADDR_ANY;
 #else
             // Linux: Bind to Multicast Group IP to allow reception
             // Binding to Unicast IP blocks multicast packets on Linux
@@ -244,21 +244,16 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
                 sockaddr_in6 sd_addr6 = {0};
                 sd_addr6.sin6_family = AF_INET6;
                 sd_addr6.sin6_port = htons(ctx->sd_multicast_port_v6);
-                // Bind SD socket to the local interface IPv6 from config.
+#ifdef _WIN32
+                // Windows: Bind to in6addr_any to allow sharing
+                sd_addr6.sin6_addr = in6addr_any;
+#else
                 if (!ctx->ip_v6.empty()) {
                     inet_pton(AF_INET6, ctx->ip_v6.c_str(), &sd_addr6.sin6_addr);
-                    if (bind(ctx->sd_sock_v6, (struct sockaddr*)&sd_addr6, sizeof(sd_addr6)) < 0) {
-                        this->logger->Log(LogLevel::WARN, "Runtime", "Failed to bind IPv6 SD socket on " + alias);
-                    }
-                } else {
-                    this->logger->Log(LogLevel::WARN, "Runtime", "No IPv6 address configured for SD bind on " + alias + ". Skipping IPv6 SD.");
-                    // Close the socket as we won't use it
-#ifdef _WIN32
-                    closesocket(ctx->sd_sock_v6);
-#else
-                    close(ctx->sd_sock_v6);
+                }
 #endif
-                    ctx->sd_sock_v6 = -1;
+                if (bind(ctx->sd_sock_v6, (struct sockaddr*)&sd_addr6, sizeof(sd_addr6)) < 0) {
+                    this->logger->Log(LogLevel::WARN, "Runtime", "Failed to bind IPv6 SD socket on " + alias);
                 }
 
                 int loop6 = 1;
@@ -469,11 +464,14 @@ void SomeIpRuntime::offer_service(const std::string& alias, RequestHandler* impl
                 uint32_t cycle = svc.cycle_offer_ms;
                 if (cycle == 0) cycle = config.sd.cycle_offer_ms;
 
-                offered_services.push_back({
-                    svc.service_id, svc.instance_id, svc.major_version, svc.minor_version, 
-                    svc_port, svc_proto, ep_ip, ep_ip6, mcast_ip, mcast_port, 
-                    if_alias, cycle, std::chrono::steady_clock::now()
-                });
+                {
+                    std::lock_guard<std::mutex> lock(offered_services_mutex);
+                    offered_services.push_back({
+                        svc.service_id, svc.instance_id, svc.major_version, svc.minor_version, 
+                        svc_port, svc_proto, ep_ip, ep_ip6, mcast_ip, mcast_port, 
+                        if_alias, cycle, std::chrono::steady_clock::now()
+                    });
+                }
                 
                 SendOffer(svc.service_id, svc.instance_id, svc.major_version, svc.minor_version, svc_port, svc_proto, ctx, ep_ip, ep_ip6, mcast_ip, mcast_port);
                 this->logger->Log(LogLevel::INFO, "Runtime", "Offered Service '" + alias + "' on " + if_alias + " (" + ep_ip + ":" + std::to_string(svc_port) + ")");
@@ -851,7 +849,7 @@ bool SomeIpRuntime::is_subscription_acked(uint16_t service_id, uint16_t eventgro
 
 void SomeIpRuntime::process_packet(const char* data, int len, sockaddr_storage src, std::shared_ptr<InterfaceContext> ctx, bool is_tcp, SOCKET from_sock) {
 #ifdef FUSION_PACKET_DUMP
-    DumpPacket(data, len, src);
+    DumpPacket(data, (uint32_t)len, src);
 #endif
     if (len < 16) return;
     uint16_t sid = (uint8_t(data[0]) << 8) | uint8_t(data[1]);
@@ -901,6 +899,9 @@ void SomeIpRuntime::process_packet(const char* data, int len, sockaddr_storage s
 }
 
 void SomeIpRuntime::process_sd_packet(const char* buf, int bytes, sockaddr_storage src, std::shared_ptr<InterfaceContext> ctx) {
+#ifdef FUSION_PACKET_DUMP
+    DumpPacket(buf, (uint32_t)bytes, src);
+#endif
     if (bytes < 24) return;
     uint32_t len_entries = (uint8_t(buf[16+4]) << 24) | (uint8_t(buf[16+5]) << 16) | (uint8_t(buf[16+6]) << 8) | uint8_t(buf[16+7]);
     int offset = 16 + 8; 
@@ -912,9 +913,9 @@ void SomeIpRuntime::process_sd_packet(const char* buf, int bytes, sockaddr_stora
         uint8_t index1 = buf[offset+1];
         uint16_t sid = (uint8_t(buf[offset+4]) << 8) | uint8_t(buf[offset+5]);
         uint16_t iid = (uint8_t(buf[offset+6]) << 8) | uint8_t(buf[offset+7]);
-        uint32_t maj_ttl = (uint8_t(buf[offset+8]) << 24) | (uint8_t(buf[offset+9]) << 16) | (uint8_t(buf[offset+10]) << 8) | uint8_t(buf[offset+11]);
+        uint8_t maj = uint8_t(buf[offset+8]);
+        uint32_t ttl = (uint8_t(buf[offset+9]) << 16) | (uint8_t(buf[offset+10]) << 8) | uint8_t(buf[offset+11]);
         uint32_t min = (uint8_t(buf[offset+12]) << 24) | (uint8_t(buf[offset+13]) << 16) | (uint8_t(buf[offset+14]) << 8) | uint8_t(buf[offset+15]);
-        uint32_t ttl = maj_ttl & 0xFFFFFF;
 
         sockaddr_storage endpoint;
         memset(&endpoint, 0, sizeof(endpoint));
@@ -989,8 +990,11 @@ void SomeIpRuntime::process_sd_packet(const char* buf, int bytes, sockaddr_stora
             std::pair<uint16_t, uint16_t> key = {sid, eventgroup_id};
             bool is_offered = false;
             uint16_t found_iid = 1;
-            for(auto& off : offered_services) {
-                if (off.service_id == sid && off.iface_alias == ctx->alias) { is_offered = true; found_iid = off.instance_id; }
+            {
+                std::lock_guard<std::mutex> lock(offered_services_mutex);
+                for(auto& off : offered_services) {
+                    if (off.service_id == sid && off.iface_alias == ctx->alias) { is_offered = true; found_iid = off.instance_id; }
+                }
             }
             if (is_offered && has_endpoint) {
                 if (ttl > 0) {
@@ -1018,7 +1022,8 @@ void SomeIpRuntime::process_sd_packet(const char* buf, int bytes, sockaddr_stora
                         ack_payload.push_back(0x00); ack_payload.push_back(0x00); ack_payload.push_back(0x00); 
                         ack_payload.push_back((sid >> 8) & 0xFF); ack_payload.push_back(sid & 0xFF);
                         ack_payload.push_back((found_iid >> 8) & 0xFF); ack_payload.push_back(found_iid & 0xFF);
-                        ack_payload.push_back((maj_ttl >> 24) & 0xFF); ack_payload.push_back((maj_ttl >> 16) & 0xFF); ack_payload.push_back((maj_ttl >> 8) & 0xFF); ack_payload.push_back(maj_ttl & 0xFF);
+                        ack_payload.push_back(maj); // Major Version
+                        ack_payload.push_back((ttl >> 16) & 0xFF); ack_payload.push_back((ttl >> 8) & 0xFF); ack_payload.push_back(ttl & 0xFF); // TTL
                         ack_payload.push_back((min >> 24) & 0xFF); ack_payload.push_back((min >> 16) & 0xFF); ack_payload.push_back((min >> 8) & 0xFF); ack_payload.push_back(min & 0xFF);
                         ack_payload.push_back(0x00); ack_payload.push_back(0x00); ack_payload.push_back(0x00); ack_payload.push_back(0x00); 
                         
@@ -1034,18 +1039,9 @@ void SomeIpRuntime::process_sd_packet(const char* buf, int bytes, sockaddr_stora
                         abuf.insert(abuf.end(), ack_payload.begin(), ack_payload.end());
 
                         if (src.ss_family == AF_INET) {
-                            sockaddr_in dest = {0};
-                            dest.sin_family = AF_INET;
-                            dest.sin_addr.s_addr = inet_addr(ctx->sd_multicast_ip.c_str());
-                            dest.sin_port = htons(ctx->sd_multicast_port);
-                            sendto(ctx->sd_sock, (const char*)abuf.data(), (int)abuf.size(), 0, (struct sockaddr*)&dest, sizeof(dest));
-                        } else if (ctx->sd_sock_v6 != INVALID_SOCKET) {
-                            sockaddr_in6 dest6 = {0};
-                            dest6.sin6_family = AF_INET6;
-                            inet_pton(AF_INET6, ctx->sd_multicast_ip_v6.c_str(), &dest6.sin6_addr);
-                            dest6.sin6_port = htons(ctx->sd_multicast_port_v6);
-                            dest6.sin6_scope_id = ctx->if_index;
-                            sendto(ctx->sd_sock_v6, (const char*)abuf.data(), (int)abuf.size(), 0, (struct sockaddr*)&dest6, sizeof(dest6));
+                            sendto(ctx->sd_sock, (const char*)abuf.data(), (int)abuf.size(), 0, (struct sockaddr*)&src, sizeof(sockaddr_in));
+                        } else {
+                            sendto(ctx->sd_sock_v6, (const char*)abuf.data(), (int)abuf.size(), 0, (struct sockaddr*)&src, sizeof(sockaddr_in6));
                         }
                     }
                 }
@@ -1059,7 +1055,7 @@ void SomeIpRuntime::process_sd_packet(const char* buf, int bytes, sockaddr_stora
 }
 
 #ifdef FUSION_PACKET_DUMP
-void SomeIpRuntime::DumpPacket(const char* data, int len, sockaddr_storage src) {
+void SomeIpRuntime::DumpPacket(const char* data, uint32_t len, sockaddr_storage src) {
     if (len < 16) return;
     uint16_t sid = (uint8_t(data[0]) << 8) | uint8_t(data[1]);
     uint16_t mid = (uint8_t(data[2]) << 8) | uint8_t(data[3]);
@@ -1098,19 +1094,21 @@ void SomeIpRuntime::DumpPacket(const char* data, int len, sockaddr_storage src) 
             uint32_t e_len = (uint8_t(data[20]) << 24) | (uint8_t(data[21]) << 16) | (uint8_t(data[22]) << 8) | uint8_t(data[23]);
             uint32_t offset = 24;
             uint32_t entries_end = offset + e_len;
+            if (entries_end > len) entries_end = len;
             
-            while (offset + 16 <= entries_end && offset < (uint32_t)len) {
+            while (offset + 16 <= entries_end) {
                 uint8_t etype = (uint8_t)data[offset];
                 uint16_t esid = (uint8_t(data[offset+4]) << 8) | uint8_t(data[offset+5]);
                 uint16_t eiid = (uint8_t(data[offset+6]) << 8) | uint8_t(data[offset+7]);
-                uint32_t ttl = (uint8_t(data[offset+8]) << 16) | (uint8_t(data[offset+9]) << 8) | uint8_t(data[offset+10]);
+                uint8_t emaj = uint8_t(data[offset+8]);
+                uint32_t ettl = (uint8_t(data[offset+9]) << 16) | (uint8_t(data[offset+10]) << 8) | uint8_t(data[offset+11]);
                 
                 std::string tname = (etype == 0x00) ? "FindService" : (etype == 0x01) ? "OfferService" : (etype == 0x06) ? "Subscribe" : (etype == 0x07) ? "SubAck" : "0x" + std::to_string(etype);
                 char esid_h[5], eiid_h[5];
                 snprintf(esid_h, 5, "%04X", esid);
                 snprintf(eiid_h, 5, "%04X", eiid);
                 
-                this->logger->Log(LogLevel::DEBUG, "DUMP", "  [Entry] " + tname + ": Service=0x" + std::string(esid_h) + " Inst=0x" + std::string(eiid_h) + " TTL=" + std::to_string(ttl));
+                this->logger->Log(LogLevel::DEBUG, "DUMP", "  [Entry] " + tname + ": Service=0x" + std::string(esid_h) + " Inst=0x" + std::string(eiid_h) + " Maj=" + std::to_string(emaj) + " TTL=" + std::to_string(ettl));
                 offset += 16;
             }
             
@@ -1152,11 +1150,14 @@ void SomeIpRuntime::Run() {
         auto now = std::chrono::steady_clock::now();
         
         // Multi-interface sending of cyclic offers
-        for (auto& svc : offered_services) {
-            if (std::chrono::duration_cast<std::chrono::milliseconds>(now - svc.last_offer_time).count() > (long long)svc.cycle_offer_ms) {
-                svc.last_offer_time = now;
-                if (interfaces.count(svc.iface_alias)) {
-                    SendOffer(svc.service_id, svc.instance_id, svc.major_version, svc.minor_version, svc.port, svc.protocol, interfaces[svc.iface_alias], svc.endpoint_ip, svc.endpoint_ip_v6, svc.multicast_ip, svc.multicast_port);
+        {
+            std::lock_guard<std::mutex> lock(offered_services_mutex);
+            for (auto& svc : offered_services) {
+                if (std::chrono::duration_cast<std::chrono::milliseconds>(now - svc.last_offer_time).count() > (long long)svc.cycle_offer_ms) {
+                    svc.last_offer_time = now;
+                    if (interfaces.count(svc.iface_alias)) {
+                        SendOffer(svc.service_id, svc.instance_id, svc.major_version, svc.minor_version, svc.port, svc.protocol, interfaces[svc.iface_alias], svc.endpoint_ip, svc.endpoint_ip_v6, svc.multicast_ip, svc.multicast_port);
+                    }
                 }
             }
         }
@@ -1253,17 +1254,21 @@ void SomeIpRuntime::Run() {
 
 void SomeIpRuntime::SendNotification(uint16_t service_id, uint16_t event_id, const std::vector<uint8_t>& payload) {
     std::vector<std::shared_ptr<InterfaceContext>> offering_ifaces;
-    for (const auto& off : offered_services) {
-        if (off.service_id == service_id && interfaces.count(off.iface_alias)) {
-            bool already = false;
-            for(auto const& ex : offering_ifaces) if(ex == interfaces[off.iface_alias]) already = true;
-            if(!already) offering_ifaces.push_back(interfaces[off.iface_alias]);
+    {
+        std::lock_guard<std::mutex> lock(offered_services_mutex);
+        for (const auto& off : offered_services) {
+            if (off.service_id == service_id && interfaces.count(off.iface_alias)) {
+                bool already = false;
+                for(auto const& ex : offering_ifaces) if(ex == interfaces[off.iface_alias]) already = true;
+                if(!already) offering_ifaces.push_back(interfaces[off.iface_alias]);
+            }
         }
     }
 
     if (offering_ifaces.empty()) return;
 
     std::lock_guard<std::mutex> lock(subscribers_mutex);
+
     for (const auto& [key, sub_list] : subscribers) {
         if (key.first != service_id) continue;
         
@@ -1279,10 +1284,21 @@ void SomeIpRuntime::SendNotification(uint16_t service_id, uint16_t event_id, con
         buffer.insert(buffer.end(), payload.begin(), payload.end());
 
         for (const auto& sub : sub_list) {
+            char sub_ip[INET6_ADDRSTRLEN];
+            uint16_t sub_port = 0;
+            if(sub.ss_family == AF_INET) {
+                inet_ntop(AF_INET, &((sockaddr_in*)&sub)->sin_addr, sub_ip, INET_ADDRSTRLEN);
+                sub_port = ntohs(((sockaddr_in*)&sub)->sin_port);
+            } else {
+                inet_ntop(AF_INET6, &((sockaddr_in6*)&sub)->sin6_addr, sub_ip, INET6_ADDRSTRLEN);
+                sub_port = ntohs(((sockaddr_in6*)&sub)->sin6_port);
+            }
+
             for (auto const& ctx : offering_ifaces) {
                 SOCKET s = (sub.ss_family == AF_INET6) ? ctx->sock_v6 : ctx->sock;
                 int sl = (sub.ss_family == AF_INET6) ? sizeof(sockaddr_in6) : sizeof(sockaddr_in);
                 if (s != INVALID_SOCKET) {
+                    this->logger->Log(LogLevel::DEBUG, "Runtime", "Sending Notification to " + std::string(sub_ip) + ":" + std::to_string(sub_port));
                     sendto(s, (const char*)buffer.data(), (int)buffer.size(), 0, (const struct sockaddr*)&sub, sl);
                 }
             }

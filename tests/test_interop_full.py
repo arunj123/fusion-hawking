@@ -15,6 +15,8 @@ ENV = NetworkEnvironment()
 if not ENV.interfaces:
     ENV.detect()
 
+py_src = os.path.join(ROOT, "src", "python")
+
 @pytest.fixture(scope="module")
 def ctx():
     """Integration Test Context for interop tests"""
@@ -35,17 +37,16 @@ def ctx():
             client_config = common
 
         # 1. Start Python someipy Service (Mock/Demo)
-        py_src = os.path.join(ROOT, "src", "python")
         service_code = f"""
 import sys, time, os
 sys.path.append(r'{to_wsl(py_src)}')
-from fusion_hawking import SomeIpRuntime, RequestHandler
+from fusion_hawking.runtime import SomeIpRuntime, RequestHandler
 class Handler(RequestHandler):
     def get_service_id(self): return 0x1234
     def handle(self, mi, p):
         print(f"MOCK_RECEIVED: {{p.decode()}}")
         return b"Response from Python!"
-rt = SomeIpRuntime('{service_config}', 'PythonService')
+rt = SomeIpRuntime(r'{service_config}', 'PythonService')
 rt.offer_service('someipy_svc', Handler())
 rt.start()
 print("MOCK_READY")
@@ -63,19 +64,26 @@ while True: time.sleep(1)
         # C++ Client
         cpp_exe = find_binary("client_fusion", search_dirs=[
             os.path.join(ROOT, "build_linux", "examples", "someipy_demo"),
+            os.path.join(ROOT, "build", "Release"),
             os.path.join(ROOT, "examples", "someipy_demo", "build", "Release"),
             os.path.join(ROOT, "examples", "someipy_demo", "build"),
         ])
         if cpp_exe:
              c.add_runner("cpp_client", [cpp_exe, client_config, "cpp_client"], ns="ns_ecu3" if ENV.has_vnet else None).start()
+             time.sleep(1)
         
         # JS Client
         c.add_runner("js_client", ["node", "tests/interop_client.mjs", client_config], cwd=ROOT, ns="ns_ecu3" if ENV.has_vnet else None, env={"FUSION_PACKET_DUMP": "1"}).start()
+        time.sleep(1)
 
         # Rust Client
-        rust_bin = find_binary("someipy_client")
+        rust_bin = find_binary("someipy_client", search_dirs=[
+            os.path.join(ROOT, "examples", "someipy_demo", "target", "debug"),
+            os.path.join(ROOT, "examples", "someipy_demo", "target", "release"),
+        ])
         if rust_bin:
             c.add_runner("rust_client", [rust_bin, client_config, "rust_client"], cwd=ROOT, ns="ns_ecu3" if ENV.has_vnet else None).start()
+            time.sleep(1)
 
         time.sleep(5)
         yield c

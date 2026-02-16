@@ -51,6 +51,7 @@ def ctx():
         cpp_exe = find_binary("cpp_app", search_dirs=[
             os.path.join(PROJECT_ROOT, "build_linux", "examples", "integrated_apps", "cpp_app"),
             os.path.join(PROJECT_ROOT, "build_wsl", "examples", "integrated_apps", "cpp_app"),
+            os.path.join(PROJECT_ROOT, "build", "examples", "integrated_apps", "cpp_app", "Release"),
             os.path.join(PROJECT_ROOT, "examples", "integrated_apps", "cpp_app", "build", "Release"),
         ])
         if cpp_exe:
@@ -79,9 +80,8 @@ def ctx():
         js_app_dir = os.path.join(PROJECT_ROOT, "examples", "integrated_apps", "js_app")
         if os.path.exists(js_app_dir):
             npm_bin = "npm.cmd" if os.name == 'nt' else "npm"
-            # Build if needed - we'll assume it's pre-built or handle installation
-            # In a test, we might already have it built, but let's be safe
-            if os.name != 'nt':
+            # Build if needed
+            if not os.path.exists(os.path.join(js_app_dir, "dist", "index.js")):
                  subprocess.run([npm_bin, "install"], cwd=js_app_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                  subprocess.run([npm_bin, "run", "build"], cwd=js_app_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             
@@ -117,7 +117,6 @@ def has_multicast_support():
     return os.name != 'nt'
 
 @pytest.mark.needs_multicast
-@pytest.mark.skipif(not has_multicast_support(), reason="Multicast disabled on Windows for stability")
 def test_rust_rpc_to_python(ctx):
     """Verify Rust client calls Python StringService"""
     ctx.get_runner("python").clear_output()
@@ -138,7 +137,6 @@ def test_rust_to_cpp_math_inst2(ctx):
     assert ctx.get_runner("cpp").wait_for_output(r"\[2\] Add\(100, 200\)", timeout=20)
 
 @pytest.mark.needs_multicast
-@pytest.mark.skipif(not has_multicast_support(), reason="Multicast disabled on Windows for stability")
 def test_rust_to_python_math_inst3(ctx):
     """Verify Rust client calls Python MathService (Instance 3)"""
     ctx.get_runner("python").clear_output()
@@ -165,7 +163,6 @@ def test_rust_consumes_event(ctx):
     assert ctx.get_runner("rust").wait_for_output("Received Notification", timeout=20)
 
 @pytest.mark.needs_multicast
-@pytest.mark.skipif(not has_multicast_support(), reason="Multicast disabled on Windows for stability")
 def test_python_to_cpp_sort(ctx):
     """Verify Python client calls C++ SortService"""
     ctx.get_runner("python").clear_output()

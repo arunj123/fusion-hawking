@@ -117,7 +117,8 @@ async def main():
             "tcp_host": interface_ip, 
             "tcp_port": 30500, 
             "sd_port": sd_port,
-            "sd_address": sd_addr
+            "sd_address": sd_addr,
+            "socket_path": "someipyd.sock" if os.name == 'nt' else "/tmp/someipyd.sock"
         }))
         
     await someipyd.async_main()

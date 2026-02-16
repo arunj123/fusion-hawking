@@ -21,7 +21,9 @@ class AppRunner:
         self.cmd = cmd
         self.log_dir = log_dir
         self.cwd = cwd or os.getcwd()
-        self.env = env or os.environ.copy()
+        self.env = os.environ.copy()
+        if env:
+            self.env.update(env)
         self.ns = ns
         self.use_sudo = use_sudo
         
@@ -149,7 +151,16 @@ class AppRunner:
                     return line
             except queue.Empty:
                 if self.proc.poll() is not None:
-                    # Process died before pattern was found
+                    # Give reader thread time to flush everything to queue
+                    time.sleep(0.5)
+                    # Do a final sweep of the queue
+                    while not self.output_queue.empty():
+                        try:
+                            line = self.output_queue.get_nowait()
+                            if regex.search(line):
+                                return line
+                        except queue.Empty:
+                            break
                     break
                 continue
         
@@ -174,12 +185,19 @@ class AppRunner:
         
         # Try graceful termination
         try:
-            self.proc.terminate()
-            self.proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            logger.warning(f"{self.name} did not terminate gracefully, killing...")
-            self.proc.kill()
-            self.proc.wait()
+            if os.name == 'nt' and self.proc.poll() is None:
+                # On Windows, taskkill /T /F is a reliable way to kill a process tree
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(self.proc.pid)], 
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                self.proc.terminate()
+            
+            try:
+                self.proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                logger.warning(f"{self.name} did not terminate gracefully, killing...")
+                self.proc.kill()
+                self.proc.wait()
         except Exception as e:
             logger.error(f"Error stopping {self.name}: {e}")
 

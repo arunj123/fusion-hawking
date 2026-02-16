@@ -384,7 +384,7 @@ impl ServiceDiscovery {
             for listener in self.listeners.values() {
                 // Poll IPv4
                 if let Some(ref t4) = listener.transport_v4 {
-                    while let Ok((len, _addr)) = t4.receive(&mut buf) {
+                    while let Ok((len, addr)) = t4.receive(&mut buf) {
                         if len > 16 {
                             let mut payload_reader = &buf[16..len];
                             if let Ok(packet) = SdPacket::deserialize(&mut payload_reader) {
@@ -397,7 +397,7 @@ impl ServiceDiscovery {
                 }
                 // Poll IPv6
                 if let Some(ref t6) = listener.transport_v6 {
-                    while let Ok((len, _addr)) = t6.receive(&mut buf) {
+                    while let Ok((len, addr)) = t6.receive(&mut buf) {
                         if len > 16 {
                             let mut payload_reader = &buf[16..len];
                             if let Ok(packet) = SdPacket::deserialize(&mut payload_reader) {

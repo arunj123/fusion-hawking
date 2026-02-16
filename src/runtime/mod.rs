@@ -214,11 +214,11 @@ impl SomeIpRuntime {
 
             // Find local unicast IP for this interface
             let local_ip_v4 = iface_cfg.endpoints.values()
-                .find(|e| e.version == 4 && !e.ip.contains("224."))
+                .find(|e| e.version == 4 && e.ip.parse::<IpAddr>().map(|a| !a.is_multicast()).unwrap_or(false))
                 .and_then(|e| e.ip.parse::<Ipv4Addr>().ok());
             
             let local_ip_v6 = iface_cfg.endpoints.values()
-                .find(|e| e.version == 6 && !e.ip.contains("ff"))
+                .find(|e| e.version == 6 && e.ip.parse::<IpAddr>().map(|a| !a.is_multicast()).unwrap_or(false))
                 .and_then(|e| e.ip.parse::<Ipv6Addr>().ok());
 
             let mut transport_v4 = None;
@@ -235,11 +235,15 @@ impl SomeIpRuntime {
                 let bind_ip = instance_bind_ip
                     .or(local_ip_v4);
 
-                let bind_ip = bind_ip.unwrap_or_else(|| {
-                    let msg = format!("STRICT BINDING: No bind IP resolved for SD v4 on {}. Aborting.", alias);
-                    logger.log(LogLevel::Error, "Runtime", &msg);
-                    panic!("{}", msg);
-                });
+                let bind_ip = if cfg!(target_os = "windows") { 
+                    Ipv4Addr::UNSPECIFIED 
+                } else { 
+                    bind_ip.unwrap_or_else(|| {
+                        let msg = format!("STRICT BINDING: No bind IP resolved for SD v4 on {}. Aborting.", alias);
+                        logger.log(LogLevel::Error, "Runtime", &msg);
+                        panic!("{}", msg);
+                    })
+                };
 
                 let bind_addr = SocketAddr::new(IpAddr::V4(bind_ip), ep.port);
                 let mcast_addr = SocketAddr::new(IpAddr::V4(ep.ip.parse::<Ipv4Addr>().unwrap()), ep.port);
@@ -262,34 +266,39 @@ impl SomeIpRuntime {
             let mut transport_v6 = None;
             let mut mcast_v6 = None;
             if let Some(ep) = v6_ep {
+                let mcast_ip_v6 = ep.ip.parse::<Ipv6Addr>().unwrap_or_else(|e| {
+                    logger.log(LogLevel::Error, "Runtime", &format!("Invalid IPv6 multicast address '{}': {}", ep.ip, e));
+                    panic!("Invalid IPv6 multicast address");
+                });
+                
                 // Determine bind IP
-                 let instance_bind_ip = instance_config.unicast_bind.get(alias)
+                let instance_bind_ip = instance_config.unicast_bind.get(alias)
                     .and_then(|name| iface_cfg.endpoints.get(name))
                     .and_then(|e| e.ip.parse::<Ipv6Addr>().ok());
 
-                let bind_ip = instance_bind_ip
-                    .or(local_ip_v6);
+                let bind_ip = instance_bind_ip.or(local_ip_v6);
 
-                let bind_ip = bind_ip.unwrap_or_else(|| {
-                    let msg = format!("STRICT BINDING: No bind IP resolved for SD v6 on {}. Aborting.", alias);
-                    logger.log(LogLevel::Error, "Runtime", &msg);
-                    panic!("{}", msg);
-                });
-                let bind_addr = SocketAddr::new(IpAddr::V6(bind_ip), ep.port);
-                let mcast_addr = SocketAddr::new(IpAddr::V6(ep.ip.parse::<Ipv6Addr>().unwrap()), ep.port);
-                let if_name = if iface_cfg.name.is_empty() { alias.as_str() } else { iface_cfg.name.as_str() };
-                
-                if let Ok(t) = UdpTransport::new_multicast(bind_addr, mcast_addr, Some(if_name)) {
-                    let _ = t.set_multicast_loop_v6(true);
-                    let _ = t.set_multicast_hops_v6(instance_config.sd.multicast_hops as u32);
-                    if let Ok(mip) = ep.ip.parse::<Ipv6Addr>() {
+                let bind_ip_v6_opt = if cfg!(target_os = "windows") { 
+                    Some(Ipv6Addr::UNSPECIFIED)
+                } else { 
+                    bind_ip
+                };
+
+                if let Some(bind_ip_v6) = bind_ip_v6_opt {
+                    let bind_addr = SocketAddr::new(IpAddr::V6(bind_ip_v6), ep.port);
+                    let mcast_addr = SocketAddr::new(IpAddr::V6(mcast_ip_v6), ep.port);
+                    let if_name = if iface_cfg.name.is_empty() { alias.as_str() } else { iface_cfg.name.as_str() };
+                    
+                    if let Ok(t) = UdpTransport::new_multicast(bind_addr, mcast_addr, Some(if_name)) {
+                        let _ = t.set_multicast_loop_v6(true);
+                        let _ = t.set_multicast_hops_v6(instance_config.sd.multicast_hops as u32);
                         // Need iface index
                         let idx = Self::resolve_iface_index(&iface_cfg.name);
-                        let _ = t.join_multicast_v6(&mip, idx);
+                        let _ = t.join_multicast_v6(&mcast_ip_v6, idx);
                         let _ = t.set_multicast_if_v6(idx);
-                        mcast_v6 = Some(SocketAddr::new(IpAddr::V6(mip), ep.port));
+                        mcast_v6 = Some(SocketAddr::new(IpAddr::V6(mcast_ip_v6), ep.port));
+                        transport_v6 = Some(t);
                     }
-                    transport_v6 = Some(t);
                 }
             }
 
@@ -494,6 +503,12 @@ impl SomeIpRuntime {
                 alias, service_id, iface_alias, final_port, proto_id));
         }
     }
+
+    pub fn register_notification_handler(&self, service_id: u16, handler: Box<dyn RequestHandler>) {
+        let mut services = self.services.write().unwrap();
+        services.insert(service_id, handler);
+        self.logger.log(LogLevel::Info, "Runtime", &format!("Registered notification handler for Service 0x{:04x}", service_id));
+    }
     
     pub async fn send_request_and_wait(&self, service_id: u16, method_id: u16, payload: &[u8], target: SocketAddr) -> Option<Vec<u8>> {
         let session_id = {
@@ -553,6 +568,7 @@ impl SomeIpRuntime {
                     Ok((size, src)) => {
                         if size < 16 { continue; }
                         if let Ok(header) = SomeIpHeader::deserialize(&buf[..16]) {
+                            self.logger.log(LogLevel::Debug, "Runtime", &format!("Received packet: Service 0x{:04x} Method 0x{:04x} Type 0x{:02x} Length {}", header.service_id, header.method_id, header.message_type, header.length));
                             #[cfg(feature = "packet-dump")]
                             header.dump(src);
                              // Handle RESPONSE (0x80)
@@ -570,6 +586,9 @@ impl SomeIpRuntime {
                              // Handle Notification (0x02)
                              if header.message_type == 0x02 {
                                  self.logger.log(LogLevel::Info, "Runtime", &format!("Received Notification: Service 0x{:04x} Event/Method 0x{:04x} Payload {} bytes", header.service_id, header.method_id, buf[16..size].len()));
+                                 if let Some(handler) = services.get(&header.service_id) {
+                                     handler.handle(&header, &buf[16..size]);
+                                 }
                                  continue;
                              }
     

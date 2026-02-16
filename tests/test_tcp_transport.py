@@ -122,70 +122,60 @@ def test_tcp_transport_cpp_server():
         pytest.fail("Could not find tcp_server_test executable. Make sure to build the project first.")
         
     print(f"DEBUG: Starting server: {server_exe} {config_path}")
-    server_proc = subprocess.Popen([server_exe, config_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    
+    from tools.fusion.execution import AppRunner
+    server = AppRunner("tcp_server", [server_exe, config_path], log_dir)
+    server.start()
+
     try:
-        # Wait for SD offer
+        # Wait for SD offer (AppRunner logs it)
         time.sleep(2)
-        
+
         # Start Python Client
         os.environ["FUSION_PACKET_DUMP"] = "1"
         rt = SomeIpRuntime(config_path, "tcp_client", ConsoleLogger())
         rt.start()
-        
+
         # Wait for SD discovery
         service_found = False
         for _ in range(50):
-            # rt.remote_services keys are (service_id, major_version)
             if any(k[0] == 4097 for k in rt.remote_services.keys()):
                 service_found = True
                 break
             time.sleep(0.1)
-        
-        assert service_found, "Service 4097 not discovered over TCP/SD"
-        
+
+        if not service_found:
+             # Check if server is still running
+             if not server.is_running():
+                 print(f"Server died with code {server.get_return_code()}")
+             assert False, "Service 4097 not discovered over TCP/SD"
+
         # Send Request
-        # Find the specific key for 4097
         service_key = next(k for k in rt.remote_services.keys() if k[0] == 4097)
         target_addr = rt.remote_services[service_key]
         print(f"[Python Client] Discovered service 4097 at {target_addr}")
         payload = bytes([0, 0, 0, 10, 0, 0, 0, 20]) # 10 + 20
-        # send_request(service_id, method_id, payload, endpoint, wait_for_response)
         response = rt.send_request(service_key[0], 1, payload, target_addr, wait_for_response=True)
-        
-        if response is None:
-             print("[Python Client] ERROR: send_request returned None")
-        
+
         assert response is not None, "No response received over TCP"
         assert len(response) >= 4, "Response payload too short"
-        
+
         res_val = (response[0] << 24) | (response[1] << 16) | (response[2] << 8) | response[3]
         assert res_val == 30, f"Expected 30, got {res_val}"
-        
+
         print(f"[Python Client] Result: {res_val} (Success!)")
-        
+
     except Exception as e:
         print(f"Test Failed: {e}")
-        # Print server output
-        if server_proc.poll() is not None:
-            print(f"Server exited with {server_proc.returncode}")
-        
-        # We need to read remaining output. Since we used PIPE, we can't easily read without blocking or threads if it's still running.
-        # But if we terminate it, we can read.
-        server_proc.terminate()
-        try:
-            outs, errs = server_proc.communicate(timeout=2)
-            print("--- Server Stdout ---")
-            print(outs)
-            print("--- Server Stderr ---")
-            print(errs)
-        except:
-            print("Could not get server output")
+        server.stop()
+        # Read the log file created by AppRunner
+        if os.path.exists(server.log_path):
+            with open(server.log_path, 'r') as f:
+                print("--- Server Logs ---")
+                print(f.read())
         raise e
     finally:
-        if server_proc.poll() is None:
-            server_proc.terminate()
-            server_proc.wait()
+        server.stop()
+        rt.stop()
 
 if __name__ == "__main__":
     test_tcp_transport_cpp_server()

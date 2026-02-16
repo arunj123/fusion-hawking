@@ -22,7 +22,10 @@ pub mod generated {
 use generated::{
     FusionServiceProvider, FusionServiceServer,
     RadarServiceClient, FusedTrack,
+    RadarServiceOnObjectDetectedEvent,
 };
+use fusion_hawking::codec::SomeIpDeserialize;
+use fusion_hawking::runtime::RequestHandler;
 
 // --- Fusion Service Implementation ---
 struct FusionImpl {
@@ -77,6 +80,26 @@ impl FusionServiceProvider for FusionImpl {
     }
 }
 
+// --- Manual Radar Notification Handler ---
+struct RadarHandler {
+    fusion: Arc<FusionImpl>,
+}
+
+impl RequestHandler for RadarHandler {
+    fn service_id(&self) -> u16 { RadarServiceClient::SERVICE_ID }
+    fn major_version(&self) -> u8 { RadarServiceClient::MAJOR_VERSION as u8 }
+    fn minor_version(&self) -> u32 { RadarServiceClient::MINOR_VERSION }
+    fn handle(&self, header: &fusion_hawking::codec::SomeIpHeader, payload: &[u8]) -> Option<Vec<u8>> {
+        if header.method_id == 0x8001 { // on_object_detected
+             let mut cursor = std::io::Cursor::new(payload);
+             if let Ok(event) = RadarServiceOnObjectDetectedEvent::deserialize(&mut cursor) {
+                 self.fusion.process_radar_data(event.objects);
+             }
+        }
+        None
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let config_path = if args.len() > 1 {
@@ -113,6 +136,10 @@ fn main() {
         100, // TTL
         "primary"
     );
+
+    // Register notification handler
+    let radar_handler = Box::new(RadarHandler { fusion: fusion_impl.clone() });
+    rt.register_notification_handler(RadarServiceClient::SERVICE_ID, radar_handler);
 
     logger.log(LogLevel::Info, "Main", "FusionService offered. Waiting for radar events...");
 

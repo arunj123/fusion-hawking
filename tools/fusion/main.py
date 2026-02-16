@@ -53,7 +53,7 @@ def run_build(root_dir, reporter, builder, tool_status, target, server, skip_cod
         if not builder.build_cpp(with_coverage, packet_dump):
             raise Exception("C++ Build Failed")
 
-    if target in ["all", "js"]:
+    if target in ["all", "js", "python"]:
         if not builder.build_js():
             raise Exception("JS Build Failed")
 

@@ -101,7 +101,7 @@ private:
     void process_packet(const char* data, int len, sockaddr_storage src, std::shared_ptr<InterfaceContext> ctx, bool is_tcp, SOCKET from_sock = INVALID_SOCKET);
     void process_sd_packet(const char* data, int len, sockaddr_storage src, std::shared_ptr<InterfaceContext> ctx);
 #ifdef FUSION_PACKET_DUMP
-    void DumpPacket(const char* data, int len, sockaddr_storage src);
+    void DumpPacket(const char* data, uint32_t len, sockaddr_storage src);
 #endif
     
     struct OfferedServiceInfo {
@@ -120,6 +120,7 @@ private:
         std::chrono::steady_clock::time_point last_offer_time;
     };
     std::vector<OfferedServiceInfo> offered_services;
+    std::mutex offered_services_mutex;
     
     std::map<std::pair<uint16_t, uint16_t>, bool> subscriptions; // (service_id, eventgroup_id) -> acked
     

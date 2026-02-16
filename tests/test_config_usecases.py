@@ -18,6 +18,10 @@ import sys
 import json
 import time
 import subprocess
+import socket
+import datetime
+import threading
+import unittest
 import pytest
 import tempfile
 import socket
@@ -30,7 +34,7 @@ from tools.fusion.utils import to_wsl, get_ns_iface
 
 # Skip entire module if not on Linux
 if sys.platform != "linux":
-    pytest.skip("Config use-case tests require Linux (VNet namespaces)", allow_module_level=True)
+    raise unittest.SkipTest("Config use-case tests require Linux (VNet namespaces)")
 
 # Global environment — detect once
 ENV = NetworkEnvironment()
@@ -106,8 +110,8 @@ class TestUseCases:
             # Python Provider
             provider_code = f"""
 import sys, time, os
-sys.path.append('{to_wsl(PROJECT_ROOT)}')
-sys.path.append('{to_wsl(os.path.join(PROJECT_ROOT, 'src', 'python'))}')
+sys.path.append(r'{to_wsl(PROJECT_ROOT)}')
+sys.path.append(r'{to_wsl(os.path.join(PROJECT_ROOT, 'src', 'python'))}')
 from fusion_hawking.runtime import SomeIpRuntime, ReturnCode, RequestHandler
 
 class Handler(RequestHandler):
@@ -122,7 +126,7 @@ class Handler(RequestHandler):
         res = a + b
         return (ReturnCode.E_OK, struct.pack('>i', res))
 
-rt = SomeIpRuntime('{wsl_config_path}', 'multi_provider')
+rt = SomeIpRuntime(r'{wsl_config_path}', 'multi_provider')
 rt.offer_service('MathService', Handler())
 rt.start()
 print("PROVIDER_STARTED")
@@ -206,8 +210,8 @@ while True: time.sleep(1)
 
             common_script = f"""
 import sys, time, os
-sys.path.append('{to_wsl(PROJECT_ROOT)}')
-sys.path.append('{to_wsl(os.path.join(PROJECT_ROOT, 'src', 'python'))}')
+sys.path.append(r'{to_wsl(PROJECT_ROOT)}')
+sys.path.append(r'{to_wsl(os.path.join(PROJECT_ROOT, 'src', 'python'))}')
 from fusion_hawking.runtime import SomeIpRuntime, RequestHandler, ReturnCode
 class MockHandler(RequestHandler):
     def __init__(self, sid): self.sid = sid
@@ -277,8 +281,8 @@ rt.stop()
             
             common = f"""
 import sys, time, os
-sys.path.append('{to_wsl(PROJECT_ROOT)}')
-sys.path.append('{to_wsl(os.path.join(PROJECT_ROOT, 'src', 'python'))}')
+sys.path.append(r'{to_wsl(PROJECT_ROOT)}')
+sys.path.append(r'{to_wsl(os.path.join(PROJECT_ROOT, 'src', 'python'))}')
 from fusion_hawking.runtime import SomeIpRuntime, RequestHandler, ReturnCode
 class Handler(RequestHandler):
     def get_service_id(self): return 0x1000
@@ -364,8 +368,8 @@ rt.stop()
 
             common = f"""
 import sys, time, os
-sys.path.append('{to_wsl(PROJECT_ROOT)}')
-sys.path.append('{to_wsl(os.path.join(PROJECT_ROOT, 'src', 'python'))}')
+sys.path.append(r'{to_wsl(PROJECT_ROOT)}')
+sys.path.append(r'{to_wsl(os.path.join(PROJECT_ROOT, 'src', 'python'))}')
 from fusion_hawking.runtime import SomeIpRuntime, RequestHandler, ReturnCode
 class Handler(RequestHandler):
     def get_service_id(self): return 0x1000
@@ -421,8 +425,8 @@ rt.stop()
 
             common = f"""
 import sys, time, os
-sys.path.append('{to_wsl(PROJECT_ROOT)}')
-sys.path.append('{to_wsl(os.path.join(PROJECT_ROOT, 'src', 'python'))}')
+sys.path.append(r'{to_wsl(PROJECT_ROOT)}')
+sys.path.append(r'{to_wsl(os.path.join(PROJECT_ROOT, 'src', 'python'))}')
 from fusion_hawking.runtime import SomeIpRuntime, ReturnCode, RequestHandler
 """
             srv_script = common + f"""
@@ -489,8 +493,8 @@ rt.stop()
 
             common = f"""
 import sys, time, os
-sys.path.append('{to_wsl(PROJECT_ROOT)}')
-sys.path.append('{to_wsl(os.path.join(PROJECT_ROOT, 'src', 'python'))}')
+sys.path.append(r'{to_wsl(PROJECT_ROOT)}')
+sys.path.append(r'{to_wsl(os.path.join(PROJECT_ROOT, 'src', 'python'))}')
 from fusion_hawking.runtime import SomeIpRuntime, RequestHandler, ReturnCode
 """
             srv_script = common + f"""

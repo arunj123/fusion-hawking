@@ -473,77 +473,174 @@ class SmartConfigFactory:
         """
         Generate configuration for Automotive PubSub demo.
         Uses multicast event groups for sensor data distribution.
+        
+        Topology:
+        - VNet (Distributed):
+            - Radar on ns_ecu1 -> config_ecu1.json
+            - Fusion on ns_ecu2 -> config_ecu2.json
+            - ADAS on ns_ecu3 -> config_ecu3.json
+        - Non-VNet: Single config for all nodes.
         """
-        iface = self._resolve_interface()
-        ipv4 = iface["ipv4"] or "127.0.0.1"
         include_v6 = self._should_include_ipv6()
-        ipv6 = iface.get("ipv6") if include_v6 else None
         
-        gen = ConfigGenerator()
+        # Check for distributed VNet capability (Require 3 ECUs)
+        dist_vnet = False
+        if self.env.has_vnet:
+            ecu1 = self._resolve_interface('ns_ecu1')
+            ecu2 = self._resolve_interface('ns_ecu2')
+            ecu3 = self._resolve_interface('ns_ecu3')
+            if ecu1['ipv4'] and ecu2['ipv4'] and ecu3['ipv4']:
+                dist_vnet = True
         
-        endpoints = {
-            "sd_mcast_v4": {"ip": self.SD_MCAST_V4, "port": 30892, "version": 4, "protocol": "udp"},
-            "event_mcast": {"ip": self.EVENT_MCAST_V4, "port": self.EVENT_MCAST_V4_PORT, "version": 4, "protocol": "udp"},
-            "radar_ep":    self._make_endpoint(ipv4, 0, "udp"),
-            "fusion_ep":   self._make_endpoint(ipv4, 0, "udp"),
-            "sd_uc_v4":    self._make_endpoint(ipv4, 0, "udp"),
-        }
-        
-        if ipv6:
-            endpoints["sd_mcast_v6"] = {"ip": self.SD_MCAST_V6, "port": 30892, "version": 6, "protocol": "udp"}
-        
-        sd = {"endpoint_v4": "sd_mcast_v4"}
-        if ipv6:
-            sd["endpoint_v6"] = "sd_mcast_v6"
-        
-        gen.add_interface("primary", iface["name"], endpoints=endpoints, sd=sd)
-        
-        gen.add_instance("radar_cpp_instance",
-            unicast_bind={"primary": "sd_uc_v4"},
-            providing={
-                "radar-service": {
-                    "service_id": 28673, "instance_id": 1, "major_version": 1, "minor_version": 0,
-                    "offer_on": {"primary": "radar_ep"},
-                    "eventgroups": {
-                        "radar-events": {
-                            "eventgroup_id": 1, "events": [32769], "multicast": {"primary": "event_mcast"}
-                        }
-                    }
-                }
-            },
-            sd={"cycle_offer_ms": 1000}
-        )
-        
-        gen.add_instance("fusion_rust_instance",
-            unicast_bind={"primary": "sd_uc_v4"},
-            providing={
-                "fusion-service": {
-                    "service_id": 28674, "instance_id": 1, "major_version": 1, "minor_version": 0,
-                    "offer_on": {"primary": "fusion_ep"},
-                    "eventgroups": {
-                        "fusion-events": {
-                            "eventgroup_id": 1, "events": [32769], "multicast": {"primary": "event_mcast"}
-                        }
-                    }
-                }
-            },
-            required={
-                "radar-client": {"service_id": 28673, "instance_id": 1, "major_version": 1, "find_on": ["primary"]}
-            },
-            sd={"cycle_offer_ms": 1000}
-        )
-        
-        gen.add_instance("adas_python_instance",
-            unicast_bind={"primary": "sd_uc_v4"},
-            required={
-                "fusion-client": {"service_id": 28674, "instance_id": 1, "major_version": 1, "find_on": ["primary"]}
+        if dist_vnet:
+            # --- Distributed Configuration (Split Configs) ---
+            ecus = {
+                'ecu1': self._resolve_interface('ns_ecu1'),
+                'ecu2': self._resolve_interface('ns_ecu2'),
+                'ecu3': self._resolve_interface('ns_ecu3')
             }
-        )
-        
-        config_path = os.path.join(output_dir, "config.json")
-        gen.save(config_path)
-        logger.info(f"Generated automotive_pubsub config: {config_path} (iface={iface['name']}, ipv4={ipv4})")
-        return config_path
+            
+            for name, iface in ecus.items():
+                ipv4 = iface["ipv4"]
+                ipv6 = iface.get("ipv6") if include_v6 else None
+                gen = ConfigGenerator()
+                
+                endpoints = {
+                    "sd_mcast_v4": {"ip": self.SD_MCAST_V4, "port": 30892, "version": 4, "protocol": "udp"},
+                    "event_mcast": {"ip": self.EVENT_MCAST_V4, "port": self.EVENT_MCAST_V4_PORT, "version": 4, "protocol": "udp"},
+                    "radar_ep":    self._make_endpoint(ecus['ecu1']['ipv4'], 0, "udp"),
+                    "fusion_ep":   self._make_endpoint(ecus['ecu2']['ipv4'], 0, "udp"),
+                    "sd_uc_v4":    self._make_endpoint(ipv4, 0, "udp"),
+                }
+                
+                if include_v6:
+                    endpoints["sd_mcast_v6"] = {"ip": self.SD_MCAST_V6, "port": 30892, "version": 6, "protocol": "udp"}
+                
+                sd = {"endpoint_v4": "sd_mcast_v4"}
+                if include_v6:
+                    sd["endpoint_v6"] = "sd_mcast_v6"
+                
+                gen.add_interface("primary", iface["name"], endpoints=endpoints, sd=sd)
+                
+                # Add all instances to all configs (they only run their own)
+                # But they need the knowledge of other instances for 'required' blocks
+                gen.add_instance("radar_cpp_instance",
+                    unicast_bind={"primary": "sd_uc_v4"} if name == 'ecu1' else None,
+                    providing={
+                        "radar-service": {
+                            "service_id": 28673, "instance_id": 1, "major_version": 1, "minor_version": 0,
+                            "offer_on": {"primary": "radar_ep"},
+                            "eventgroups": {
+                                "radar-events": {
+                                    "eventgroup_id": 1, "events": [32769], "multicast": {"primary": "event_mcast"}
+                                }
+                            }
+                        }
+                    },
+                    sd={"cycle_offer_ms": 1000}
+                )
+                
+                gen.add_instance("fusion_rust_instance",
+                    unicast_bind={"primary": "sd_uc_v4"} if name == 'ecu2' else None,
+                    providing={
+                        "fusion-service": {
+                            "service_id": 28674, "instance_id": 1, "major_version": 1, "minor_version": 0,
+                            "offer_on": {"primary": "fusion_ep"},
+                            "eventgroups": {
+                                "fusion-events": {
+                                    "eventgroup_id": 1, "events": [32769], "multicast": {"primary": "event_mcast"}
+                                }
+                            }
+                        }
+                    },
+                    required={
+                        "radar-client": {"service_id": 28673, "instance_id": 1, "major_version": 1, "find_on": ["primary"]}
+                    },
+                    sd={"cycle_offer_ms": 1000}
+                )
+                
+                gen.add_instance("adas_python_instance",
+                    unicast_bind={"primary": "sd_uc_v4"} if name == 'ecu3' else None,
+                    required={
+                        "fusion-client": {"service_id": 28674, "instance_id": 1, "major_version": 1, "find_on": ["primary"]}
+                    }
+                )
+                
+                gen.save(os.path.join(output_dir, f"config_{name}.json"))
+            
+            logger.info(f"Generated split automotive_pubsub configs in {output_dir}")
+            return output_dir
+        else:
+            # --- Single Configuration (Fallback) ---
+            iface = self._resolve_interface()
+            ipv4 = iface["ipv4"] or "127.0.0.1"
+            ipv6 = iface.get("ipv6") if include_v6 else None
+            
+            gen = ConfigGenerator()
+            
+            endpoints = {
+                "sd_mcast_v4": {"ip": self.SD_MCAST_V4, "port": 30892, "version": 4, "protocol": "udp"},
+                "event_mcast": {"ip": self.EVENT_MCAST_V4, "port": self.EVENT_MCAST_V4_PORT, "version": 4, "protocol": "udp"},
+                "radar_ep":    self._make_endpoint(ipv4, 0, "udp"),
+                "fusion_ep":   self._make_endpoint(ipv4, 0, "udp"),
+                "sd_uc_v4":    self._make_endpoint(ipv4, 0, "udp"),
+            }
+            
+            if ipv6:
+                endpoints["sd_mcast_v6"] = {"ip": self.SD_MCAST_V6, "port": 30892, "version": 6, "protocol": "udp"}
+            
+            sd = {"endpoint_v4": "sd_mcast_v4"}
+            if ipv6:
+                sd["endpoint_v6"] = "sd_mcast_v6"
+            
+            gen.add_interface("primary", iface["name"], endpoints=endpoints, sd=sd)
+            
+            gen.add_instance("radar_cpp_instance",
+                unicast_bind={"primary": "sd_uc_v4"},
+                providing={
+                    "radar-service": {
+                        "service_id": 28673, "instance_id": 1, "major_version": 1, "minor_version": 0,
+                        "offer_on": {"primary": "radar_ep"},
+                        "eventgroups": {
+                            "radar-events": {
+                                "eventgroup_id": 1, "events": [32769], "multicast": {"primary": "event_mcast"}
+                            }
+                        }
+                    }
+                },
+                sd={"cycle_offer_ms": 1000}
+            )
+            
+            gen.add_instance("fusion_rust_instance",
+                unicast_bind={"primary": "sd_uc_v4"},
+                providing={
+                    "fusion-service": {
+                        "service_id": 28674, "instance_id": 1, "major_version": 1, "minor_version": 0,
+                        "offer_on": {"primary": "fusion_ep"},
+                        "eventgroups": {
+                            "fusion-events": {
+                                "eventgroup_id": 1, "events": [32769], "multicast": {"primary": "event_mcast"}
+                            }
+                        }
+                    }
+                },
+                required={
+                    "radar-client": {"service_id": 28673, "instance_id": 1, "major_version": 1, "find_on": ["primary"]}
+                },
+                sd={"cycle_offer_ms": 1000}
+            )
+            
+            gen.add_instance("adas_python_instance",
+                unicast_bind={"primary": "sd_uc_v4"},
+                required={
+                    "fusion-client": {"service_id": 28674, "instance_id": 1, "major_version": 1, "find_on": ["primary"]}
+                }
+            )
+            
+            config_path = os.path.join(output_dir, "config.json")
+            gen.save(config_path)
+            logger.info(f"Generated single automotive_pubsub config: {config_path} (iface={iface['name']}, ipv4={ipv4})")
+            return config_path
 
     def generate_someipy_demo(self, output_dir):
         """

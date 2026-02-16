@@ -8,6 +8,7 @@
  */
 
 import dgram from 'node:dgram';
+import * as os from 'node:os';
 import { ILogger, LogLevel } from './logger.js';
 
 /** Remote address info. */
@@ -32,7 +33,7 @@ export interface ITransport {
 
 /** UDP transport implementation using Node.js dgram. */
 export class UdpTransport implements ITransport {
-    private socket: dgram.Socket;
+    private socket!: dgram.Socket;
     private messageCallbacks: OnMessageCallback[] = [];
     private _localAddress: string = '';
     private _localPort: number = 0;
@@ -40,10 +41,23 @@ export class UdpTransport implements ITransport {
     constructor(
         private family: 'udp4' | 'udp6' = 'udp4',
         private logger?: ILogger,
+        private reuseAddr: boolean = os.platform() === 'win32', // Default true on Windows
     ) {
+        this._createSocket();
+    }
+
+    private _createSocket() {
+        if (this.socket) {
+            try {
+                this.socket.removeAllListeners();
+                this.socket.close();
+            } catch {
+                // Ignore close errors
+            }
+        }
         this.socket = dgram.createSocket({
-            type: family,
-            reuseAddr: true,
+            type: this.family,
+            reuseAddr: this.reuseAddr,
         });
 
         this.socket.on('message', (msg, rinfo) => {
@@ -61,20 +75,73 @@ export class UdpTransport implements ITransport {
         });
 
         this.socket.on('error', (err) => {
-            this.logger?.log(LogLevel.ERROR, 'Transport', `Socket error: ${err.message}`);
+            if (this._localPort !== 0 || err.message.includes('bind')) {
+                this.logger?.log(LogLevel.ERROR, 'Transport', `[${this.family}] Socket error: ${err.message}`);
+            }
         });
     }
 
     async bind(address: string, port: number): Promise<void> {
+        this._localPort = port;
+        try {
+            await this._doBind(address, port);
+        } catch (err: any) {
+            if (err.code === 'UNKNOWN' || err.code === 'EACCES') {
+                const isWindows = os.platform() === 'win32';
+                this.logger?.log(LogLevel.WARN, 'Transport', `Bind to ${address}:${port} failed (${err.code}), retrying with wildcard...`);
+
+                this._createSocket();
+                try {
+                    await this._doBind(isWindows ? '0.0.0.0' : '0.0.0.0', port);
+                } catch (err2: any) {
+                    if (isWindows && (err2.code === 'UNKNOWN' || err2.code === 'EACCES') && port === 0) {
+                        this.logger?.log(LogLevel.WARN, 'Transport', `Wildcard bind also failed, retrying with random high port...`);
+                        // Final fallback: try a random ephemeral port manually
+                        for (let attempt = 0; attempt < 5; attempt++) {
+                            this._createSocket();
+                            const randomPort = 40000 + Math.floor(Math.random() * 20000);
+                            try {
+                                await this._doBind('0.0.0.0', randomPort);
+                                return;
+                            } catch {
+                                // Try next random port
+                            }
+                        }
+                    }
+                    throw err2;
+                }
+            } else {
+                throw err;
+            }
+        }
+    }
+
+    private async _doBind(address: string, port: number): Promise<void> {
         return new Promise((resolve, reject) => {
-            this.socket.bind(port, address, () => {
-                const addr = this.socket.address();
-                this._localAddress = addr.address;
-                this._localPort = addr.port;
-                this.logger?.log(LogLevel.INFO, 'Transport', `Bound to ${this._localAddress}:${this._localPort}`);
-                resolve();
-            });
-            this.socket.once('error', reject);
+            const errorHandler = (err: Error) => {
+                this.logger?.log(LogLevel.ERROR, 'Transport', `Bind error for ${address}:${port}: ${err.message}`);
+                reject(err);
+            };
+
+            this.socket.once('error', errorHandler);
+
+            try {
+                this.socket.bind({
+                    address,
+                    port,
+                    exclusive: false // Use non-exclusive for better Windows behavior
+                }, () => {
+                    this.socket.removeListener('error', errorHandler);
+                    const addr = this.socket.address();
+                    this._localAddress = addr.address;
+                    this._localPort = addr.port;
+                    this.logger?.log(LogLevel.INFO, 'Transport', `Bound (${this.family}) to ${this._localAddress}:${this._localPort}`);
+                    resolve();
+                });
+            } catch (err: any) {
+                this.socket.removeListener('error', errorHandler);
+                reject(err);
+            }
         });
     }
 

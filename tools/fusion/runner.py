@@ -31,7 +31,7 @@ class Tester:
         my_pid = os.getpid()
         
         # 1. Kill dedicated apps (always safe)
-        apps = ["cpp_app.exe", "rust_app_demo.exe", "node.exe"] if os.name == 'nt' else ["cpp_app", "rust_app_demo", "node"]
+        apps = ["cpp_app.exe", "rust_app_demo.exe", "node.exe", "radar_demo.exe", "fusion_node.exe", "someipyd.exe"] if os.name == 'nt' else ["cpp_app", "rust_app_demo", "node", "radar_demo", "fusion_node", "someipyd"]
         for proc in apps:
             try:
                 if os.name == 'nt':
@@ -40,18 +40,33 @@ class Tester:
                     subprocess.run(["pkill", "-9", proc], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except Exception: pass
 
-        # 2. Specifically target processes holding the SOME/IP SD ports (30890, 31890)
-        ports = [30890, 31890]
+        # 2. Specifically target python processes running demo scripts (Windows)
+        if os.name == 'nt':
+            scripts = ["start_daemon.py", "service_someipy.py", "tmp_python_service", "client_fusion.py"]
+            for script in scripts:
+                try:
+                    cmd = f'wmic process where "name=\'python.exe\' and commandline like \'%{script}%\'" get processid'
+                    output = subprocess.check_output(cmd, shell=True).decode('utf-8', 'ignore')
+                    for line in output.strip().split('\n'):
+                        line = line.strip()
+                        if line.isdigit() and int(line) != my_pid:
+                            subprocess.run(["taskkill", "/F", "/PID", line], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except Exception: pass
+
+        # 3. Specifically target processes holding the SOME/IP SD and service ports
+        ports = [30890, 31890, 30500, 30001]
         for port in ports:
             try:
                 if os.name == 'nt':
-                    output = subprocess.check_output(f"netstat -ano | findstr :{port}", shell=True).decode('utf-8', 'ignore')
-                    for line in output.strip().split('\n'):
-                        parts = line.split()
-                        if len(parts) > 4:
-                            pid = parts[-1]
-                            if pid.isdigit() and int(pid) != my_pid:
-                                subprocess.run(["taskkill", "/F", "/PID", pid], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    try:
+                        output = subprocess.check_output(f"netstat -ano | findstr :{port}", shell=True).decode('utf-8', 'ignore')
+                        for line in output.strip().split('\n'):
+                            parts = line.split()
+                            if len(parts) > 4:
+                                pid = parts[-1]
+                                if pid.isdigit() and int(pid) != my_pid:
+                                    subprocess.run(["taskkill", "/F", "/PID", pid], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    except subprocess.CalledProcessError: pass # no processes found
                 else:
                     subprocess.run(["fuser", "-k", f"{port}/udp"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     subprocess.run(["fuser", "-k", f"{port}/tcp"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

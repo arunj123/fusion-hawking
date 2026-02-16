@@ -30,8 +30,10 @@ def _get_env():
 # ─────────────────────────────────────────────────────────────
 
 def to_wsl(path):
-    """Convert a Windows path to a WSL-accessible path."""
-    if not path:
+    """Convert a Windows path to a WSL-accessible path. 
+    On native Windows, returns the path unchanged.
+    """
+    if not path or os.name == 'nt':
         return path
     return path.replace("\\", "/").replace("C:", "/mnt/c").replace("c:", "/mnt/c")
 

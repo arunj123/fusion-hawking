@@ -271,19 +271,19 @@ export class SomeIpRuntime {
                 const ctx: InterfaceContext = { alias, ip: bindIpV4 ?? '', ipV6: bindIpV6 ?? '', transport: null as any, sdTransport: null as any };
 
                 if (bindIpV4) {
+                    const isWindows = os.platform() === 'win32';
+                    const mainBindTarget = isWindows ? '0.0.0.0' : bindIpV4;
                     const mainTransport = new UdpTransport('udp4', this.logger);
-                    await mainTransport.bind(bindIpV4, bindPort);
+                    await mainTransport.bind(mainBindTarget, bindPort);
                     mainTransport.onMessage((data, rinfo) => this.handleMessage(data, rinfo, ctx));
                     ctx.transport = mainTransport;
 
                     if (sdEp && sdEp.version === 4) {
-                        const sdTransport = new UdpTransport('udp4', this.logger);
+                        const sdTransport = new UdpTransport('udp4', this.logger, true);
                         // Bind to local interface IP from config.
 
                         const isWindows = os.platform() === 'win32';
-                        // Windows: Bind to Unicast Interface IP (Strict Binding supported here)
-                        // Linux: Bind to Multicast Group IP to allow reception
-                        const bindTarget = isWindows ? bindIpV4 : sdEp.ip;
+                        const bindTarget = isWindows ? '0.0.0.0' : sdEp.ip;
 
                         await sdTransport.bind(bindTarget!, sdEp.port);
 
@@ -299,8 +299,10 @@ export class SomeIpRuntime {
                 }
 
                 if (bindIpV6) {
+                    const isWindows = os.platform() === 'win32';
+                    const mainBindTargetV6 = isWindows ? '::' : bindIpV6;
                     const mainTransportV6 = new UdpTransport('udp6', this.logger);
-                    await mainTransportV6.bind(bindIpV6, bindPort);
+                    await mainTransportV6.bind(mainBindTargetV6, bindPort);
                     mainTransportV6.onMessage((data, rinfo) => this.handleMessage(data, rinfo, ctx));
                     ctx.transportV6 = mainTransportV6;
 
@@ -308,11 +310,11 @@ export class SomeIpRuntime {
                     const sdEpKeyV6 = ifaceCfg.sd?.endpointV6;
                     const sdEpV6 = sdEpKeyV6 ? ifaceCfg.endpoints[sdEpKeyV6] : undefined;
                     if (sdEpV6 && sdEpV6.version === 6) {
-                        const sdTransportV6 = new UdpTransport('udp6', this.logger);
+                        const sdTransportV6 = new UdpTransport('udp6', this.logger, true);
                         // Bind to local interface IPv6 from config.
                         // Linux: Bind to '::' to allow multicast reception
                         // Windows/Other: Bind to specific interface address
-                        const bindTargetV6 = os.platform() === 'linux' ? '::' : bindIpV6;
+                        const bindTargetV6 = (os.platform() === 'linux' || os.platform() === 'win32') ? '::' : bindIpV6;
                         await sdTransportV6.bind(bindTargetV6!, sdEpV6.port);
                         await sdTransportV6.joinMulticast(sdEpV6.ip, bindIpV6);
                         sdTransportV6.setMulticastLoopback(true);

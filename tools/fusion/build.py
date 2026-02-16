@@ -50,7 +50,11 @@ class Builder:
         if packet_dump:
             cmd_demo.extend(["--features", "packet-dump"])
             
-        return self.run_command(cmd_demo, "build_rust_demo", cwd="examples/integrated_apps/rust_app")
+        if not self.run_command(cmd_demo, "build_rust_demo", cwd="examples/integrated_apps/rust_app"):
+            return False
+
+        # Automotive Pub-Sub Fusion Node
+        return self.run_command(cmd_demo, "build_rust_fusion", cwd="examples/automotive_pubsub/rust_fusion")
 
     def build_cpp(self, with_coverage=False, packet_dump=False):
         # Core Library + Simple Bins + Tests (Root CMake)
@@ -79,21 +83,39 @@ class Builder:
         return True
 
     def build_js(self):
-        # Build JS/TS Core
-        # Install dependencies
-        cmd_install = ["npm", "install"]
-        # Use shell=True for windows npm compatibility if needed, but run_command uses array so subprocess.run handles it.
-        # On Windows, npm is a batch file, so we might need shell=True or list ['npm.cmd', ...]
-        # fusion.bat checks python, but assumes node is in path.
-        npm_bin = "npm"
-        if os.name == "nt":
-            npm_bin = "npm.cmd"
+        """Builds all JS/TS projects (core and examples)."""
+        npm_bin = "npm.cmd" if os.name == "nt" else "npm"
+        
+        js_projects = [
+            "src/js",
+            "examples/integrated_apps/js_app",
+            "examples/automotive_pubsub/js_adas",
+            "examples/simple_no_sd/js",
+            "examples/someipy_demo/js_client"
+        ]
+        
+        for project_path in js_projects:
+            full_path = os.path.join(os.getcwd(), project_path)
+            if not os.path.exists(full_path):
+                print(f"[WARN] JS Project path not found: {project_path}")
+                continue
             
-        if not self.run_command([npm_bin, "install"], "build_js_install", cwd="src/js"):
-            return False
+            # Skip if no package.json (e.g. simple vanilla JS files)
+            pkg_json = os.path.join(full_path, "package.json")
+            if not os.path.exists(pkg_json):
+                print(f"Skipping JS build for {project_path} (no package.json)")
+                continue
+                
+            log_suffix = project_path.replace("/", "_").replace("\\", "_")
+            print(f"Building JS project: {project_path}")
             
-        # Build
-        if not self.run_command([npm_bin, "run", "build"], "build_js_compile", cwd="src/js"):
-            return False
-            
+            # Install
+            if not self.run_command([npm_bin, "install"], f"build_js_install_{log_suffix}", cwd=project_path):
+                return False
+                
+            # Build (only if package.json has a build script)
+            # Most of our JS projects have a build script for tsc
+            if not self.run_command([npm_bin, "run", "build"], f"build_js_compile_{log_suffix}", cwd=project_path):
+                return False
+                
         return True
