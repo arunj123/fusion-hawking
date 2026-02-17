@@ -18,12 +18,14 @@ note right of Repetition
 end note
 
 Repetition --> Main : repetitions_done
-note right of Main
   [PRS_SOMEIPSD_00014]
   Steady state:
   Send periodic Offers
   (CYCLIC_OFFER_DELAY)
 end note
+
+Main : On FindService -> Send Unicast Offer [PRS_SOMEIPSD_00015]
+Repetition : On FindService -> Send Unicast Offer [PRS_SOMEIPSD_00015]
 
 Main --> Down : stop_offer()
 Repetition --> Down : stop_offer()

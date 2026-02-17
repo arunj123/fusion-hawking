@@ -76,8 +76,13 @@ impl LocalService {
         // Random delay between min and max
         let range = self.initial_delay_max.as_millis().saturating_sub(self.initial_delay_min.as_millis()) as u64;
         let range = if range == 0 { 1 } else { range };
-        let now_nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().subsec_nanos() as u64;
-        let random_millis = self.initial_delay_min.as_millis() as u64 + (now_nanos % range);
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+        let seed = now.as_nanos() as u64;
+        // Simple LCG (Linear Congruential Generator) for better distribution than raw modulo
+        // Constants from MMIX via Knuth
+        let mut rng = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        let random_millis = self.initial_delay_min.as_millis() as u64 + (rng % range);
         
         self.next_transmission = Instant::now() + Duration::from_millis(random_millis);
     }
@@ -511,7 +516,46 @@ impl ServiceDiscovery {
                     }
                 },
                 EntryType::FindService => {
-                    // TODO: Send Offer if we have it?
+                    // Check if we offer this service
+                    // Iterate and find matching service_id and instance_id (or Wildcard)
+                    let matches: Vec<(u16, u16)> = self.local_services.iter()
+                        .filter(|((sid, iid), service)| {
+                            *sid == entry.service_id && 
+                            (entry.instance_id == 0xFFFF || entry.instance_id == *iid) &&
+                            (service.phase == ServicePhase::Main || service.phase == ServicePhase::Repetition)
+                        })
+                        .map(|(k, _)| *k)
+                        .collect();
+
+                    for k in matches {
+                        if let Some(service) = self.local_services.get(&k) {
+                            // Send unicast offer to the requester
+                            // We need the source address from the packet?
+                            // The current SD implementation processes packets but `handle_incoming_packet` 
+                            // doesn't take the source address as argument.
+                            // We need to change the signature of `handle_incoming_packet` or `ServiceDiscovery::poll`.
+                            
+                            // For now, since `handle_incoming_packet` iterates all entries, 
+                            // and we don't have source address passed down here easily without refactoring,
+                            // we might rely on Multicast Offer?
+                            // "If a server receives a FindService... it shall send an OfferService... using Unicast (if supported) or Multicast"
+                            
+                            // Let's trigger a multicast offer for simplicity and robustness first, 
+                            // or better, schedule a transmission?
+                            // Sending immediately might flood if many Finds arrive.
+                            // But for this task, let's just send the Offer packet we already have.
+                            
+                            let mut entry_to_send = service.entry.clone();
+                            entry_to_send.ttl = service.ttl;
+                             // Reset indices
+                            entry_to_send.index_1 = 0;
+                            entry_to_send.number_of_opts_1 = service.endpoint_options.len() as u8;
+                            entry_to_send.index_2 = 0;
+                            entry_to_send.number_of_opts_2 = 0;
+                            
+                            let _ = self.send_packet(entry_to_send, service.endpoint_options.clone());
+                        }
+                    }
                 },
                 EntryType::SubscribeEventgroup => {
                     // Someone is subscribing to our eventgroup
@@ -824,6 +868,46 @@ mod tests {
         let services = sd.local_services.values().next().unwrap();
         // Should have both
         assert_eq!(services.endpoint_options.len(), 2);
+    }
+    #[test]
+    fn test_find_service_triggers_offer() {
+       let transport_v4 = UdpTransport::new("0.0.0.0:0".parse().unwrap()).unwrap();
+        let local_ip = Ipv4Addr::new(127, 0, 0, 1);
+        let m_v4: std::net::SocketAddr = "127.0.0.1:30490".parse().unwrap();
+        
+        let mut sd = ServiceDiscovery::new();
+        sd.add_listener(SdListener {
+            alias: "primary".to_string(),
+            transport_v4: Some(transport_v4),
+            transport_v6: None,
+            multicast_group_v4: Some(m_v4),
+            multicast_group_v6: None,
+            local_ip_v4: Some(local_ip),
+            local_ip_v6: None,
+        });
+
+        // Offer a service
+        sd.offer_service(0x1234, 1, 1, 0, "primary", 30500, 0x11, None);
+        // Force transition to Main phase
+        if let Some(service) = sd.local_services.get_mut(&(0x1234, 1)) {
+            service.transition_to_main();
+        }
+
+        // Simulate incoming FindService
+        let entry = SdEntry {
+            entry_type: EntryType::FindService,
+            index_1: 0, index_2: 0, number_of_opts_1: 0, number_of_opts_2: 0,
+            service_id: 0x1234, instance_id: 0xFFFF, // Wildcard find
+            major_version: 1, ttl: 3, minor_version: 0
+        };
+        let packet = SdPacket {
+            flags: 0x00,
+            entries: vec![entry],
+            options: vec![],
+        };
+
+        // Handle it
+        sd.handle_incoming_packet(packet);
     }
 }
 

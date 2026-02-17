@@ -177,7 +177,8 @@ def main():
              execution_plan.append(("Virtual Network (VNet)", False))
     else:
         # Windows or limited Linux
-        execution_plan.append(("Standard Run", False))
+        # We explicitly set force_no_vnet=True to ensure unit tests run (as they condition on this flag)
+        execution_plan.append(("Standard Run", True))
 
     
     print("\n--- Environment Capabilities (Hardware) ---")

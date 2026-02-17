@@ -19,6 +19,7 @@ This document tracks test coverage and cross-language interoperability status ag
 | | Serialization roundtrip | Integration | ✅ |
 | **JS/TS Runtime** | `src/js/tests/` (node --test) | Unit | ✅ |
 | | Serialization roundtrip | Integration | ✅ |
+| **Negative Tests** | `tests/test_negative.py` | Integration | ✅ |
 
 
 ---
@@ -37,6 +38,9 @@ This document tracks test coverage and cross-language interoperability status ag
 | Request/Response RPC | C++ | JS/TS | ✅ |
 | Event Subscription | Rust | Python | ✅ |
 | Event Subscription | JS/TS | Rust | ✅ |
+| **External Interop** | | | |
+| someipy (Python) | Fusion Python | someipyd | ✅ |
+| someipy (Python) | Fusion C++ | someipyd | ✅ |
 
 
 > **Data Flow Diagram:** See [Architecture - Request/Response](architecture.md#requestresponse-data-flow)

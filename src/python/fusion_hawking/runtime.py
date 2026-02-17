@@ -156,8 +156,16 @@ class SomeIpRuntime:
                         self.logger.log(LogLevel.WARN, "Runtime", f"Failed to set SO_BINDTODEVICE on {iface_name} (requires root). Multicast reception might be loose.")
                     except Exception as e:
                         self.logger.log(LogLevel.WARN, "Runtime", f"Failed to set SO_BINDTODEVICE on {iface_name}: {e}")
+            elif os.name == "nt":
+                # Windows: Bind to wildcard to allow sharing with other processes (like someipy)
+                # relying on the same behavior.
+                try:
+                    s.bind(("", port))
+                except Exception:
+                    # Fallback to interface IP if wildcard fails
+                    s.bind((iface_ip, port))
             else:
-                # Windows/others: Strict binding to interface IP
+                # Others: Strict binding to interface IP
                 s.bind((iface_ip, port))
 
             print(f"DEBUG: Setting IP_ADD_MEMBERSHIP {m_ip} on {iface_ip} ({iface_name})")
@@ -285,7 +293,22 @@ class SomeIpRuntime:
     def stop(self):
         self.running = False
         if self.thread: self.thread.join(timeout=1.0)
-        for s in list(self.listeners.values()) + list(self.sd_listeners.values()): s.close()
+        
+        # Close listeners
+        for s in list(self.listeners.values()) + list(self.sd_listeners.values()):
+            try: s.close()
+            except: pass
+            
+        # Close TCP clients
+        for c, _ in self.tcp_clients:
+            try: c.close()
+            except: pass
+        self.tcp_clients.clear()
+
+        # Cancel pending requests
+        for req_id, event in self.pending_requests.items():
+            event.set() # Wake up waiting threads
+        self.pending_requests.clear()
 
     def offer_service(self, alias, handler):
         if 'providing' not in self.config or alias not in self.config['providing']: return
@@ -313,7 +336,17 @@ class SomeIpRuntime:
         key = (service_id, eventgroup_id)
         self.subscriptions[key] = True
         self.logger.log(LogLevel.INFO, "Runtime", f"Subscribed to {service_id:x}:{eventgroup_id:x} (instance={instance_id}, ttl={ttl})")
-        # TODO: Send actual SD Subscribe packet
+        
+        # Send SD Subscribe packet
+        # We need to look up which interface to send this on.
+        # For now, we broadcast on all SD enabled interfaces or use a specific one if configured?
+        # The subscription usually goes to the interface where the service was found or all.
+        # Simple approach: Send on all SD interfaces.
+        for alias in self.sd_listeners.keys():
+             # alias is like "eth0_v4" or "eth0_v6"
+             real_alias = alias.rsplit("_", 1)[0]
+             is_v6 = "_v6" in alias
+             self._send_subscribe(service_id, instance_id, eventgroup_id, ttl, real_alias, is_v6)
 
     def unsubscribe_eventgroup(self, service_id: int, instance_id: int, eventgroup_id: int):
         key = (service_id, eventgroup_id)
@@ -407,6 +440,7 @@ class SomeIpRuntime:
             raw = struct.unpack(">I", data[curr+8:curr+12])[0]
             maj, ttl = (raw >> 24) & 0xFF, raw & 0xFFFFFF
             if et == 0x01 and ttl > 0:
+                # Offer Service -> Add to remote services
                 # Check find_on
                 allowed = True
                 if 'required' in self.config:
@@ -428,25 +462,120 @@ class SomeIpRuntime:
                         optr += 3 + l
                     ep = opts[idx1] if n1 > 0 and idx1 < len(opts) else next((o for o in opts if o), None)
                     if ep: self.remote_services[(sid, maj)] = ep
+            
+            elif et == 0x00: 
+                # Find Service
+                # Check if we offer this service
+                # [PRS_SOMEIPSD_00015] If a server receives a FindService... it shall send an OfferService.
+                for (oid, oiid, omaj, omin, oip, op, opr, oa) in self.offered_services:
+                    if oid == sid and (iid == 0xFFFF or iid == oiid):
+                        # Match found! Send Unicast Offer to requester
+                        self.logger.log(LogLevel.DEBUG, "Runtime", f"Received FindService for {sid:x}:{iid:x} from {addr}. Sending Unicast Offer.")
+                        # Send Unicast Offer to the address that sent the FindService
+                        self._send_offer(oid, oiid, omaj, omin, op, oip, opr, oa, target_addr=addr)
+
             curr += 16
 
-    def _send_offer(self, sid, iid, maj, min, p, ip, pr, alias):
+    def _send_subscribe(self, sid, iid, egid, ttl, alias, is6):
+        sock = self.sd_listeners.get(f"{alias}_{'v6' if is6 else 'v4'}")
+        if not sock: return
+        
+        # Entry Type 0x06: SubscribeEventgroup
+        # Index1, Index2, Num1, Num2
+        # We need to include our endpoint option so the publisher knows where to send events.
+        # Python runtime receives events on the same port as requests usually, or a specific one?
+        # The runtime binds listeners based on 'endpoints'.
+        # We need to pick a valid unicast endpoint on this interface to receive UDP events.
+        
+        # Find a listener on this interface that matches the IP version
+        my_ip = None
+        my_port = 0
+        my_proto = "udp"
+        
+        for (lip, lport, lproto), s in self.listeners.items():
+            # Check if lip belongs to this interface (simplified check: if is6 matches)
+            if (":" in lip) == is6 and lproto == "udp":
+                my_ip = lip
+                my_port = lport
+                break
+        
+        if not my_ip:
+             # Fallback: try to find any IP on this interface from config
+             eps = self.interfaces.get(alias, {}).get("endpoints", {})
+             for ep in eps.values():
+                 if (":" in ep["ip"]) == is6:
+                     my_ip = ep["ip"]
+                     my_port = ep.get("port", 0) # This might be 0 if dynamic, which is bad for subscription
+                     break
+
+        if not my_ip or my_port == 0:
+            print(f"DEBUG: Could not find valid listening endpoint for Subscribe on {alias} {'v6' if is6 else 'v4'}")
+            return
+
+        # Construction
+        # Entry: Type 0x06
+        # Options: 1 option (our endpoint)
+        # Struct packing:
+        # Type(1), Index1(1), Index2(1), Num1|Num2(1)
+        # SID(2), IID(2), MAJ|TTL(4), Reserved|Counter|EGID(4)
+        
+        min_val = (egid & 0xFFFF) | 0x00000000 
+        # Actually in _send_offer we used min for the last 4 bytes completely.
+        # But here EGID is 16 bits.
+        # We put it in the lower 16 bits of the last field usually?
+        # Or upper?
+        # Looking at Rust: `minor_version: (eventgroup_id as u32) << 16`
+        # So it implies upper 16 bits.
+        # Let's match Rust.
+        
+        min_val = (egid << 16) & 0xFFFF0000
+        
+        pld = bytearray([0x80, 0, 0, 0]) + struct.pack(">I", 16) 
+        pld += struct.pack(">BBBBHHII", 0x06, 0, 0, 1<<4, sid, iid, (1<<24)|ttl, min_val)
+
+        # Options
+        prid = 0x11 # UDP
+        opt = struct.pack(">HBB", 0x0015 if is6 else 0x0009, 0x06 if is6 else 0x04, 0) + (socket.inet_pton(socket.AF_INET6, my_ip) if is6 else socket.inet_aton(my_ip)) + struct.pack(">BBH", 0, prid, my_port)
+        pld += struct.pack(">I", len(opt)) + opt
+        
+        h = struct.pack(">HHIHH4B", 0xFFFF, 0x8100, len(pld)+8, 0, 1, 1, 1, 2, 0)
+        
+        sd_sd = self.interfaces.get(alias, {}).get("sd", {})
+        sd_ep_key = sd_sd.get(f"endpoint_{'v6' if is6 else 'v4'}") or sd_sd.get("endpoint")
+        if not sd_ep_key: return
+        
+        tep = self.interfaces.get(alias, {}).get("endpoints", {}).get(sd_ep_key)
+
+        if tep:
+            try:
+                sock.sendto(h + pld, (tep["ip"], tep["port"]))
+            except Exception as e:
+                self.logger.log(LogLevel.ERROR, "Runtime", f"Failed to send subscribe: {e}")
+
+    def _send_offer(self, sid, iid, maj, min, p, ip, pr, alias, target_addr=None):
         sd = self.interfaces.get(alias, {}).get("sd", {})
         eps = self.interfaces.get(alias, {}).get("endpoints", {})
         if not sd or not eps: return
         is6, prid = (":" in ip), (6 if pr == 'tcp' else 0x11)
-        print(f"DEBUG: _send_offer sid={sid} ip={ip} p={p} pr={pr} -> prid={prid}")
+        # print(f"DEBUG: _send_offer sid={sid} ip={ip} p={p} pr={pr} -> prid={prid}")
         pld = bytearray([0x80, 0, 0, 0]) + struct.pack(">I", 16) + struct.pack(">BBBBHHII", 0x01, 0, 0, 1<<4, sid, iid, (maj<<24)|0xFFFFFF, min)
         opt = struct.pack(">HBB", 0x0015 if is6 else 0x0009, 0x06 if is6 else 0x04, 0) + (socket.inet_pton(socket.AF_INET6, ip) if is6 else socket.inet_aton(ip)) + struct.pack(">BBH", 0, prid, p)
         pld += struct.pack(">I", len(opt)) + opt
         h = struct.pack(">HHIHH4B", 0xFFFF, 0x8100, len(pld)+8, 0, 1, 1, 1, 2, 0)
         sock = self.sd_listeners.get(f"{alias}_{'v6' if is6 else 'v4'}")
-        tep = eps.get(sd.get(f"endpoint_{'v6' if is6 else 'v4'}") or sd.get("endpoint"))
-        if sock and tep:
+        
+        # Determine destination: Unicast (target_addr) or Multicast (config)
+        dest = target_addr
+        if not dest:
+            tep = eps.get(sd.get(f"endpoint_{'v6' if is6 else 'v4'}") or sd.get("endpoint"))
+            if tep: dest = (tep["ip"], tep["port"])
+            
+        if sock and dest:
             try:
-                sock.sendto(h + pld, (tep["ip"], tep["port"]))
+                sock.sendto(h + pld, dest)
             except:
                 pass
+
 
     @staticmethod
     def _is_local_unicast(ip):

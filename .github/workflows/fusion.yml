@@ -538,7 +538,9 @@ jobs:
       run: npm install
       working-directory: src/js
     - name: Install JS Dependencies (Demo Client)
-      run: npm install
+      run: |
+        npm install
+        npm run build
       working-directory: examples/someipy_demo/js_client
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'

@@ -93,6 +93,11 @@ def test_cpp_client_interop(ctx):
 
 def test_js_client_interop(ctx):
     """Verify Fusion JS client can call someipy service."""
+    js_client_dir = os.path.join(DEMO_DIR, "js_client")
+    js_dist = os.path.join(js_client_dir, "dist", "index.js")
+    if not os.path.exists(js_dist):
+        pytest.skip(f"JS client build missing at {js_dist}")
+
     runner = ctx.get_runner("js_client")
     if runner:
         assert runner.wait_for_output("Got Response:", timeout=20)
