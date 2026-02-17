@@ -20,6 +20,7 @@ import {
     SessionIdManager,
     deserializeHeader,
     buildPacket,
+    serializeHeader,
     type SomeIpHeader,
 } from './codec.js';
 import {
@@ -32,6 +33,7 @@ import {
     SdEntryType,
     SdOptionType,
 } from './sd.js';
+import { TpHeader, TpReassembler, segmentPayload } from './tp.js';
 import { UdpTransport, type ITransport, type RemoteInfo } from './transport.js';
 import { type ILogger, LogLevel, ConsoleLogger } from './logger.js';
 import { type AppConfig, loadConfig, type InterfaceConfig } from './config.js';
@@ -89,6 +91,8 @@ export class SomeIpRuntime {
     private logger: ILogger;
     private config: AppConfig | null = null;
     private packetDump: boolean = false;
+
+    private tpReassembler = new TpReassembler();
 
     public getLogger(): ILogger {
         return this.logger;
@@ -521,9 +525,49 @@ export class SomeIpRuntime {
             return;
         }
 
-        const payload = data.subarray(HEADER_SIZE);
+        let payload = data.subarray(HEADER_SIZE);
+        let messageType = header.messageType;
 
-        switch (header.messageType) {
+        // TP Handling
+        if (
+            messageType === MessageType.REQUEST_WITH_TP ||
+            messageType === MessageType.REQUEST_NO_RETURN_WITH_TP ||
+            messageType === MessageType.NOTIFICATION_WITH_TP ||
+            messageType === MessageType.RESPONSE_WITH_TP ||
+            messageType === MessageType.ERROR_WITH_TP
+        ) {
+            if (payload.length < 4) {
+                this.logger.log(LogLevel.WARN, 'Runtime', 'Received TP message with payload too short for TP header');
+                return;
+            }
+            try {
+                const tpH = TpHeader.deserialize(payload.subarray(0, 4));
+                const chunk = payload.subarray(4);
+
+                // Reassemble
+                const fullPayload = this.tpReassembler.processSegment({
+                    serviceId: header.serviceId,
+                    methodId: header.methodId,
+                    clientId: header.clientId,
+                    sessionId: header.sessionId
+                }, tpH, chunk);
+
+                if (fullPayload) {
+                    // Reassembly complete
+                    payload = fullPayload;
+                    // Restore original message type (clear TP bit 0x20)
+                    messageType = (messageType & ~0x20);
+                } else {
+                    // Segment processed but not complete.
+                    return;
+                }
+            } catch (e: any) {
+                this.logger.log(LogLevel.ERROR, 'Runtime', `TP Error: ${e.message}`);
+                return;
+            }
+        }
+
+        switch (messageType) {
             case MessageType.REQUEST:
             case MessageType.REQUEST_NO_RETURN:
                 this.handleRequest(header, payload, rinfo, ctx);
@@ -557,13 +601,45 @@ export class SomeIpRuntime {
 
         const responsePayload = handler(header, payload);
         if (responsePayload !== null && header.messageType === MessageType.REQUEST) {
-            const resPacket = buildPacket(
-                header.serviceId, header.methodId, header.sessionId,
-                MessageType.RESPONSE, responsePayload,
-            );
+
+            const MAX_SEG = 1392;
             const isV6 = rinfo.address.includes(':');
             const transport = isV6 ? (ctx?.transportV6 || ctx?.transport) : ctx?.transport;
-            if (transport) transport.send(resPacket, rinfo.address, rinfo.port);
+
+            if (!transport) return;
+
+            if (responsePayload.length > MAX_SEG) {
+                const segments = segmentPayload(responsePayload, MAX_SEG);
+                const tpMsgType = MessageType.RESPONSE_WITH_TP;
+
+                for (const seg of segments) {
+                    const tpHBuf = seg.header.serialize();
+                    const pktPayload = Buffer.concat([tpHBuf, seg.chunk]);
+
+                    const packet = buildPacket(
+                        header.serviceId, header.methodId, header.sessionId,
+                        tpMsgType,
+                        pktPayload,
+                        {
+                            clientId: header.clientId,
+                            protocolVersion: header.protocolVersion,
+                            interfaceVersion: header.interfaceVersion,
+                            returnCode: ReturnCode.OK
+                        }
+                    );
+
+                    transport.send(packet, rinfo.address, rinfo.port).catch(e => {
+                        this.logger.log(LogLevel.ERROR, 'Runtime', `Failed to send TP segment: ${e.message}`);
+                    });
+                }
+            } else {
+                const resPacket = buildPacket(
+                    header.serviceId, header.methodId, header.sessionId,
+                    MessageType.RESPONSE, responsePayload,
+                    { clientId: header.clientId }
+                );
+                transport.send(resPacket, rinfo.address, rinfo.port);
+            }
         }
     }
 

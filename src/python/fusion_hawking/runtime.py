@@ -14,6 +14,7 @@ from typing import Dict, Tuple, Optional, Set, List
 from enum import IntEnum
 
 from .logger import LogLevel, ConsoleLogger, ILogger
+from .tp import TpHeader, TpReassembler, segment_payload
 
 class MessageType(IntEnum):
     REQUEST = 0x00
@@ -88,6 +89,8 @@ class SomeIpRuntime:
         self.session_manager = SessionIdManager()
         self.tcp_clients: List[Tuple[socket.socket, Tuple]] = []
         self.subscriptions: Dict[Tuple[int, int], bool] = {}
+        
+        self.tp_reassembler = TpReassembler()
 
         self.config, self.interfaces, self.endpoints = self._load_config(config_path, instance_name)
         if not self.config:
@@ -104,7 +107,7 @@ class SomeIpRuntime:
             ifaces = data.get('interfaces', {})
             eps = data.get('endpoints', {})
             if not inst:
-                print(f"ERROR: Instance '{name}' not found in {path}")
+                print(f"ERROR: Instance '{name}' not found in {path}. Keys: {list(data.get('instances', {}).keys())}")
             return inst, ifaces, eps
         except Exception as e:
             print(f"ERROR: Failed to load config from {path}: {e}")
@@ -326,11 +329,20 @@ class SomeIpRuntime:
             self.remote_services[(sid, major)] = (ep["ip"], ep["port"], ep.get("protocol", "udp").lower())
             return client_cls(self, name) if client_cls else True
         # Wait SD
+        if self.wait_for_service(sid, cfg.get('instance_id', 0xFFFF), major, timeout):
+            return client_cls(self, name) if client_cls else True
+        return None
+
+    def wait_for_service(self, service_id, instance_id, major_version=1, timeout=5.0):
+        """
+        Waits for a service to be available.
+        """
         start = time.time()
         while time.time() - start < timeout:
-             if (sid, major) in self.remote_services: return client_cls(self, name) if client_cls else True
+             if (service_id, major_version) in self.remote_services:
+                 return True
              time.sleep(0.1)
-        return None
+        return False
 
     def subscribe_eventgroup(self, service_id: int, instance_id: int, eventgroup_id: int, ttl: int = 3):
         key = (service_id, eventgroup_id)
@@ -357,28 +369,53 @@ class SomeIpRuntime:
 
     def send_request(self, sid, mid, payload, target_addr, msg_type=0, wait_for_response=False, timeout=2.0):
         ssid = self.session_manager.next_session_id(sid, mid)
-        header = struct.pack(">HHIHH4B", sid, mid, len(payload)+8, 0, ssid, 1, 1, msg_type, 0)
         event = threading.Event() if wait_for_response else None
         if event: self.pending_requests[(sid, mid, ssid)] = event
+        
         ip, p, proto = target_addr[0], target_addr[1], (target_addr[2] if len(target_addr) > 2 else "udp")
-        if proto == "tcp":
-            try:
+        
+        MAX_SEG_PAYLOAD = 1392
+        
+        try:
+            sock = None
+            if proto == "tcp":
+                 # TCP logic unchanged
                 with socket.socket(socket.AF_INET6 if ":" in ip else socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.settimeout(timeout); s.connect((ip, p)); s.sendall(header + payload)
+                    s.settimeout(timeout); s.connect((ip, p))
+                    header = struct.pack(">HHIHH4B", sid, mid, len(payload)+8, 0, ssid, 1, 1, msg_type, 0)
+                    s.sendall(header + payload)
                     if wait_for_response:
                         d = s.recv(4096)
-                        if len(d) >= 16: return d[16:]
-            except: pass
-        else:
-            sock = next((s for (il, pl, prl), s in self.listeners.items() if prl == "udp" and ((":" in ip) == (":" in il))), None)
-            if not sock:
-                sock = socket.socket(socket.AF_INET6 if ":" in ip else socket.AF_INET, socket.SOCK_DGRAM)
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            try:
-                sock.sendto(header + payload, (ip, p))
-            except Exception as e:
-                print(f"DEBUG: sendto failed to {ip}:{p} - {e}")
-                raise e
+                        if len(d) >= 16: 
+                             self.request_results[(sid, mid, ssid)] = d[16:]
+                             return d[16:] # Optimization: return directly if TCP sync
+            else:
+                sock = next((s for (il, pl, prl), s in self.listeners.items() if prl == "udp" and ((":" in ip) == (":" in il))), None)
+                if not sock:
+                    sock = socket.socket(socket.AF_INET6 if ":" in ip else socket.AF_INET, socket.SOCK_DGRAM)
+                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+
+                if len(payload) > MAX_SEG_PAYLOAD:
+                    # Segment Request
+                    segments = segment_payload(payload, MAX_SEG_PAYLOAD)
+                    base_mt = msg_type | 0x20 # Add TP flag (e.g. 0x00 -> 0x20)
+                    
+                    for tp_h, chunk in segments:
+                        final_pld = tp_h.serialize() + chunk
+                        h = struct.pack(">HHIHH4B", sid, mid, len(final_pld)+8, 0, ssid, 1, 1, base_mt, 0)
+                        sock.sendto(h + final_pld, (ip, p))
+                        # Small delay to prevent packet loss on UDP loopback in some envs
+                        if len(segments) > 10: time.sleep(0.001) 
+                else:
+                    # Normal
+                    header = struct.pack(">HHIHH4B", sid, mid, len(payload)+8, 0, ssid, 1, 1, msg_type, 0)
+                    sock.sendto(header + payload, (ip, p))
+                    
+        except Exception as e:
+            print(f"DEBUG: send_request failed to {ip}:{p} - {e}")
+            if event: self.pending_requests.pop((sid, mid, ssid), None)
+            return None
+            
         if event and event.wait(timeout): return self.request_results.pop((sid, mid, ssid), None)
         return None
 
@@ -411,23 +448,62 @@ class SomeIpRuntime:
                     elif len(d) >= 16:
                         if self.packet_dump: self._dump_packet(d, a)
                         sid, mid, length, cid, ssid, pv, iv, mt, rc = struct.unpack(">HHIHH4B", d[:16])
-                        if mt == MessageType.RESPONSE:
-                            key = (sid, mid, ssid)
-                            if key in self.pending_requests: self.request_results[key] = d[16:length+8]; self.pending_requests.pop(key).set()
-                        elif sid in self.services:
-                            res = self.services[sid].handle({'method_id': mid}, d[16:length+8])
-                            if res:
-                                rc_val = 0
-                                pld = res
-                                if isinstance(res, tuple):
-                                    rc_val, pld = res
+                        
+                        # TP Handler
+                        payload = None
+                        if mt in [0x20, 0x21, 0x22, 0xA0, 0xA1]: # TP Types
+                            if len(d) >= 20: # 16 Header + 4 TP Header
+                                tp_h = TpHeader.deserialize(d[16:20])
+                                chunk = d[20:]
+                                # Reassemble
+                                full_payload = self.tp_reassembler.process_segment((sid, mid, cid, ssid), tp_h, chunk)
+                                if full_payload:
+                                    # Complete! Restore original MessageType for processing
+                                    mt &= ~0x20 
+                                    payload = full_payload
+                        else:
+                            # Normal Message
+                            payload = d[16:length+8] # Extract payload based on length field
+                        
+                        if payload is not None:
+                            if mt == MessageType.RESPONSE:
+                                key = (sid, mid, ssid)
+                                # print(f"DEBUG: Response for {key} ready. In pending? {key in self.pending_requests}")
+                                if key in self.pending_requests: self.request_results[key] = payload; self.pending_requests.pop(key).set()
+                            elif sid in self.services:
+                                res = self.services[sid].handle({'method_id': mid}, payload)
+                                if res:
+                                    rc_val = 0
+                                    pld = res
+                                    if isinstance(res, tuple):
+                                        rc_val, pld = res
 
-                                h = struct.pack(">HHIHH4B", sid, mid, len(pld)+8, cid, ssid, pv, iv, MessageType.RESPONSE, rc_val)
-                                try:
-                                    if s.type == socket.SOCK_DGRAM: s.sendto(h + pld, a)
-                                    else: s.sendall(h + pld)
-                                except Exception as e:
-                                    self.logger.log(LogLevel.ERROR, "Runtime", f"Failed to send response: {e}")
+                                    # Check for Segmentation
+                                    MAX_SEG_PAYLOAD = 1392 # Conservative MTU - Headers
+                                    if len(pld) > MAX_SEG_PAYLOAD:
+                                        # Send Segmented
+                                        segments = segment_payload(pld, MAX_SEG_PAYLOAD)
+                                        base_mt = MessageType.RESPONSE_WITH_TP # 0xA0
+                                        if rc_val != 0: base_mt = MessageType.ERROR_WITH_TP # 0xA1 check logic? Standard says Error can be segmented too.
+
+                                        for tp_h, chunk in segments:
+                                            final_pld = tp_h.serialize() + chunk
+                                            h = struct.pack(">HHIHH4B", sid, mid, len(final_pld)+8, cid, ssid, pv, iv, base_mt, rc_val)
+                                            try:
+                                                if s.type == socket.SOCK_DGRAM: s.sendto(h + final_pld, a)
+                                                else: s.sendall(h + final_pld)
+                                                if len(segments) > 2: time.sleep(0.001)
+                                            except Exception as e:
+                                                self.logger.log(LogLevel.ERROR, "Runtime", f"Failed to send TP segment: {e}")
+                                                break
+                                    else:
+                                        # Send Normal
+                                        h = struct.pack(">HHIHH4B", sid, mid, len(pld)+8, cid, ssid, pv, iv, MessageType.RESPONSE, rc_val)
+                                        try:
+                                            if s.type == socket.SOCK_DGRAM: s.sendto(h + pld, a)
+                                            else: s.sendall(h + pld)
+                                        except Exception as e:
+                                            self.logger.log(LogLevel.ERROR, "Runtime", f"Failed to send response: {e}")
 
     def _handle_sd_packet(self, data, addr, alias):
         off = 16

@@ -69,6 +69,7 @@ pub struct SomeIpRuntime {
     bound_ports: HashMap<String, u16>,
     pending_requests: Arc<Mutex<HashMap<(u16, u16, u16), tokio::sync::oneshot::Sender<Vec<u8>>>>>,
     session_manager: Arc<Mutex<HashMap<(u16, u16), u16>>>,
+    tp_reassembler: Arc<Mutex<crate::codec::tp::TpReassembler>>,
     logger: Arc<dyn FusionLogger>,
 }
 
@@ -325,6 +326,7 @@ impl SomeIpRuntime {
             bound_ports,
             pending_requests: Arc::new(Mutex::new(HashMap::new())),
             session_manager: Arc::new(Mutex::new(HashMap::new())),
+            tp_reassembler: Arc::new(Mutex::new(crate::codec::tp::TpReassembler::new())),
             logger,
         })
     }
@@ -525,16 +527,41 @@ impl SomeIpRuntime {
             pending.insert((service_id, method_id, session_id), tx);
         }
 
-        let header = SomeIpHeader::new(service_id, method_id, 0, session_id, 0x00, payload.len() as u32);
-        let mut msg = header.serialize().to_vec();
-        msg.extend_from_slice(payload);
+        let mtu = 1400; 
+        let header_len = 20; // 16 (Header) + 4 (TP)
+        let max_segment_payload = (mtu - header_len) / 16 * 16;
         
         let transport = if target.is_ipv6() { self.get_transport_v6() } else { self.get_transport_v4() };
         let transport = transport.expect("Required transport (UDP) not found for target family");
-        if let Err(_) = transport.send(&msg, Some(target)) {
-            let mut pending = self.pending_requests.lock().unwrap();
-            pending.remove(&(service_id, method_id, session_id));
-            return None;
+
+        if payload.len() > max_segment_payload {
+            let segments = crate::codec::tp::segment_payload(payload, max_segment_payload);
+            for (tp_header, chunk) in segments {
+                 let header = SomeIpHeader::new(service_id, method_id, 0, session_id, 0x20, (4 + chunk.len()) as u32);
+                 let mut msg = header.serialize().to_vec();
+                 msg.extend_from_slice(&tp_header.serialize());
+                 msg.extend_from_slice(&chunk);
+                 
+                 if let Err(e) = transport.send(&msg, Some(target)) {
+                     self.logger.log(LogLevel::Error, "Runtime", &format!("Failed to send TP segment: {}", e));
+                     let mut pending = self.pending_requests.lock().unwrap();
+                     pending.remove(&(service_id, method_id, session_id));
+                     return None;
+                 }
+                 // Flow control
+                 thread::sleep(Duration::from_micros(100));
+            }
+        } else {
+            let header = SomeIpHeader::new(service_id, method_id, 0, session_id, 0x00, payload.len() as u32);
+            let mut msg = header.serialize().to_vec();
+            msg.extend_from_slice(payload);
+            
+            if let Err(e) = transport.send(&msg, Some(target)) {
+                self.logger.log(LogLevel::Error, "Runtime", &format!("Failed to send request: {}", e));
+                let mut pending = self.pending_requests.lock().unwrap();
+                pending.remove(&(service_id, method_id, session_id));
+                return None;
+            }
         }
 
         match tokio::time::timeout(Duration::from_secs(2), rx).await {
@@ -568,14 +595,64 @@ impl SomeIpRuntime {
                     Ok((size, src)) => {
                         if size < 16 { continue; }
                         if let Ok(header) = SomeIpHeader::deserialize(&buf[..16]) {
+                            // Check for TP
+                            let mt = header.message_type_enum();
+                            let is_tp = mt.map(|m| m.uses_tp()).unwrap_or(false);
+                            
+                            let mut payload = &buf[16..size];
+                            let mut allocated_payload: Option<Vec<u8>> = None;
+                            
+                            if is_tp {
+                                // TP packet structure: Header (16) + TpHeader (4) + Payload
+                                // Check size
+                                if size < 20 {
+                                     self.logger.log(LogLevel::Warn, "Runtime", "Received TP packet too short");
+                                     continue;
+                                }
+                                
+                                if let Ok(tp_header) = crate::codec::tp::TpHeader::deserialize(&buf[16..20]) {
+                                    let segment_payload = &buf[20..size];
+                                    let mut reassembler = self.tp_reassembler.lock().unwrap();
+                                    match reassembler.process_segment(
+                                        (header.service_id as u32) << 16 | header.method_id as u32, 
+                                        (header.client_id as u32) << 16 | header.session_id as u32, 
+                                        &tp_header, 
+                                        segment_payload
+                                    ) {
+                                        Ok(Some(full_payload)) => {
+                                            self.logger.log(LogLevel::Info, "Runtime", &format!("Reassembled TP message: {} bytes", full_payload.len()));
+                                            allocated_payload = Some(full_payload);
+                                        },
+                                        Ok(None) => {
+                                            // Stored, waiting for more
+                                            continue;
+                                        },
+                                        Err(e) => {
+                                            self.logger.log(LogLevel::Error, "Runtime", &format!("TP Reassembly Error: {}", e));
+                                            continue;
+                                        }
+                                    }
+                                } else {
+                                     self.logger.log(LogLevel::Warn, "Runtime", "Failed to deserialize TP header");
+                                     continue;
+                                }
+                            }
+
+                            // Use reassembled payload if available, else original slice
+                            let effective_payload = if let Some(ref p) = allocated_payload {
+                                &p[..]
+                            } else {
+                                payload
+                            };
+
                             self.logger.log(LogLevel::Debug, "Runtime", &format!("Received packet: Service 0x{:04x} Method 0x{:04x} Type 0x{:02x} Length {}", header.service_id, header.method_id, header.message_type, header.length));
                             #[cfg(feature = "packet-dump")]
                             header.dump(src);
-                             // Handle RESPONSE (0x80)
-                             if header.message_type == 0x80 {
+                             // Handle RESPONSE (0x80) or TP Response (0xA0)
+                             if header.message_type == 0x80 || header.message_type == 0xA0 {
                                  let mut pending = self.pending_requests.lock().unwrap();
                                  if let Some(tx) = pending.remove(&(header.service_id, header.method_id, header.session_id)) {
-                                     let _ = tx.send(buf[16..size].to_vec());
+                                     let _ = tx.send(effective_payload.to_vec());
                                  }
                                  continue;
                              }
@@ -583,29 +660,63 @@ impl SomeIpRuntime {
                              // Dispatch
                              let services = self.services.read().unwrap();
                              
-                             // Handle Notification (0x02)
-                             if header.message_type == 0x02 {
-                                 self.logger.log(LogLevel::Info, "Runtime", &format!("Received Notification: Service 0x{:04x} Event/Method 0x{:04x} Payload {} bytes", header.service_id, header.method_id, buf[16..size].len()));
+                             // Handle Notification (0x02) or TP Notification (0x22)
+                             if header.message_type == 0x02 || header.message_type == 0x22 {
+                                 self.logger.log(LogLevel::Info, "Runtime", &format!("Received Notification: Service 0x{:04x} Event/Method 0x{:04x} Payload {} bytes", header.service_id, header.method_id, effective_payload.len()));
                                  if let Some(handler) = services.get(&header.service_id) {
-                                     handler.handle(&header, &buf[16..size]);
+                                     handler.handle(&header, effective_payload);
                                  }
                                  continue;
                              }
     
                              if let Some(handler) = services.get(&header.service_id) {
-                                 if header.message_type == 0x00 || header.message_type == 0x01 {
-                                     if let Some(res_payload) = handler.handle(&header, &buf[16..size]) {
-                                          let res_header = SomeIpHeader::new(
-                                              header.service_id,
-                                              header.method_id,
-                                              header.client_id,
-                                              header.session_id,
-                                              0x80, // RESPONSE
-                                              res_payload.len() as u32
-                                          );
-                                          let mut res_msg = res_header.serialize().to_vec();
-                                          res_msg.extend(res_payload);
-                                          let _ = transport.send(&res_msg, Some(src));
+                                 // Request (0x00), RequestNoReturn (0x01), TP Request (0x20), TP ReqNoRet (0x21)
+                                 let is_req = header.message_type == 0x00 || header.message_type == 0x20;
+                                 let is_ff = header.message_type == 0x01 || header.message_type == 0x21;
+                                 
+                                 if is_req || is_ff {
+                                     if let Some(res_payload) = handler.handle(&header, effective_payload) {
+                                          if is_req {
+                                              // Send Response
+                                              let mtu = 1400; // Conservative MTU
+                                              let header_len = 16 + 4; // SOME/IP + TP
+                                              let max_segment_payload = (mtu - header_len) / 16 * 16; // Align to 16
+                                              
+                                              if res_payload.len() > max_segment_payload {
+                                                  // Segmented Response
+                                                  // Use 0xA0 (ResponseWithTp)
+                                                  let segments = crate::codec::tp::segment_payload(&res_payload, max_segment_payload);
+                                                  for (tp_header, chunk) in segments {
+                                                      let msg_header = SomeIpHeader::new(
+                                                          header.service_id,
+                                                          header.method_id,
+                                                          header.client_id,
+                                                          header.session_id,
+                                                          0xA0, // ResponseWithTp
+                                                          (4 + chunk.len()) as u32 // Length covers TP Header + Payload
+                                                      );
+                                                      let mut msg = msg_header.serialize().to_vec();
+                                                      msg.extend_from_slice(&tp_header.serialize());
+                                                      msg.extend_from_slice(&chunk);
+                                                      let _ = transport.send(&msg, Some(src));
+                                                      // Small delay to avoid flooding UDP buffer
+                                                      // std::thread::sleep(std::time::Duration::from_micros(100)); 
+                                                  }
+                                              } else {
+                                                  // Standard Response
+                                                  let res_header = SomeIpHeader::new(
+                                                      header.service_id,
+                                                      header.method_id,
+                                                      header.client_id,
+                                                      header.session_id,
+                                                      0x80, // RESPONSE
+                                                      res_payload.len() as u32
+                                                  );
+                                                  let mut res_msg = res_header.serialize().to_vec();
+                                                  res_msg.extend(res_payload);
+                                                  let _ = transport.send(&res_msg, Some(src));
+                                              }
+                                          }
                                      }
                                  }
                              }

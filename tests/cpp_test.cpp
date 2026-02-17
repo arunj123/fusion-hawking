@@ -4,6 +4,7 @@
 #include <cstring>
 #include <cstdint>
 #include <limits>
+#include "fusion_hawking/tp.hpp"
 #include "bindings.h"  // Located in build/generated/cpp/ via CMake include path
 
 // Helper to verify big-endian encoding
@@ -247,6 +248,78 @@ int main() {
         assert(h.length == 0);
         
         std::cout << "SomeIpHeader (Edge Cases): OK" << std::endl;
+    }
+
+    // 13. Test TP Header Serialization
+    {
+        fusion_hawking::TpHeader h;
+        h.offset = 0x12345;
+        h.more_segments = true;
+        
+        std::vector<uint8_t> buf = h.serialize();
+        assert(buf.size() == 4);
+        
+        // Offset is top 28 bits, More is bottom 1 bit.
+        // 0x12345 << 4 = 0x123450. | 1 = 0x123451.
+        uint32_t val = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];
+        assert(val == 0x00123451); 
+
+        fusion_hawking::TpHeader h2 = fusion_hawking::TpHeader::deserialize(buf.data(), buf.size());
+        assert(h2.offset == 0x12345);
+        assert(h2.more_segments == true);
+        std::cout << "TpHeader: OK" << std::endl;
+    }
+
+    // 14. Test Payload Segmentation
+    {
+        std::vector<uint8_t> payload(3000); // > 1392 * 2
+        for(size_t i=0; i<payload.size(); ++i) payload[i] = (uint8_t)(i & 0xFF);
+        
+        auto segments = fusion_hawking::segment_payload(payload, 1392);
+        // 3000 / 1392 = 2.xxx -> 3 segments
+        // Seg 1: 1392 (aligned 16: yes)
+        // Seg 2: 1392 (aligned 16: yes)
+        // Seg 3: 3000 - 2784 = 216
+        
+        assert(segments.size() == 3);
+        assert(segments[0].first.offset == 0);
+        assert(segments[0].first.more_segments == true);
+        assert(segments[0].second.size() == 1392);
+        
+        assert(segments[1].first.offset == 1392/16); // 87
+        assert(segments[1].first.more_segments == true);
+        assert(segments[1].second.size() == 1392);
+
+        assert(segments[2].first.offset == 2784/16); // 174
+        assert(segments[2].first.more_segments == false);
+        assert(segments[2].second.size() == 216);
+        
+        std::cout << "TP Segmentation: OK" << std::endl;
+    }
+    
+    // 15. Test Reassembly
+    {
+        fusion_hawking::TpReassembler reassembler;
+        std::vector<uint8_t> full_payload_out;
+        
+        std::vector<uint8_t> chunk1(16, 0xAA);
+        std::vector<uint8_t> chunk2(16, 0xBB);
+        
+        fusion_hawking::TpHeader h1 = {0, true};
+        fusion_hawking::TpHeader h2 = {1, false}; // Offset 1 * 16 = 16 bytes
+        
+        // Send chunk 2 first (out of order)
+        bool complete = reassembler.process_segment(1, 1, 1, 1, h2, chunk2, full_payload_out);
+        assert(!complete);
+        
+        // Send chunk 1
+        complete = reassembler.process_segment(1, 1, 1, 1, h1, chunk1, full_payload_out);
+        assert(complete);
+        assert(full_payload_out.size() == 32);
+        for(int i=0; i<16; ++i) assert(full_payload_out[i] == 0xAA);
+        for(int i=16; i<32; ++i) assert(full_payload_out[i] == 0xBB);
+        
+        std::cout << "TP Reassembly: OK" << std::endl;
     }
 
     std::cout << "All C++ Tests Passed." << std::endl;

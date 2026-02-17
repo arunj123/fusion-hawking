@@ -781,11 +781,121 @@ class SmartConfigFactory:
         config_path = os.path.join(output_dir, f"{usecase}_config.json")
         return gen, config_path
     
-    def get_ns_interface_info(self, ns, iface='veth0'):
+    def generate_large_payload_test(self, output_dir):
         """
-        Get interface info for a VNet namespace (convenience method for tests).
+        Generate configuration for Large Payload (TP) test.
         
-        Returns:
-            dict: { "name": str, "ipv4": str, "ipv6": str|None }
+        Topology:
+        - VNet (Distributed):
+            - Server on ns_ecu1 -> config_server.json
+            - Client on ns_ecu2 -> config_client.json
+        - Non-VNet:
+            - Single config for both -> config.json (or separate if needed)
         """
-        return self._resolve_vnet_interface(ns, iface)
+        include_v6 = self._should_include_ipv6()
+        
+        # Check for distributed VNet capability
+        dist_vnet = False
+        if self.env.has_vnet:
+            ecu1 = self._resolve_interface('ns_ecu1')
+            ecu2 = self._resolve_interface('ns_ecu2')
+            if ecu1['ipv4'] and ecu2['ipv4']:
+                dist_vnet = True
+        
+        if dist_vnet:
+            # --- Distributed Configuration ---
+            ecus = {
+                'server': self._resolve_interface('ns_ecu1'),
+                'client': self._resolve_interface('ns_ecu2')
+            }
+            
+            for role, iface in ecus.items():
+                ipv4 = iface["ipv4"]
+                ipv6 = iface.get("ipv6") if include_v6 else None
+                gen = ConfigGenerator()
+                
+                # Endpoints
+                # SD Multicast (Standard)
+                endpoints = self._make_sd_endpoints(ipv4, ipv6)
+                if "sd_uc_v4" in endpoints: endpoints["sd_uc_v4"]["port"] = 30490
+
+                # TP Service Endpoint
+                endpoints["tp_endpoint"] = self._make_endpoint(ipv4, 30500, "udp")
+                
+                gen.add_interface("primary", iface["name"], endpoints=endpoints, sd=self._make_sd_config(include_v6=bool(ipv6)))
+                
+                if role == 'server':
+                    gen.add_instance("tp_server",
+                        unicast_bind={"primary": "sd_uc_v4"},
+                        providing={
+                            "tp_service": {
+                                "service_id": 20480, "instance_id": 1, "major_version": 1, "minor_version": 0,
+                                "offer_on": {"primary": "tp_endpoint"}
+                            }
+                        },
+                        sd={"cycle_offer_ms": 1000}
+                    )
+                else: # client
+                    gen.add_instance("tp_client",
+                        unicast_bind={"primary": "sd_uc_v4"},
+                        required={
+                            "tp_service": {
+                                "service_id": 20480, "instance_id": 1, "major_version": 1, "minor_version": 0,
+                                "find_on": ["primary"]
+                            }
+                        }
+                    )
+                
+                gen.save(os.path.join(output_dir, f"config_{role}.json"))
+                
+            logger.info(f"Generated distributed large_payload configs in {output_dir}")
+            return output_dir
+
+        else:
+            # --- Single Host Configuration (Split) ---
+            iface = self._resolve_interface()
+            ipv4 = iface["ipv4"] or "127.0.0.1"
+            ipv6 = iface.get("ipv6") if include_v6 else None
+            
+            # 1. Server Config
+            gen1 = ConfigGenerator()
+            ep1 = self._make_sd_endpoints(ipv4, ipv6)
+            if "sd_uc_v4" in ep1: ep1["sd_uc_v4"]["port"] = 30490 # Server SD Port
+            ep1["tp_endpoint"] = self._make_endpoint(ipv4, 30500, "udp")
+            
+            gen1.add_interface("primary", iface["name"], endpoints=ep1, sd=self._make_sd_config(include_v6=bool(ipv6)))
+            
+            gen1.add_instance("tp_server",
+                unicast_bind={"primary": "sd_uc_v4"},
+                providing={
+                    "tp_service": {
+                        "service_id": 20480, "instance_id": 1, "major_version": 1, "minor_version": 0,
+                        "offer_on": {"primary": "tp_endpoint"}
+                    }
+                },
+                sd={"cycle_offer_ms": 1000}
+            )
+            gen1.save(os.path.join(output_dir, "config_server.json"))
+            
+            # 2. Client Config
+            gen2 = ConfigGenerator()
+            ep2 = self._make_sd_endpoints(ipv4, ipv6)
+            # Use DIFFERENT port for Client SD to avoid self-reception on loopback/unicast
+            if "sd_uc_v4" in ep2: ep2["sd_uc_v4"]["port"] = 30491 
+            
+            gen2.add_interface("primary", iface["name"], endpoints=ep2, sd=self._make_sd_config(include_v6=bool(ipv6)))
+            
+            gen2.add_instance("tp_client",
+                unicast_bind={"primary": "sd_uc_v4"},
+                required={
+                    "tp_service": {
+                        "service_id": 20480, "instance_id": 1, "major_version": 1, "minor_version": 0,
+                        "find_on": ["primary"]
+                    }
+                }
+            )
+            gen2.save(os.path.join(output_dir, "config_client.json"))
+            
+            logger.info(f"Generated split large_payload configs (single host) in {output_dir}")
+            return output_dir
+

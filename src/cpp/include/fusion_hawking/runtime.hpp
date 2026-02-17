@@ -11,6 +11,7 @@
 #include "types.hpp"
 #include "logger.hpp"
 #include "config.hpp"
+#include "tp.hpp"
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -138,6 +139,8 @@ private:
     };
     std::map<std::tuple<uint16_t, uint16_t, uint16_t>, std::shared_ptr<PendingRequest>> pending_requests;
     std::mutex pending_requests_mutex;
+
+    TpReassembler tp_reassembler;
 
     // SendRequestGlue Declaration within Runtime to access privates
     friend std::vector<uint8_t> SendRequestGlue(void* rt, uint16_t service_id, uint16_t method_id, const std::vector<uint8_t>& payload);

@@ -24,6 +24,7 @@ pub mod traits;
 pub mod primitives;
 pub mod complex;
 pub mod session;
+pub mod tp;
 
 pub use header::*;
 pub use traits::{SomeIpSerialize, SomeIpDeserialize};

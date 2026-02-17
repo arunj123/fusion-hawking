@@ -1,4 +1,5 @@
 #include "fusion_hawking/runtime.hpp"
+#include "fusion_hawking/tp.hpp"
 #include <iostream>
 #include <cstring>
 
@@ -654,15 +655,7 @@ void SomeIpRuntime::SendOffer(uint16_t service_id, uint16_t instance_id, uint8_t
 
 std::vector<uint8_t> SomeIpRuntime::SendRequest(uint16_t service_id, uint16_t method_id, const std::vector<uint8_t>& payload, sockaddr_storage target) {
     uint16_t session_id = next_session(service_id, method_id);
-    uint32_t total_len = (uint32_t)payload.size() + 8;
-    std::vector<uint8_t> buffer;
-    buffer.push_back(service_id >> 8); buffer.push_back(service_id & 0xFF);
-    buffer.push_back(method_id >> 8); buffer.push_back(method_id & 0xFF); 
-    buffer.push_back(total_len >> 24); buffer.push_back(total_len >> 16); buffer.push_back(total_len >> 8); buffer.push_back(total_len);
-    buffer.push_back(0x00); buffer.push_back(0x00); buffer.push_back(session_id >> 8); buffer.push_back(session_id & 0xFF);
-    buffer.push_back(0x01); buffer.push_back(0x01); buffer.push_back(0x00); buffer.push_back(0x00); 
-    buffer.insert(buffer.end(), payload.begin(), payload.end());
-
+    
     auto req = std::make_shared<PendingRequest>();
     {
         std::lock_guard<std::mutex> lock(pending_requests_mutex);
@@ -688,10 +681,45 @@ std::vector<uint8_t> SomeIpRuntime::SendRequest(uint16_t service_id, uint16_t me
     }
     if (if_alias.empty() && !interfaces.empty()) if_alias = interfaces.begin()->first;
 
+    // Prepare Packets (Segment if needed)
+    std::vector<std::vector<uint8_t>> packets;
+
+    if (payload.size() > 1392) {
+        auto segments = segment_payload(payload, 1392);
+        for (auto& seg : segments) {
+            auto& tp_head = seg.first;
+            auto& chunk = seg.second;
+            auto tp_bytes = tp_head.serialize();
+            
+            uint32_t total_len = (uint32_t)(chunk.size() + tp_bytes.size()) + 8;
+            std::vector<uint8_t> buffer;
+            buffer.push_back(service_id >> 8); buffer.push_back(service_id & 0xFF);
+            buffer.push_back(method_id >> 8); buffer.push_back(method_id & 0xFF); 
+            buffer.push_back(total_len >> 24); buffer.push_back(total_len >> 16); buffer.push_back(total_len >> 8); buffer.push_back(total_len);
+            buffer.push_back(0x00); buffer.push_back(0x00); buffer.push_back(session_id >> 8); buffer.push_back(session_id & 0xFF);
+            buffer.push_back(0x01); buffer.push_back(0x01); buffer.push_back(0x20); buffer.push_back(0x00); // 0x20 = REQUEST_WITH_TP
+            buffer.insert(buffer.end(), tp_bytes.begin(), tp_bytes.end());
+            buffer.insert(buffer.end(), chunk.begin(), chunk.end());
+            packets.push_back(buffer);
+        }
+    } else {
+        uint32_t total_len = (uint32_t)payload.size() + 8;
+        std::vector<uint8_t> buffer;
+        buffer.push_back(service_id >> 8); buffer.push_back(service_id & 0xFF);
+        buffer.push_back(method_id >> 8); buffer.push_back(method_id & 0xFF); 
+        buffer.push_back(total_len >> 24); buffer.push_back(total_len >> 16); buffer.push_back(total_len >> 8); buffer.push_back(total_len);
+        buffer.push_back(0x00); buffer.push_back(0x00); buffer.push_back(session_id >> 8); buffer.push_back(session_id & 0xFF);
+        buffer.push_back(0x01); buffer.push_back(0x01); buffer.push_back(0x00); buffer.push_back(0x00); 
+        buffer.insert(buffer.end(), payload.begin(), payload.end());
+        packets.push_back(buffer);
+    }
+
     if (target_protocol == "tcp") {
+        // TCP Sending (Sequential)
         SOCKET client_sock = socket(target.ss_family, SOCK_STREAM, 0);
         if (client_sock != INVALID_SOCKET) {
-            if (!if_alias.empty() && interfaces.count(if_alias)) {
+             // Bind logic...
+             if (!if_alias.empty() && interfaces.count(if_alias)) {
                 auto ctx = interfaces[if_alias];
                 if (target.ss_family == AF_INET) {
                     sockaddr_in local = {0};
@@ -705,12 +733,18 @@ std::vector<uint8_t> SomeIpRuntime::SendRequest(uint16_t service_id, uint16_t me
                     bind(client_sock, (struct sockaddr*)&local6, sizeof(local6));
                 }
             }
+
             int sl = (target.ss_family == AF_INET6) ? sizeof(sockaddr_in6) : sizeof(sockaddr_in);
             if (connect(client_sock, (struct sockaddr*)&target, sl) != SOCKET_ERROR) {
-                send(client_sock, (const char*)buffer.data(), (int)buffer.size(), 0);
+                for(const auto& buffer : packets) {
+                    send(client_sock, (const char*)buffer.data(), (int)buffer.size(), 0);
+                }
+                
+                // Wait for response
                 char res_buf[4096];
                 int res_bytes = recv(client_sock, res_buf, sizeof(res_buf), 0);
                 closesocket(client_sock);
+
                 std::lock_guard<std::mutex> lk(pending_requests_mutex);
                 pending_requests.erase({service_id, method_id, session_id});
                 if (res_bytes >= 16) {
@@ -721,26 +755,34 @@ std::vector<uint8_t> SomeIpRuntime::SendRequest(uint16_t service_id, uint16_t me
             }
         }
     } else {
+        // UDP Sending
         SOCKET s = INVALID_SOCKET;
         if (!if_alias.empty() && interfaces.count(if_alias)) {
             s = (target.ss_family == AF_INET6) ? interfaces[if_alias]->sock_v6 : interfaces[if_alias]->sock;
         }
-        if (s == INVALID_SOCKET) {
-            // Pick first available for fallback
-            if (!interfaces.empty()) {
-                auto first = interfaces.begin()->second;
-                s = (target.ss_family == AF_INET6) ? first->sock_v6 : first->sock;
-            }
+        if (s == INVALID_SOCKET && !interfaces.empty()) {
+             auto first = interfaces.begin()->second;
+             s = (target.ss_family == AF_INET6) ? first->sock_v6 : first->sock;
         }
 
         int sl = (target.ss_family == AF_INET6) ? sizeof(sockaddr_in6) : sizeof(sockaddr_in);
-        if (s != INVALID_SOCKET && sendto(s, (const char*)buffer.data(), (int)buffer.size(), 0, (struct sockaddr*)&target, sl) != SOCKET_ERROR) {
-            std::unique_lock<std::mutex> lock(req->mtx);
-            if (req->cv.wait_for(lock, std::chrono::milliseconds(config.sd.request_timeout_ms), [&] { return req->completed; })) {
-                std::lock_guard<std::mutex> lk(pending_requests_mutex);
-                pending_requests.erase({service_id, method_id, session_id});
-                return req->payload;
-            }
+        if (s != INVALID_SOCKET) {
+             bool all_sent = true;
+             for(const auto& buffer : packets) {
+                 if (sendto(s, (const char*)buffer.data(), (int)buffer.size(), 0, (struct sockaddr*)&target, sl) == SOCKET_ERROR) {
+                     all_sent = false;
+                     break;
+                 }
+             }
+
+             if (all_sent) {
+                 std::unique_lock<std::mutex> lock(req->mtx);
+                 if (req->cv.wait_for(lock, std::chrono::milliseconds(config.sd.request_timeout_ms), [&] { return req->completed; })) {
+                     std::lock_guard<std::mutex> lk(pending_requests_mutex);
+                     pending_requests.erase({service_id, method_id, session_id});
+                     return req->payload;
+                 }
+             }
         }
     }
 
@@ -861,28 +903,111 @@ void SomeIpRuntime::process_packet(const char* data, int len, sockaddr_storage s
     uint8_t iv = data[13];
     uint8_t mt = data[14];
 
+    if (mt == 0x20 || mt == 0x21 || mt == 0x22 || mt == 0xA0 || mt == 0xA1) { // TP Types
+        if (len < 20) return; // 16 header + 4 TP header
+        uint8_t* payload_ptr = (uint8_t*)data + 16;
+        size_t payload_len = len - 16;
+        
+        TpHeader tp_h = TpHeader::deserialize(payload_ptr, payload_len);
+        std::vector<uint8_t> chunk(payload_ptr + 4, payload_ptr + payload_len);
+        std::vector<uint8_t> full_payload;
+        
+        bool complete = tp_reassembler.process_segment(sid, mid, cid, ssid, tp_h, chunk, full_payload);
+        if (complete) {
+            // Reassembly complete. 
+            // We need to pretend we received the full message with original type.
+            mt &= ~0x20; // Clear TP bit
+            // Construct a synthetic packet for further processing
+            static thread_local std::vector<uint8_t> synth_packet;
+            uint32_t total_len = (uint32_t)full_payload.size() + 8;
+            
+            synth_packet.assign(16 + full_payload.size(), 0);
+            synth_packet[0] = data[0]; synth_packet[1] = data[1]; // SID
+            synth_packet[2] = data[2]; synth_packet[3] = data[3]; // MID
+            synth_packet[4] = (total_len >> 24) & 0xFF; // Length
+            synth_packet[5] = (total_len >> 16) & 0xFF;
+            synth_packet[6] = (total_len >> 8) & 0xFF;
+            synth_packet[7] = total_len & 0xFF;
+            synth_packet[8] = data[8]; synth_packet[9] = data[9]; // CID
+            synth_packet[10] = data[10]; synth_packet[11] = data[11]; // SSID
+            synth_packet[12] = pv; synth_packet[13] = iv;
+            synth_packet[14] = mt; // New Type
+            synth_packet[15] = data[15]; // RC
+            
+            std::memcpy(synth_packet.data() + 16, full_payload.data(), full_payload.size());
+            
+            // Recurse or Update data/len? 
+            // Better to update data/len and fall through.
+            // But data is const char*. We can cast? No, it points to stack/heap buffer.
+            // If we fall through, we need to ensure we don't read mismatched data.
+            // The logic below extracts payload from `data + 16`.
+            // So if I point `data` to `synth_packet.data()`, it works.
+            data = (const char*)synth_packet.data();
+            len = (int)synth_packet.size();
+        } else {
+            return; // Incomplete
+        }
+    }
+
     if (mt == 0x00 || mt == 0x01) { // Request
         if (services.find(sid) != services.end()) {
             std::vector<uint8_t> payload(data + 16, data + len);
             auto res = services[sid]->handle({sid, mid, length, cid, ssid, pv, iv, mt, 0}, payload);
             if (!res.empty()) {
-                uint32_t res_len = (uint32_t)res.size() + 8;
-                std::vector<uint8_t> r_buf;
-                r_buf.push_back(sid >> 8); r_buf.push_back(sid & 0xFF);
-                r_buf.push_back(mid >> 8); r_buf.push_back(mid & 0xFF);
-                r_buf.push_back(res_len >> 24); r_buf.push_back(res_len >> 16); r_buf.push_back(res_len >> 8); r_buf.push_back(res_len);
-                r_buf.push_back(cid >> 8); r_buf.push_back(cid & 0xFF);
-                r_buf.push_back(ssid >> 8); r_buf.push_back(ssid & 0xFF);
-                r_buf.push_back(pv); r_buf.push_back(iv); r_buf.push_back(0x80); r_buf.push_back(0x00);
-                r_buf.insert(r_buf.end(), res.begin(), res.end());
-                if (is_tcp) send(from_sock, (const char*)r_buf.data(), (int)r_buf.size(), 0);
-                else {
-                    SOCKET s = from_sock;
-                    if (!is_tcp && ctx) {
-                        s = (src.ss_family == AF_INET6) ? ctx->sock_v6 : ctx->sock;
+                // Check if segmentation is needed
+                if (res.size() > 1392) { // Max Payload
+                     auto segments = segment_payload(res, 1392);
+                     for (auto& seg : segments) {
+                         auto& tp_head = seg.first;
+                         auto& chunk = seg.second;
+                         auto tp_bytes = tp_head.serialize();
+                         
+                         std::vector<uint8_t> pld_out;
+                         pld_out.insert(pld_out.end(), tp_bytes.begin(), tp_bytes.end());
+                         pld_out.insert(pld_out.end(), chunk.begin(), chunk.end());
+                         
+                         uint32_t res_len = (uint32_t)pld_out.size() + 8;
+                         std::vector<uint8_t> r_buf;
+                         r_buf.push_back(sid >> 8); r_buf.push_back(sid & 0xFF);
+                         r_buf.push_back(mid >> 8); r_buf.push_back(mid & 0xFF);
+                         r_buf.push_back(res_len >> 24); r_buf.push_back(res_len >> 16); r_buf.push_back(res_len >> 8); r_buf.push_back(res_len);
+                         r_buf.push_back(cid >> 8); r_buf.push_back(cid & 0xFF);
+                         r_buf.push_back(ssid >> 8); r_buf.push_back(ssid & 0xFF);
+                         r_buf.push_back(pv); r_buf.push_back(iv); 
+                         r_buf.push_back(0xA0); // RESPONSE_WITH_TP
+                         r_buf.push_back(0x00);
+                         r_buf.insert(r_buf.end(), pld_out.begin(), pld_out.end());
+                         
+                         if (is_tcp) send(from_sock, (const char*)r_buf.data(), (int)r_buf.size(), 0);
+                         else {
+                            SOCKET s = from_sock;
+                            if (!is_tcp && ctx) {
+                                s = (src.ss_family == AF_INET6) ? ctx->sock_v6 : ctx->sock;
+                            }
+                            int sl = (src.ss_family == AF_INET6) ? sizeof(sockaddr_in6) : sizeof(sockaddr_in);
+                            sendto(s, (const char*)r_buf.data(), (int)r_buf.size(), 0, (struct sockaddr*)&src, sl);
+                         }
+                     }
+                } else {
+                    // Send Normal
+                    uint32_t res_len = (uint32_t)res.size() + 8;
+                    std::vector<uint8_t> r_buf;
+                    r_buf.push_back(sid >> 8); r_buf.push_back(sid & 0xFF);
+                    r_buf.push_back(mid >> 8); r_buf.push_back(mid & 0xFF);
+                    r_buf.push_back(res_len >> 24); r_buf.push_back(res_len >> 16); r_buf.push_back(res_len >> 8); r_buf.push_back(res_len);
+                    r_buf.push_back(cid >> 8); r_buf.push_back(cid & 0xFF);
+                    r_buf.push_back(ssid >> 8); r_buf.push_back(ssid & 0xFF);
+                    r_buf.push_back(pv); r_buf.push_back(iv); r_buf.push_back(0x80); r_buf.push_back(0x00);
+                    r_buf.insert(r_buf.end(), res.begin(), res.end());
+                    if (is_tcp) send(from_sock, (const char*)r_buf.data(), (int)r_buf.size(), 0);
+                    else {
+                        SOCKET s = from_sock;
+                        if (!is_tcp && ctx) {
+                            s = (src.ss_family == AF_INET6) ? ctx->sock_v6 : ctx->sock;
+                        }
+                        int sl = (src.ss_family == AF_INET6) ? sizeof(sockaddr_in6) : sizeof(sockaddr_in);
+                        sendto(s, (const char*)r_buf.data(), (int)r_buf.size(), 0, (struct sockaddr*)&src, sl);
                     }
-                    int sl = (src.ss_family == AF_INET6) ? sizeof(sockaddr_in6) : sizeof(sockaddr_in);
-                    sendto(s, (const char*)r_buf.data(), (int)r_buf.size(), 0, (struct sockaddr*)&src, sl);
                 }
             }
         }
