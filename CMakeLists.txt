@@ -27,7 +27,8 @@ add_library(fusion_hawking_cpp STATIC
 )
 target_include_directories(fusion_hawking_cpp PUBLIC 
     src/cpp/include
-    ${PROJECT_SOURCE_DIR}/build/generated/cpp
+    ${PROJECT_SOURCE_DIR}/build/generated/integrated_apps/cpp
+    ${PROJECT_SOURCE_DIR}/build/generated/automotive_pubsub/cpp
 )
 
 # 2. Simple No-SD Demos

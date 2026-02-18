@@ -6,8 +6,8 @@ import struct
 # Standard path setup
 PROJECT_ROOT = os.getcwd()
 sys.path.insert(0, os.path.join(PROJECT_ROOT, 'src', 'python'))
-# Add generated bindings path
-sys.path.insert(0, os.path.join(PROJECT_ROOT, 'build', 'generated', 'python'))
+# Add per-project generated bindings path
+sys.path.insert(0, os.path.join(PROJECT_ROOT, 'build', 'generated', 'integrated_apps', 'python'))
 
 from fusion_hawking.runtime import SomeIpRuntime
 
@@ -20,7 +20,7 @@ except ImportError:
 class TestEvents(unittest.TestCase):
     def setUp(self):
         if SensorServiceOnValueChangedEvent is None:
-            self.skipTest("Generated bindings not found in build/generated/python")
+            self.skipTest("Generated bindings not found in build/generated/integrated_apps/python")
         self.runtime = SomeIpRuntime(None, "test", None)
 
     def test_event_serialization(self):

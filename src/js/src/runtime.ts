@@ -505,6 +505,14 @@ export class SomeIpRuntime {
         return this.remoteServices.get(`${serviceId}:${instanceId}`);
     }
 
+    /** Resolve service ID and instance ID from a required service alias in config. */
+    getServiceIdAndInstanceByAlias(alias: string): { serviceId: number, instanceId: number } | undefined {
+        if (!this.config) return undefined;
+        const entry = this.config.required[alias];
+        if (!entry) return undefined;
+        return { serviceId: entry.serviceId, instanceId: entry.instanceId };
+    }
+
     /** bound port of first interface */
     get localPort(): number { return this.interfaces.values().next().value?.transport.localPort ?? 0; }
     get localAddress(): string { return this.interfaces.values().next().value?.ip ?? ''; }

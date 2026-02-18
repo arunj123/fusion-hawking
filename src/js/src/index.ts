@@ -59,4 +59,5 @@ export {
     // Runtime
     SomeIpRuntime,
     type RequestHandler,
+    type SomeIpResponse,
 } from './runtime.js';

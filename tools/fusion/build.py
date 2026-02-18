@@ -27,15 +27,20 @@ class Builder:
 
     def generate_bindings(self):
         import sys
-        
-        # IDL Files
-        idl_files = [
-            "examples/integrated_apps/interface.py",
-            "examples/automotive_pubsub/interface.py",
-            "examples/versioning_demo/interface.py"
+
+        # Per-project IDL modules (new introspection-based approach)
+        projects = [
+            ("integrated_apps",   "examples.integrated_apps.idl"),
+            ("automotive_pubsub", "examples.automotive_pubsub.idl"),
         ]
-        
-        # Output directory and marker
+
+        # IDL package directories for timestamp tracking
+        idl_dirs = [
+            "examples/integrated_apps/idl",
+            "examples/automotive_pubsub/idl",
+            "examples/versioning_demo/interface.py",
+        ]
+
         output_dir = "build/generated"
         marker_file = os.path.join(output_dir, ".codegen_timestamp")
 
@@ -47,15 +52,24 @@ class Builder:
         else:
             try:
                 marker_mtime = os.path.getmtime(marker_file)
-                for idl in idl_files:
-                    path = os.path.abspath(idl)
-                    if not os.path.exists(path):
-                         # If input file is missing, let the tool fail or handle it
-                         continue
-                    
-                    if os.path.getmtime(path) > marker_mtime:
-                        print(f"[codegen] File {idl} changed. Regenerating...")
-                        regenerate = True
+                for idl_path in idl_dirs:
+                    abs_path = os.path.abspath(idl_path)
+                    if os.path.isdir(abs_path):
+                        for root, _, files in os.walk(abs_path):
+                            for fname in files:
+                                if fname.endswith(".py"):
+                                    fpath = os.path.join(root, fname)
+                                    if os.path.getmtime(fpath) > marker_mtime:
+                                        print(f"[codegen] {fpath} changed. Regenerating...")
+                                        regenerate = True
+                                        break
+                            if regenerate:
+                                break
+                    elif os.path.exists(abs_path):
+                        if os.path.getmtime(abs_path) > marker_mtime:
+                            print(f"[codegen] {idl_path} changed. Regenerating...")
+                            regenerate = True
+                    if regenerate:
                         break
             except Exception as e:
                 print(f"[codegen] Error checking timestamps: {e}. Regenerating...")
@@ -65,21 +79,47 @@ class Builder:
             print("[codegen] Bindings are up-to-date. Skipping generation.")
             return True
 
-        # Generate all bindings in one call to avoid overwriting files
-        cmd = [sys.executable, "-m", "tools.codegen.main"] + idl_files
-        
-        success = self.run_command(cmd, "codegen_all")
-        
+        # Generate per-project bindings (Rust + C++ + TS)
+        success = True
+        for project_name, module_path in projects:
+            cmd = [
+                sys.executable, "-m", "tools.codegen.main",
+                "--project", project_name,
+                "--lang", "rust", "cpp", "ts",
+                "--module", module_path,
+                "--output-dir", output_dir,
+            ]
+            if not self.run_command(cmd, f"codegen_{project_name}"):
+                success = False
+                break
+
+        # Also generate Python stubs for backward compat (python_app still uses them)
         if success:
-             # Update marker
-             try:
-                 if not os.path.exists(output_dir): os.makedirs(output_dir)
-                 with open(marker_file, "w") as f:
-                     import datetime
-                     f.write(str(datetime.datetime.now()))
-             except Exception as e:
-                 print(f"[codegen] Warning: Could not update marker: {e}")
-                 
+            for project_name, module_path in projects:
+                cmd = [
+                    sys.executable, "-m", "tools.codegen.main",
+                    "--project", project_name,
+                    "--lang", "python",
+                    "--module", module_path,
+                    "--output-dir", output_dir,
+                ]
+                # Non-fatal: Python apps will migrate to zero-codegen
+                self.run_command(cmd, f"codegen_{project_name}_python")
+
+        if success:
+            try:
+                if not os.path.exists(output_dir):
+                    os.makedirs(output_dir)
+                with open(marker_file, "w") as f:
+                    import datetime
+                    f.write(str(datetime.datetime.now()))
+            except Exception as e:
+                print(f"[codegen] Warning: Could not update marker: {e}")
+
+            # Generate per-project config.json files
+            cmd_configs = [sys.executable, "-m", "tools.fusion.generate_configs"]
+            self.run_command(cmd_configs, "codegen_configs")
+
         return success
 
     def build_rust(self, packet_dump=False):

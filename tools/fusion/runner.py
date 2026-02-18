@@ -284,7 +284,11 @@ class Tester:
     def _run_python_unit_tests(self):
         results = {"steps": []}
         env = os.environ.copy()
-        env["PYTHONPATH"] = os.pathsep.join(["src/python", "build", "build/generated/python"])
+        env["PYTHONPATH"] = os.pathsep.join([
+            os.getcwd(), "src/python", "build",
+            "build/generated/integrated_apps/python",
+            "build/generated/automotive_pubsub/python",
+        ])
         env["FUSION_LOG_DIR"] = str(self.reporter.raw_logs_dir)
         
         log_dir = os.path.join(self.reporter.raw_logs_dir, "unit_tests", "python")
@@ -323,7 +327,11 @@ class Tester:
         """Run the full pytest suite in tests/ (handles VNet via capsules/markers)"""
         results = {"steps": []}
         env = os.environ.copy()
-        env["PYTHONPATH"] = os.pathsep.join([os.getcwd(), "src/python", "build/generated/python"])
+        env["PYTHONPATH"] = os.pathsep.join([
+            os.getcwd(), "src/python",
+            "build/generated/integrated_apps/python",
+            "build/generated/automotive_pubsub/python",
+        ])
         
         cross_lang_log_dir = os.path.join(self.reporter.raw_logs_dir, "integration")
         os.makedirs(cross_lang_log_dir, exist_ok=True)
@@ -409,7 +417,8 @@ class Tester:
         env["PYTHONPATH"] = os.pathsep.join([
             os.getcwd(),
             os.path.join(os.getcwd(), "src/python"),
-            os.path.join(os.getcwd(), "build/generated/python")
+            os.path.join(os.getcwd(), "build/generated/integrated_apps/python"),
+            os.path.join(os.getcwd(), "build/generated/automotive_pubsub/python"),
         ])
         env["FUSION_LOG_DIR"] = log_dir
         

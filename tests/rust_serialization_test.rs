@@ -1,8 +1,8 @@
 use fusion_hawking; 
 
-// Include the generated code module
+// Include the generated code module (per-project path)
 mod generated {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/build/generated/rust/mod.rs"));
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/build/generated/integrated_apps/rust/mod.rs"));
 }
 
 use generated::*;

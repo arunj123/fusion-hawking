@@ -20,6 +20,7 @@ int32_t read_be32_signed(const uint8_t* data) {
 int main() {
     std::cout << "Running C++ Serialization Tests..." << std::endl;
     
+    using namespace fusion_hawking;
     using namespace generated;
     
     // 1. Test MathServiceAddRequest - Positive integers
@@ -38,7 +39,7 @@ int main() {
         
         const uint8_t* ptr = buffer.data();
         size_t len = buffer.size();
-        MathServiceAddRequest req2 = MathServiceAddRequest::deserialize(ptr, len);
+        MathServiceAddRequest req2 = MathServiceAddRequest::from_bytes(ptr, len);
         
         assert(req2.a == 100);
         assert(req2.b == 200);
@@ -60,7 +61,7 @@ int main() {
         
         const uint8_t* ptr = buffer.data();
         size_t len = buffer.size();
-        MathServiceAddRequest req2 = MathServiceAddRequest::deserialize(ptr, len);
+        MathServiceAddRequest req2 = MathServiceAddRequest::from_bytes(ptr, len);
         
         assert(req2.a == -50);
         assert(req2.b == -100);
@@ -77,7 +78,7 @@ int main() {
         
         const uint8_t* ptr = buffer.data();
         size_t len = buffer.size();
-        MathServiceAddRequest req2 = MathServiceAddRequest::deserialize(ptr, len);
+        MathServiceAddRequest req2 = MathServiceAddRequest::from_bytes(ptr, len);
         
         assert(req2.a == std::numeric_limits<int32_t>::max());
         assert(req2.b == std::numeric_limits<int32_t>::min());
@@ -99,7 +100,7 @@ int main() {
         
         const uint8_t* ptr = buffer.data();
         size_t len = buffer.size();
-        MathServiceAddRequest req2 = MathServiceAddRequest::deserialize(ptr, len);
+        MathServiceAddRequest req2 = MathServiceAddRequest::from_bytes(ptr, len);
         
         assert(req2.a == 0);
         assert(req2.b == 0);
@@ -120,7 +121,7 @@ int main() {
         
         const uint8_t* ptr = buffer.data();
         size_t len = buffer.size();
-        SortServiceSortAscRequest req2 = SortServiceSortAscRequest::deserialize(ptr, len);
+        SortServiceSortAscRequest req2 = SortServiceSortAscRequest::from_bytes(ptr, len);
         
         assert(req2.data.size() == 5);
         assert(req2.data[0] == 10);
@@ -137,7 +138,7 @@ int main() {
         
         const uint8_t* ptr = buffer.data();
         size_t len = buffer.size();
-        SortServiceSortAscRequest req2 = SortServiceSortAscRequest::deserialize(ptr, len);
+        SortServiceSortAscRequest req2 = SortServiceSortAscRequest::from_bytes(ptr, len);
         
         assert(req2.data[0] == -100);
         assert(req2.data[1] == -50);
@@ -157,7 +158,7 @@ int main() {
         
         const uint8_t* ptr = buffer.data();
         size_t len = buffer.size();
-        SortServiceSortAscRequest req2 = SortServiceSortAscRequest::deserialize(ptr, len);
+        SortServiceSortAscRequest req2 = SortServiceSortAscRequest::from_bytes(ptr, len);
         
         assert(req2.data.empty());
         std::cout << "SortServiceSortAscRequest (empty): OK" << std::endl;
@@ -173,7 +174,7 @@ int main() {
         
         const uint8_t* ptr = buffer.data();
         size_t len = buffer.size();
-        SortServiceSortAscRequest req2 = SortServiceSortAscRequest::deserialize(ptr, len);
+        SortServiceSortAscRequest req2 = SortServiceSortAscRequest::from_bytes(ptr, len);
         
         assert(req2.data.size() == 1);
         assert(req2.data[0] == 42);
@@ -191,7 +192,7 @@ int main() {
         
         const uint8_t* ptr = buffer.data();
         size_t len = buffer.size();
-        MathServiceAddResponse resp2 = MathServiceAddResponse::deserialize(ptr, len);
+        MathServiceAddResponse resp2 = MathServiceAddResponse::from_bytes(ptr, len);
         
         assert(resp2.result == 12345);
         std::cout << "MathServiceAddResponse: OK" << std::endl;
@@ -209,7 +210,7 @@ int main() {
         
         const uint8_t* ptr = buffer.data();
         size_t len = buffer.size();
-        StringServiceReverseRequest req2 = StringServiceReverseRequest::deserialize(ptr, len);
+        StringServiceReverseRequest req2 = StringServiceReverseRequest::from_bytes(ptr, len);
         
         assert(req2.text == "Hello SOME/IP");
         std::cout << "StringServiceReverseRequest: OK" << std::endl;

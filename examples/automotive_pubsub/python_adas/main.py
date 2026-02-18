@@ -22,17 +22,13 @@ if os.path.exists(os.path.join(os.getcwd(), 'build', 'generated', 'python')):
 
 from fusion_hawking import SomeIpRuntime, LogLevel, ConsoleLogger
 
+# Zero-codegen: import types directly from the IDL package
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 
-# Mock FusedTrack for demo purposes (would normally be generated)
-class FusedTrack:
-    def __init__(self, track_id=0, position_x=0.0, position_y=0.0, 
-                 velocity_x=0.0, velocity_y=0.0, confidence=0.0):
-        self.track_id = track_id
-        self.position_x = position_x
-        self.position_y = position_y
-        self.velocity_x = velocity_x
-        self.velocity_y = velocity_y
-        self.confidence = confidence
+from examples.automotive_pubsub.idl.types import FusedTrack
+from examples.automotive_pubsub.idl.fusion_service import FusionService
 
 
 class AdasApplication:
@@ -82,7 +78,7 @@ def main():
     if len(sys.argv) > 1:
         config_path = sys.argv[1]
 
-    rt = SomeIpRuntime(config_path, "adas_py_instance", logger)
+    rt = SomeIpRuntime(config_path, "adas_python_instance", logger)
     rt.logger.log(LogLevel.INFO, "Main", "ADAS Application starting...")
     rt.start()
     
@@ -112,8 +108,8 @@ def main():
             if iteration % 4 == 0:
                 # Mock receiving some tracks for demo purposes
                 demo_tracks = [
-                    FusedTrack(track_id=1, position_x=15.0, position_y=2.0, confidence=0.9),
-                    FusedTrack(track_id=2, position_x=8.5, position_y=1.0, confidence=0.85),
+                    FusedTrack(track_id=1, position_x=15.0, position_y=2.0, velocity_x=0.0, velocity_y=0.0, confidence=0.9),
+                    FusedTrack(track_id=2, position_x=8.5, position_y=1.0, velocity_x=0.0, velocity_y=0.0, confidence=0.85),
                 ]
                 adas.on_track_update(demo_tracks)
             

@@ -65,7 +65,11 @@ class CoverageManager:
     def _run_python_coverage(self):
         print("Generating Python Coverage...")
         env = os.environ.copy()
-        env["PYTHONPATH"] = os.pathsep.join(["src/python", "build", "build/generated/python"])
+        env["PYTHONPATH"] = os.pathsep.join([
+            os.getcwd(), "src/python", "build",
+            "build/generated/integrated_apps/python",
+            "build/generated/automotive_pubsub/python",
+        ])
         env["FUSION_LOG_DIR"] = str(self.reporter.raw_logs_dir)
         
         # Use a distinct log name for the runner, preserving 'python_integration.log' for the app under test

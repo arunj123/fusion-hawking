@@ -150,24 +150,26 @@ add(a=5, b=3) serialized:
 
 ## Generated Code Structure
 
-After running `codegen`, files are created in `build/generated/`:
+After running `codegen`, files are created in `build/generated/{project}/`:
 
 ```
-build/generated/
+build/generated/{project}/
 ├── rust/
 │   ├── math_service.rs      # Server trait + Client struct
 │   └── mod.rs
 ├── python/
 │   ├── math_service.py      # Handler base + Client class
 │   └── __init__.py
-└── cpp/
-    ├── MathService.hpp      # Abstract handler + Client class
-    └── generated.hpp
-└── js/
+├── cpp/
+│   ├── MathService.hpp      # Abstract handler + Client class
+│   └── generated.hpp
+└── ts/
     ├── MathService.ts       # Typed interface + Client/Server stubs
     └── index.ts
-
 ```
+
+> [!NOTE]
+> For **JavaScript/TypeScript** projects, it is recommended to copy the contents of `build/generated/{project}/ts/` to a local `src/generated/` directory within your app to ensure reliable module resolution with `NodeNext`.
 
 ---
 

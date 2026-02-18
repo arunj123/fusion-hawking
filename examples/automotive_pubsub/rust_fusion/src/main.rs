@@ -16,7 +16,7 @@ use std::thread;
 use std::time::Duration;
 
 pub mod generated {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../build/generated/rust/mod.rs"));
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../build/generated/automotive_pubsub/rust/mod.rs"));
 }
 
 use generated::{

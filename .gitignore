@@ -40,6 +40,7 @@ htmlcov/
 
 # Generated code
 # build/generated/ is covered by **/build/
+**/src/generated/
 
 # IDEs
 .vscode/
