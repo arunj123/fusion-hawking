@@ -28,6 +28,7 @@ class ConfigGenerator:
             "interfaces": {},
             "instances": {}
         }
+        self._global_sd = {}
 
     def add_interface(self, logical_name, physical_name, endpoints=None, sd=None, server=None):
         """Adds a network interface definition."""
@@ -54,7 +55,7 @@ class ConfigGenerator:
         self.config["interfaces"][logical_name] = iface
         return self
 
-    def add_instance(self, instance_name, unicast_bind=None, providing=None, required=None, sd=None, interfaces=None):
+    def add_instance(self, instance_name, unicast_bind=None, providing=None, required=None, sd=None):
         """Adds an application instance definition."""
         inst = {}
         if unicast_bind:
@@ -65,27 +66,20 @@ class ConfigGenerator:
             inst["required"] = required
         
         # Merge global SD settings with instance-specific ones
-        combined_sd = self.config.get("sd", {}).copy()
+        combined_sd = self._global_sd.copy()
         if sd:
             combined_sd.update(sd)
         
         if combined_sd:
             inst["sd"] = combined_sd
             
-        if interfaces:
-            inst["interfaces"] = interfaces
-            
         self.config["instances"][instance_name] = inst
         return self
 
-    def set_sd(self, multicast_ip=None, multicast_port=None, request_timeout_ms=None, cycle_offer_ms=None):
-        """Sets global SD configuration."""
-        if "sd" not in self.config:
-            self.config["sd"] = {}
-        if multicast_ip: self.config["sd"]["multicast_ip"] = multicast_ip
-        if multicast_port: self.config["sd"]["multicast_port"] = multicast_port
-        if request_timeout_ms: self.config["sd"]["request_timeout_ms"] = request_timeout_ms
-        if cycle_offer_ms: self.config["sd"]["cycle_offer_ms"] = cycle_offer_ms
+    def set_sd(self, request_timeout_ms=None, cycle_offer_ms=None):
+        """Sets global SD timing configuration."""
+        if request_timeout_ms: self._global_sd["request_timeout_ms"] = request_timeout_ms
+        if cycle_offer_ms: self._global_sd["cycle_offer_ms"] = cycle_offer_ms
         return self
 
     def save(self, path):
@@ -528,9 +522,10 @@ class SmartConfigFactory:
                 
                 # Add all instances to all configs (they only run their own)
                 # But they need the knowledge of other instances for 'required' blocks
-                gen.add_instance("radar_cpp_instance",
-                    unicast_bind={"primary": "sd_uc_v4"} if name == 'ecu1' else None,
-                    providing={
+                # Add instance-specific providers only if the endpoint is local
+                radar_providing = None
+                if name == 'ecu1':
+                    radar_providing = {
                         "radar-service": {
                             "service_id": 28673, "instance_id": 1, "major_version": 1, "minor_version": 0,
                             "offer_on": {"primary": "radar_ep"},
@@ -540,13 +535,17 @@ class SmartConfigFactory:
                                 }
                             }
                         }
-                    },
+                    }
+
+                gen.add_instance("radar_cpp_instance",
+                    unicast_bind={"primary": "sd_uc_v4"} if name == 'ecu1' else None,
+                    providing=radar_providing,
                     sd={"cycle_offer_ms": 1000}
                 )
                 
-                gen.add_instance("fusion_rust_instance",
-                    unicast_bind={"primary": "sd_uc_v4"} if name == 'ecu2' else None,
-                    providing={
+                fusion_providing = None
+                if name == 'ecu2':
+                    fusion_providing = {
                         "fusion-service": {
                             "service_id": 28674, "instance_id": 1, "major_version": 1, "minor_version": 0,
                             "offer_on": {"primary": "fusion_ep"},
@@ -556,7 +555,11 @@ class SmartConfigFactory:
                                 }
                             }
                         }
-                    },
+                    }
+
+                gen.add_instance("fusion_rust_instance",
+                    unicast_bind={"primary": "sd_uc_v4"} if name == 'ecu2' else None,
+                    providing=fusion_providing,
                     required={
                         "radar-client": {"service_id": 28673, "instance_id": 1, "major_version": 1, "find_on": ["primary"]}
                     },

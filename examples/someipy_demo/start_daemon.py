@@ -124,9 +124,13 @@ async def main():
     await someipyd.async_main()
 
 if __name__ == "__main__":
+    import traceback
     try:
         # Ensure common_ids is importable
         sys.path.append(os.path.dirname(__file__))
         asyncio.run(main())
     except KeyboardInterrupt:
         pass
+    except Exception:
+        traceback.print_exc()
+        sys.exit(1)

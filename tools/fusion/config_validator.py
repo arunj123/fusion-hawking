@@ -133,7 +133,8 @@ SCHEMA = {
                             "properties": {
                                 "cycle_offer_ms": {"type": "integer"},
                                 "request_response_delay_ms": {"type": "integer"},
-                                "request_timeout_ms": {"type": "integer"}
+                                "request_timeout_ms": {"type": "integer"},
+                                "multicast_hops": {"type": "integer"}
                             }
                         }
                     }
@@ -214,6 +215,13 @@ def validate_config(data: Dict[str, Any]) -> List[str]:
     Validates the master configuration dictionary.
     Returns a list of error messages. Empty list implies valid config.
     """
+    # Level 0: Quick check - is this even a Fusion config?
+    if not isinstance(data, dict):
+        return ["Config must be a JSON object"]
+        
+    if "interfaces" not in data and "instances" not in data:
+        return [] # Not a Fusion config, skip validation silently
+        
     # Level 1: Schema Validation
     schema_errors = validate_json_structure(data, SCHEMA)
     if schema_errors:

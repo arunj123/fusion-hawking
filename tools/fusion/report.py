@@ -15,10 +15,12 @@ class Reporter:
         # Subdirectories
         self.coverage_dir = os.path.join(self.log_dir, "coverage")
         self.raw_logs_dir = os.path.join(self.log_dir, "raw_logs")
+        self.configs_dir = os.path.join(self.log_dir, "configs")
         
         # Ensure directories exist
         os.makedirs(self.coverage_dir, exist_ok=True)
         os.makedirs(self.raw_logs_dir, exist_ok=True)
+        os.makedirs(self.configs_dir, exist_ok=True)
         
         # Update Symlink
         self._update_symlink()

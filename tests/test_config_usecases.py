@@ -97,12 +97,10 @@ class TestUseCases:
                         "major_version": 1,
                         "offer_on": {"primary": "svc_ep", "secondary": "svc_ep_2"}
                     }
-                },
-                interfaces=["primary", "secondary"]
+                }
             ).add_instance("js_client",
                  unicast_bind={"client_iface": "client_ep"},
-                 required={"MathService": {"service_id": 0x1001, "instance_id": 1, "major_version": 1, "find_on": ["client_iface"]}},
-                 interfaces=["client_iface"]
+                 required={"MathService": {"service_id": 0x1001, "instance_id": 1, "major_version": 1, "find_on": ["client_iface"]}}
             )
 
             config_path = ctx.config_gen.save(os.path.join(ctx.log_dir, "config.json"))
@@ -193,17 +191,14 @@ while True: time.sleep(1)
             }, sd={"endpoint": "sd_mcast"})
 
             ctx.config_gen.add_instance("provider_a", unicast_bind={"primary": "sd_uc"},
-                providing={"ServiceA": {"service_id": 0x1000, "instance_id": 1, "major_version": 1, "offer_on": {"primary": "svc_a_ep"}}},
-                interfaces=["primary"]
+                providing={"ServiceA": {"service_id": 0x1000, "instance_id": 1, "major_version": 1, "offer_on": {"primary": "svc_a_ep"}}}
             ).add_instance("provider_b", unicast_bind={"secondary": "sd_uc"},
-                providing={"ServiceB": {"service_id": 0x2000, "instance_id": 1, "major_version": 1, "offer_on": {"secondary": "svc_b_ep"}}},
-                interfaces=["secondary"]
+                providing={"ServiceB": {"service_id": 0x2000, "instance_id": 1, "major_version": 1, "offer_on": {"secondary": "svc_b_ep"}}}
             ).add_instance("split_client", unicast_bind={"client_iface": "client_ep"},
                 required={
                     "ServiceA": {"service_id": 0x1000, "instance_id": 1, "major_version": 1, "find_on": ["client_iface"]},
                     "ServiceB": {"service_id": 0x2000, "instance_id": 1, "major_version": 1, "find_on": ["client_iface"]}
-                },
-                interfaces=["client_iface"]
+                }
             )
             
             config_path = ctx.config_gen.save(os.path.join(ctx.log_dir, "config.json"))
@@ -268,14 +263,14 @@ rt.stop()
             }, sd={"endpoint": "sd_mcast"})
             
             ctx.config_gen.add_instance("inst_1", unicast_bind={"primary": "sd_uc_1"},
-                providing={"Svc": {"service_id": 0x1000, "instance_id": 1, "major_version": 1, "offer_on": {"primary": "svc_ep_1"}}}, interfaces=["primary"]
+                providing={"Svc": {"service_id": 0x1000, "instance_id": 1, "major_version": 1, "offer_on": {"primary": "svc_ep_1"}}}
             ).add_instance("inst_2", unicast_bind={"primary": "sd_uc_2"},
-                providing={"Svc": {"service_id": 0x1000, "instance_id": 2, "major_version": 1, "offer_on": {"primary": "svc_ep_2"}}}, interfaces=["primary"]
+                providing={"Svc": {"service_id": 0x1000, "instance_id": 2, "major_version": 1, "offer_on": {"primary": "svc_ep_2"}}}
             ).add_instance("client", unicast_bind={"client_iface": "client_ep"},
                 required={
                     "Svc1": {"service_id": 0x1000, "instance_id": 1, "major_version": 1, "find_on": ["client_iface"]},
                     "Svc2": {"service_id": 0x1000, "instance_id": 2, "major_version": 1, "find_on": ["client_iface"]}
-                }, interfaces=["client_iface"])
+                })
 
             config_path = ctx.config_gen.save(os.path.join(ctx.log_dir, "config.json"))
             wsl_config_path = to_wsl(config_path)
@@ -351,17 +346,14 @@ rt.stop()
             }, sd={"endpoint": "sd_mcast"})
 
             ctx.config_gen.add_instance("inst_1", unicast_bind={"primary": "sd_uc"},
-                providing={"Svc": {"service_id": 0x1000, "instance_id": 1, "major_version": 1, "offer_on": {"primary": "svc_ep_1"}}},
-                interfaces=["primary"]
+                providing={"Svc": {"service_id": 0x1000, "instance_id": 1, "major_version": 1, "offer_on": {"primary": "svc_ep_1"}}}
             ).add_instance("inst_2", unicast_bind={"secondary": "sd_uc"},
-                providing={"Svc": {"service_id": 0x1000, "instance_id": 2, "major_version": 1, "offer_on": {"secondary": "svc_ep_2"}}},
-                interfaces=["secondary"]
+                providing={"Svc": {"service_id": 0x1000, "instance_id": 2, "major_version": 1, "offer_on": {"secondary": "svc_ep_2"}}}
             ).add_instance("client", unicast_bind={"client_iface": "client_ep"},
                 required={
                     "Svc1": {"service_id": 0x1000, "instance_id": 1, "major_version": 1, "find_on": ["client_iface"]},
                     "Svc2": {"service_id": 0x1000, "instance_id": 2, "major_version": 1, "find_on": ["client_iface"]}
-                },
-                interfaces=["client_iface"]
+                }
             )
             
             config_path = ctx.config_gen.save(os.path.join(ctx.log_dir, "config.json"))
@@ -482,12 +474,12 @@ rt.stop()
                 providing={
                     "SvcA": {"service_id": 0x1000, "instance_id": 1, "major_version": 1, "offer_on": {"primary": "shared_ep"}},
                     "SvcB": {"service_id": 0x2000, "instance_id": 1, "major_version": 1, "offer_on": {"primary": "shared_ep"}}
-                }, interfaces=["primary"]
+                }
             ).add_instance("client", unicast_bind={"client_iface": "client_ep"},
                 required={
                     "SvcA": {"service_id": 0x1000, "instance_id": 1, "major_version": 1, "find_on": ["client_iface"]},
                     "SvcB": {"service_id": 0x2000, "instance_id": 1, "major_version": 1, "find_on": ["client_iface"]}
-                }, interfaces=["client_iface"])
+                })
             
             config_path = ctx.config_gen.save(os.path.join(ctx.log_dir, "config.json"))
             wsl_config_path = to_wsl(config_path)

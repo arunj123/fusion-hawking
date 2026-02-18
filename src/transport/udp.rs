@@ -14,7 +14,7 @@ impl UdpTransport {
     }
     
     /// Create a multicast-ready socket with SO_REUSEADDR for shared port binding
-    pub fn new_multicast(bind_addr: SocketAddr, multicast_addr: SocketAddr, iface_name: Option<&str>) -> Result<Self> {
+    pub fn new_multicast(bind_addr: SocketAddr, _multicast_addr: SocketAddr, _iface_name: Option<&str>) -> Result<Self> {
         use socket2::{Socket, Domain, Type, Protocol};
         
         // Logger not available here? We use println! for debug
@@ -65,11 +65,11 @@ impl UdpTransport {
         {
             // Linux/Unix: Bind to Multicast Group IP to allow reception
             // Binding to Unicast blocks multicast packets on Linux
-            let mcast_sock_addr = SocketAddr::new(multicast_addr.ip(), bind_addr.port());
+            let mcast_sock_addr = SocketAddr::new(_multicast_addr.ip(), bind_addr.port());
             println!("[DEBUG] Linux: Binding to Multicast Group IP {}", mcast_sock_addr);
             
             // SO_BINDTODEVICE
-            if let Some(ifname) = iface_name {
+            if let Some(ifname) = _iface_name {
                  println!("[DEBUG] Linux: Setting SO_BINDTODEVICE to {}", ifname);
                  let bytes = ifname.as_bytes();
                  if let Err(e) = socket.bind_device(Some(bytes)) {

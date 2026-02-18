@@ -201,10 +201,29 @@ class SomeIpRuntime:
         except: return None
 
     def _setup_transports(self):
-        # Bind all endpoints of interfaces assigned to this instance
-        iface_names = self.config.get('interfaces', [])
+        # Infer required interfaces from config
+        referenced_ifaces = set()
+        if 'unicast_bind' in self.config:
+            referenced_ifaces.update(self.config['unicast_bind'].keys())
+        if 'providing' in self.config:
+            for s_cfg in self.config['providing'].values():
+                if 'offer_on' in s_cfg:
+                    referenced_ifaces.update(s_cfg['offer_on'].keys())
+                if 'interfaces' in s_cfg:
+                    referenced_ifaces.update(s_cfg['interfaces'])
+        if 'required' in self.config:
+            for c_cfg in self.config['required'].values():
+                if 'find_on' in c_cfg:
+                    referenced_ifaces.update(c_cfg['find_on'])
+        
+        # Merge with legacy explicit 'interfaces' list if present
+        iface_names = list(referenced_ifaces)
+        for a in self.config.get('interfaces', []):
+            if a not in iface_names:
+                iface_names.append(a)
+
         if not iface_names and self.interfaces:
-            # Fallback: if no interfaces list in instance, but global interfaces exist, use 'primary' or first
+            # Fallback: if no interfaces specified/inferred, use 'primary' or first
             iface_names = ["primary"] if "primary" in self.interfaces else [list(self.interfaces.keys())[0]]
 
         for alias in iface_names:

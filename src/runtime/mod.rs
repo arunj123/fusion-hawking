@@ -599,7 +599,7 @@ impl SomeIpRuntime {
                             let mt = header.message_type_enum();
                             let is_tp = mt.map(|m| m.uses_tp()).unwrap_or(false);
                             
-                            let mut payload = &buf[16..size];
+                            let payload = &buf[16..size];
                             let mut allocated_payload: Option<Vec<u8>> = None;
                             
                             if is_tp {

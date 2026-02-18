@@ -26,8 +26,10 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-    - name: Run Codegen
-      run: python -m tools.fusion.main --stage codegen --no-dashboard --clean
+    - name: Run Bindings Generation
+      run: python -m tools.fusion.main --stage codegen --no-dashboard
+    - name: Validate Core Configurations
+      run: python -m tools.fusion.config_validator build/generated/config.json
     - name: Upload Codegen Artifacts
       uses: actions/upload-artifact@v4
       with:
@@ -387,12 +389,14 @@ jobs:
 
     - name: Run Simple Demo
       run: python -m tools.fusion.main --stage demos --demo simple --base-port 0 --no-dashboard
-    - name: Upload Logs
+    - name: Upload Logs and Configs
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: logs-demo-simple-${{ matrix.os }}
-        path: logs/
+        path: |
+          logs/
+          build/generated/
 
   demo-integrated:
     needs: [codegen, build-core, build-cpp, build-js]
@@ -439,12 +443,14 @@ jobs:
 
     - name: Run Integrated Demo
       run: python -m tools.fusion.main --stage demos --demo integrated --base-port 100 --no-dashboard
-    - name: Upload Logs
+    - name: Upload Logs and Configs
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: logs-demo-integrated-${{ matrix.os }}
-        path: logs/
+        path: |
+          logs/
+          build/generated/
 
   demo-pubsub:
     needs: [codegen, build-core, build-cpp, build-js]
@@ -491,12 +497,14 @@ jobs:
 
     - name: Run PubSub Demo
       run: python -m tools.fusion.main --stage demos --demo pubsub --base-port 200 --no-dashboard
-    - name: Upload Logs
+    - name: Upload Logs and Configs
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: logs-demo-pubsub-${{ matrix.os }}
-        path: logs/
+        path: |
+          logs/
+          build/generated/
 
   demo-someipy:
     needs: [codegen, build-core, build-cpp, build-js]
@@ -547,12 +555,49 @@ jobs:
       run: chmod -R +x build/* target/debug/* || true
     - name: Run someipy Demo
       run: python -m tools.fusion.main --stage demos --demo someipy --no-dashboard
-    - name: Upload Logs
+    - name: Upload Logs and Configs
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: logs-demo-someipy-${{ matrix.os }}
-        path: logs/
+        path: |
+          logs/
+          build/generated/
+
+  demo-tp:
+    needs: [codegen, build-core]
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    - name: Download Codegen Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-codegen
+        path: build/generated
+    - name: Download Core Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-core-${{ matrix.os }}
+        path: target
+    - name: Restore Permissions (Linux)
+      if: runner.os == 'Linux'
+      run: chmod -R +x build/* target/debug/* || true
+    - name: Run Large Payload (TP) Demo
+      run: python -m tools.fusion.main --stage demos --demo tp --no-dashboard
+    - name: Upload Logs and Configs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: logs-demo-tp-${{ matrix.os }}
+        path: |
+          logs/
+          build/generated/
 
   # ============================================
   # Stage 2.5: Virtual Network Tests (Linux-only)
@@ -577,20 +622,23 @@ jobs:
         path: target
     - name: Setup Virtual Network
       run: sudo bash tools/fusion/scripts/setup_vnet.sh
-    - name: Run VNET Tests
+    - name: Run VNET Tests and Use-Cases
       # Runs via main.py, which detects VNet and runs sequential tests (No-VNet -> VNet)
-      # We use --target python since VNet tests are primarily Python-based for now.
+      # We explicitly run both unit tests and the 'usecases' demo
       run: |
         sudo python3 -m tools.fusion.main --stage test --target python --base-port 400 --no-dashboard
+        sudo python3 -m tools.fusion.main --stage demos --demo usecases --base-port 500 --no-dashboard
     - name: Teardown Virtual Network
       if: always()
       run: sudo bash tools/fusion/scripts/teardown_vnet.sh
-    - name: Upload Logs
+    - name: Upload Logs and Configs
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: logs-vnet-test
-        path: logs/
+        path: |
+          logs/
+          build/generated/
 
   coverage:
     # Coverage typically easiest on Linux (lcov, llvm-cov)

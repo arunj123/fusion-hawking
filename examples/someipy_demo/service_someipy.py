@@ -107,15 +107,23 @@ async def main():
             interface_ip = sys.argv[idx+1]
 
     print(f"[someipy Service] Connecting to daemon on {interface_ip}...")
-    try:
-        # Always use TCP to connect to the daemon since start_daemon.py starts with use_tcp=True
-        someipy_daemon = await connect_to_someipy_daemon(
-            {"use_tcp": True, "tcp_host": interface_ip, "tcp_port": 30500}
-        )
-    except Exception as e:
-        print(f"[someipy Service] Failed to connect to daemon: {e}")
-        print("[someipy Service] Make sure someipyd.py is running!")
-        return
+    someipy_daemon = None
+    retries = 10
+    while retries > 0:
+        try:
+            # Always use TCP to connect to the daemon since start_daemon.py starts with use_tcp=True
+            someipy_daemon = await connect_to_someipy_daemon(
+                {"use_tcp": True, "tcp_host": interface_ip, "tcp_port": 30500}
+            )
+            break
+        except Exception as e:
+            retries -= 1
+            if retries == 0:
+                print(f"[someipy Service] Failed to connect to daemon after multiple retries: {e}")
+                print("[someipy Service] Make sure someipyd.py is running!")
+                return
+            print(f"[someipy Service] Daemon not ready yet, retrying in 2s... ({retries} left)")
+            await asyncio.sleep(2)
 
     echo_method = Method(
         id=METHOD_ID,
@@ -154,7 +162,11 @@ async def main():
         await someipy_daemon.disconnect_from_daemon()
 
 if __name__ == "__main__":
+    import traceback
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         pass
+    except Exception:
+        traceback.print_exc()
+        sys.exit(1)

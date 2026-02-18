@@ -1,9 +1,5 @@
 use fusion_hawking::runtime::{SomeIpRuntime, RequestHandler};
 use fusion_hawking::codec::SomeIpHeader;
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::Duration;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 const SERVICE_ID: u16 = 0x5000;
 const METHOD_ID_GET: u16 = 0x0001;
