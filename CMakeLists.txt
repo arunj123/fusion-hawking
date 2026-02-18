@@ -23,6 +23,7 @@ endif()
 # 1. C++ Core Library
 add_library(fusion_hawking_cpp STATIC
     src/cpp/src/runtime.cpp
+    src/cpp/src/tp.cpp
 )
 target_include_directories(fusion_hawking_cpp PUBLIC 
     src/cpp/include
@@ -59,9 +60,14 @@ target_link_libraries(tcp_server_test fusion_hawking_cpp)
 add_executable(sd_golden_test tests/sd_golden_test.cpp)
 target_link_libraries(sd_golden_test fusion_hawking_cpp)
 
+# Cross-Language TP Test
+add_executable(large_payload_client examples/large_payload_test/client.cpp)
+target_link_libraries(large_payload_client fusion_hawking_cpp)
+
 if(WIN32)
     target_link_libraries(fusion_hawking_cpp ws2_32)
     target_link_libraries(tcp_server_test ws2_32)
+    target_link_libraries(large_payload_client ws2_32)
     target_compile_definitions(fusion_hawking_cpp PRIVATE _WINSOCK_DEPRECATED_NO_WARNINGS)
     target_compile_definitions(cpp_test PRIVATE _WINSOCK_DEPRECATED_NO_WARNINGS)
     target_compile_definitions(tcp_server_test PRIVATE _WINSOCK_DEPRECATED_NO_WARNINGS)

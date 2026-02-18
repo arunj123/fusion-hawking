@@ -9,21 +9,11 @@ from tools.fusion.build import Builder
 from tools.fusion.test import Tester
 from tools.fusion.coverage import CoverageManager
 from tools.fusion.server import ProgressServer
-from tools.fusion.utils import get_local_ip, detect_environment
+from tools.fusion.utils import get_local_ip, detect_environment, merge_results
 from tools.fusion.diagrams import DiagramManager
 
 
-def merge_results(base, new):
-    """Helper to merge test result dicts, specifically extending 'steps' list."""
-    if not new: return base
-    steps = base.get("steps", [])
-    new_steps = new.pop("steps", [])
-    base.update(new)
-    if new_steps:
-        base["steps"] = steps + new_steps
-    else:
-        base["steps"] = steps
-    return base
+
 
 
 def run_diagrams(root_dir, reporter, server):
@@ -321,26 +311,35 @@ def main():
                  if execution_plan.index((run_name, force_no_vnet)) == 0:
                      current_results.update(run_build(root_dir, reporter, builder, tool_status, args.target, server, args.no_codegen, args.with_coverage, args.packet_dump))
 
-            # TEST
-            # Optimization: Only run unit tests in the first pass (No-VNet)
-            # Unit tests are generally environment-agnostic or local-only.
+            # TEST (Integration Suite - Runs in EVERY pass)
+            if stage in ["test", "all"]:
+                res = tester.run_integration_tests()
+                for s in res.get("steps", []): s["name"] = f"[{run_name}] {s['name']}"
+                merge_results(all_test_results, res)
+
+            # TEST (Unit Tests - Only Pass 1)
             if stage in ["test", "all"] and force_no_vnet:
-                 # Prefix steps with run name
+                 # Unit tests (Rust, Python unittest, etc.)
                  res = run_test(reporter, tester, args.target, server)
                  for s in res.get("steps", []): s["name"] = f"[{run_name}] {s['name']}"
                  merge_results(all_test_results, res)
 
-            # DEMOS
+            # DEMOS (Runs in EVERY pass)
             should_run_demos = False
             if stage == "demos": should_run_demos = True
             if stage == "all" and not args.skip_demos: should_run_demos = True
             if stage == "test" and not args.skip_demos: should_run_demos = True
 
             if should_run_demos: 
-                 if args.target == "all" or stage == "demos":
-                    res = run_demos(reporter, tester, server, current_results, args.demo)
-                    for s in res.get("steps", []): s["name"] = f"[{run_name}] {s['name']}"
-                    merge_results(all_test_results, res)
+                 # Explicitly add TP and UseCases if filter is 'all'
+                 demo_filter = args.demo
+                 if demo_filter == "all":
+                     # We include 'tp' and 'usecases' as they are now in the map
+                     pass 
+
+                 res = run_demos(reporter, tester, server, current_results, demo_filter)
+                 for s in res.get("steps", []): s["name"] = f"[{run_name}] {s['name']}"
+                 merge_results(all_test_results, res)
 
             # COVERAGE (Last run only?)
             if stage in ["coverage", "all"] and not args.skip_coverage and execution_plan.index((run_name, force_no_vnet)) == len(execution_plan) - 1:

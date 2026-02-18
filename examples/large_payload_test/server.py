@@ -23,20 +23,17 @@ class LargePayloadService(RequestHandler):
         return SERVICE_ID
 
     def handle(self, header: dict, payload: bytes) -> bytes:
-        mid = header.get("method_id")
-        client_addr = "unknown" # header doesn't pass addr? handle signature is (header, payload)
-        
-        if mid == METHOD_ID_GET:
+        method_id = header.get("method_id")
+        if method_id == METHOD_ID_GET:
+            # Send random data of fixed size
+            data = os.urandom(LARGE_PAYLOAD_SIZE)
             print(f"Received GET Request for {LARGE_PAYLOAD_SIZE} bytes")
-            # Generate deterministic large payload
-            data = bytearray([i % 256 for i in range(LARGE_PAYLOAD_SIZE)])
-            return (0, data)
-            
-        elif mid == METHOD_ID_ECHO:
+            return data
+        elif method_id == METHOD_ID_ECHO:
+            # Echo back exactly what was received
             print(f"Received ECHO Request, size={len(payload)}")
-            if len(payload) != LARGE_PAYLOAD_SIZE:
-                 print(f"WARNING: Received size {len(payload)} != Expected {LARGE_PAYLOAD_SIZE}")
-            return (0, payload)
+            print(f"DEBUG: ECHO size={len(payload)}")
+            return payload
             
         return (0x03, b"") # E_UNKNOWN_METHOD
 

@@ -29,6 +29,19 @@ def _get_env():
 #  Shared Utilities (consolidated from test files)
 # ─────────────────────────────────────────────────────────────
 
+def merge_results(base, new):
+    """Helper to merge test result dicts, specifically extending 'steps' list."""
+    if not new: return base
+    steps = base.get("steps", [])
+    new_steps = new.pop("steps", [])
+    base.update(new)
+    if new_steps:
+        base["steps"] = steps + new_steps
+    else:
+        base["steps"] = steps
+    return base
+
+
 def to_wsl(path):
     """Convert a Windows path to a WSL-accessible path. 
     On native Windows, returns the path unchanged.

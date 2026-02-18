@@ -38,7 +38,8 @@ class LargePayloadClient:
             
             # 2. Send Large Payload (Echo)
             # 5000 bytes > 1400 MTU -> Should trigger TP
-            payload = b'A' * 5000 
+            import os
+            payload = os.urandom(5000) 
             
             # Method 0x0002 is Echo
             response = self.runtime.send_request(service_id, 0x0002, payload, addr, wait_for_response=True, timeout=20)
@@ -48,6 +49,8 @@ class LargePayloadClient:
                     print("SUCCESS: ECHO Content Verified")
                 else:
                     self.log.error(f"Response mismatch! Len={len(response)}")
+                    if response != payload:
+                        self.log.error("Data corruption detected: Received bytes do not match sent bytes.")
                     print("FAILURE: Content Mismatch")
                     sys.exit(1)
             else:

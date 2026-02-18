@@ -30,3 +30,11 @@ path = "examples/someipy_demo/client_fusion.rs"
 
 [features]
 packet-dump = []
+
+[[bin]]
+name = "large_payload_server"
+path = "examples/large_payload_test/rust/server.rs"
+
+[[bin]]
+name = "large_payload_client"
+path = "examples/large_payload_test/rust/client.rs"
