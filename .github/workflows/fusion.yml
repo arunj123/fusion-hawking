@@ -222,6 +222,8 @@ jobs:
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
       run: chmod -R +x build/release/* target/release/* target/debug/* || true
+    - name: Install Dependencies
+      run: pip install pytest pytest-cov
 
     - name: Run Rust Unit Tests
       # Note: No --clean here, as it would wipe downloaded artifacts
@@ -304,6 +306,8 @@ jobs:
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
       run: chmod -R +x build/* || true
+    - name: Install Dependencies
+      run: pip install pytest pytest-cov
 
     - name: Run C++ Unit Tests
       # Note: No --clean here
@@ -342,6 +346,8 @@ jobs:
     - name: Install JS Dependencies
       run: npm install
       working-directory: src/js
+    - name: Install Python Dependencies
+      run: pip install pytest pytest-cov
     - name: Run JS Unit Tests
       run: python -m tools.fusion.main --stage test --target js --no-dashboard
     - name: Upload Logs
@@ -384,6 +390,8 @@ jobs:
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
       run: chmod -R +x target/release/* target/debug/* build/* || true
+    - name: Install Dependencies
+      run: pip install pytest pytest-cov
 
     - name: Run Simple Demo
       run: python -m tools.fusion.main --stage demos --demo simple --base-port 0 --no-dashboard
@@ -438,6 +446,8 @@ jobs:
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
       run: chmod -R +x build/* target/debug/* || true
+    - name: Install Dependencies
+      run: pip install pytest pytest-cov
 
     - name: Run Integrated Demo
       run: python -m tools.fusion.main --stage demos --demo integrated --base-port 100 --no-dashboard
@@ -492,6 +502,8 @@ jobs:
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
       run: chmod -R +x build/* target/debug/* || true
+    - name: Install Dependencies
+      run: pip install pytest pytest-cov
 
     - name: Run PubSub Demo
       run: python -m tools.fusion.main --stage demos --demo pubsub --base-port 200 --no-dashboard
@@ -551,6 +563,8 @@ jobs:
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
       run: chmod -R +x build/* target/debug/* || true
+    - name: Install Dependencies
+      run: pip install pytest pytest-cov
     - name: Run someipy Demo
       run: python -m tools.fusion.main --stage demos --demo someipy --no-dashboard
     - name: Upload Logs and Configs
@@ -586,6 +600,8 @@ jobs:
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
       run: chmod -R +x build/* target/debug/* || true
+    - name: Install Dependencies
+      run: pip install pytest pytest-cov
     - name: Run Large Payload (TP) Demo
       run: python -m tools.fusion.main --stage demos --demo tp --no-dashboard
     - name: Upload Logs and Configs

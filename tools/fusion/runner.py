@@ -228,28 +228,18 @@ class Tester:
         
         # Rust (cargo test streams by default if run_command uses defaults)
         print("  Running Rust tests...")
-        
-        # Log directory for Rust tests
-        log_dir = os.path.join(self.reporter.raw_logs_dir, "unit_tests", "rust")
-        os.makedirs(log_dir, exist_ok=True)
-        rust_log = os.path.join(log_dir, "test_rust.log")
-        
-        header = f"=== FUSION RUST TEST ===\nCommand: cargo test\nPWD: {os.getcwd()}\n========================\n\n"
-        if self._run_and_tee(["cargo", "test"], rust_log, header=header):
-            results["rust"] = "PASS"
-        else:
-            results["rust"] = "FAIL"
-        
+        rust_res = self._run_rust_tests()
+        results["rust"] = rust_res
         results["steps"].append({
             "name": "Rust Unit Tests",
-            "status": results["rust"],
+            "status": rust_res,
             "log": "unit_tests/rust/test_rust.log",
             "details": "Ran 'cargo test' for core runtime"
         })
 
         # Python
         print("  Running Python Unit Tests...")
-        py_res = self._run_python_unit_tests()
+        py_res = self._run_python_tests()
         merge_results(results, py_res)
 
         # C++
@@ -367,6 +357,22 @@ class Tester:
              print(f"Pytest execution error: {e}")
 
         return results
+
+    def _run_rust_tests(self):
+        """Runs Rust unit tests (cargo test)."""
+        log_dir = os.path.join(self.reporter.raw_logs_dir, "unit_tests", "rust")
+        os.makedirs(log_dir, exist_ok=True)
+        rust_log = os.path.join(log_dir, "test_rust.log")
+        
+        header = f"=== FUSION RUST TEST ===\nCommand: cargo test\nPWD: {os.getcwd()}\n========================\n\n"
+        if self._run_and_tee(["cargo", "test"], rust_log, header=header):
+            return "PASS"
+        else:
+            return "FAIL"
+
+    def _run_python_tests(self):
+        """Runs all Python unit tests."""
+        return self._run_python_unit_tests()
 
     def _run_cpp_tests(self):
         # C++
