@@ -73,7 +73,7 @@ def ctx():
         env = os.environ.copy() 
         env["PYTHONPATH"] = os.pathsep.join([os.path.join(PROJECT_ROOT, "src", "python"), 
                                             os.path.join(PROJECT_ROOT, "build"),
-                                            os.path.join(PROJECT_ROOT, "build", "generated", "python")])
+                                            os.path.join(PROJECT_ROOT, "build", "generated", "integrated_apps", "python")])
         c.add_runner("python", [sys.executable, "-u", "main.py", py_config], cwd=py_demo_dir, env=env, ns=ns_python).start()
 
         # 4. JS (ECU3 - collocated with Python)

@@ -11,8 +11,8 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
-# Add build/generated/python and src/python to path
-sys.path.insert(0, os.path.join(PROJECT_ROOT, 'build', 'generated', 'python'))
+# Add build/generated/integrated_apps/python and src/python to path
+sys.path.insert(0, os.path.join(PROJECT_ROOT, 'build', 'generated', 'integrated_apps', 'python'))
 sys.path.insert(0, os.path.join(PROJECT_ROOT, 'src', 'python'))
 
 from tools.fusion.utils import _get_env as get_environment

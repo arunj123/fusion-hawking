@@ -172,20 +172,35 @@ class Builder:
         """Builds all JS/TS projects (core and examples)."""
         npm_bin = "npm.cmd" if os.name == "nt" else "npm"
         
+        import shutil
+
         js_projects = [
-            "src/js",
-            "examples/integrated_apps/js_app",
-            "examples/automotive_pubsub/js_adas",
-            "examples/simple_no_sd/js",
-            "examples/someipy_demo/js_client"
+            ("src/js", None),
+            ("examples/integrated_apps/js_app", "integrated_apps"),
+            ("examples/automotive_pubsub/js_adas", "automotive_pubsub"),
+            ("examples/simple_no_sd/js", None),
+            ("examples/someipy_demo/js_client", None) # Uses manual or no bindings for now?
         ]
         
-        for project_path in js_projects:
+        for project_path, codegen_project in js_projects:
             full_path = os.path.join(os.getcwd(), project_path)
             if not os.path.exists(full_path):
                 print(f"[WARN] JS Project path not found: {project_path}")
                 continue
             
+            # Copy generated bindings if applicable
+            if codegen_project:
+                generated_src = os.path.join("build", "generated", codegen_project, "ts")
+                target_dest = os.path.join(full_path, "src", "generated")
+                
+                if os.path.exists(generated_src):
+                    print(f"[build_js] Copying generated bindings: {generated_src} -> {target_dest}")
+                    if os.path.exists(target_dest):
+                         shutil.rmtree(target_dest)
+                    shutil.copytree(generated_src, target_dest)
+                else:
+                    print(f"[WARN] Generated bindings not found at {generated_src}. Build may fail.")
+
             # Skip if no package.json (e.g. simple vanilla JS files)
             pkg_json = os.path.join(full_path, "package.json")
             if not os.path.exists(pkg_json):

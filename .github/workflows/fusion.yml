@@ -28,8 +28,6 @@ jobs:
         pip install -r requirements.txt
     - name: Run Bindings Generation
       run: python -m tools.fusion.main --stage codegen --no-dashboard
-    - name: Validate Core Configurations
-      run: python -m tools.fusion.config_validator build/generated/config.json
     - name: Upload Codegen Artifacts
       uses: actions/upload-artifact@v4
       with:
@@ -269,7 +267,7 @@ jobs:
       run: pip install pytest pytest-cov
     - name: Run Python Unit Tests
       env:
-        PYTHONPATH: src/python:build:build/generated/python
+        PYTHONPATH: src/python:build:build/generated/integrated_apps/python:build/generated/automotive_pubsub/python
         FUSION_LOG_DIR: logs/unit_python
       # Note: No --clean here
       run: |

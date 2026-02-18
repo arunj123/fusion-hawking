@@ -68,7 +68,7 @@ def ctx():
         env = os.environ.copy() 
         env["PYTHONPATH"] = os.pathsep.join([os.path.join(PROJECT_ROOT, "src", "python"), 
                                             os.path.join(PROJECT_ROOT, "build"),
-                                            os.path.join(PROJECT_ROOT, "build", "generated", "python")])
+                                            os.path.join(PROJECT_ROOT, "build", "generated", "automotive_pubsub", "python")])
         c.add_runner("adas_py", [sys.executable, "-u", "main.py", adas_config], cwd=adas_py_dir, env=env, ns=ns_adas).start()
  
         # 4. JS ADAS (ECU3)

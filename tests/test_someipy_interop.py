@@ -51,8 +51,10 @@ def ctx():
         
         # Python Client
         py_src = os.path.join(ROOT, "src", "python")
+        # For interop demo, we need someipy_demo bindings
+        py_gen = os.path.join(ROOT, "build/generated/someipy_demo/python")
         env = os.environ.copy()
-        env["PYTHONPATH"] = os.pathsep.join([to_wsl(py_src), to_wsl(os.path.join(ROOT, "build/generated/python"))])
+        env["PYTHONPATH"] = os.pathsep.join([to_wsl(py_src), to_wsl(py_gen)])
         
         py_client_cmd = [sys.executable, "-u", "client_fusion.py", client_config]
         c.add_runner("py_client", py_client_cmd, cwd=DEMO_DIR, env=env, ns="ns_ecu3" if ENV.has_vnet else None).start()
