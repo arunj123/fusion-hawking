@@ -51,8 +51,8 @@ def ctx():
         cpp_exe = find_binary("cpp_app", search_dirs=[
             os.path.join(PROJECT_ROOT, "build_linux", "examples", "integrated_apps", "cpp_app"),
             os.path.join(PROJECT_ROOT, "build_wsl", "examples", "integrated_apps", "cpp_app"),
-            os.path.join(PROJECT_ROOT, "build", "examples", "integrated_apps", "cpp_app", "Release"),
-            os.path.join(PROJECT_ROOT, "examples", "integrated_apps", "cpp_app", "build", "Release"),
+            os.path.join(PROJECT_ROOT, "build", "Release", "examples", "integrated_apps", "cpp_app"), # Windows Release
+            os.path.join(PROJECT_ROOT, "build", "examples", "integrated_apps", "cpp_app"), # Linux default
         ])
         if cpp_exe:
              c.add_runner("cpp", [cpp_exe, cpp_config], ns=ns_cpp).start()
@@ -119,12 +119,16 @@ def has_multicast_support():
 @pytest.mark.needs_multicast
 def test_rust_rpc_to_python(ctx):
     """Verify Rust client calls Python StringService"""
+    if ctx.get_runner("python") is None: pytest.skip("Python runner not available")
+    if ctx.get_runner("rust") is None: pytest.skip("Rust runner not available")
     ctx.get_runner("python").clear_output()
     assert ctx.get_runner("python").wait_for_output("Reversing", timeout=20), "Rust->Python RPC failed"
 
 @pytest.mark.needs_multicast
 def test_python_rpc_to_rust(ctx):
     """Verify Python client calls Rust MathService"""
+    if ctx.get_runner("python") is None: pytest.skip("Python runner not available")
+    if ctx.get_runner("rust") is None: pytest.skip("Rust runner not available")
     ctx.get_runner("python").clear_output()
     ctx.get_runner("rust").clear_output()
     assert ctx.get_runner("python").wait_for_output("Sending Add", timeout=10)
@@ -133,18 +137,24 @@ def test_python_rpc_to_rust(ctx):
 @pytest.mark.needs_multicast
 def test_rust_to_cpp_math_inst2(ctx):
     """Verify Rust client calls C++ MathService (Instance 2)"""
+    if ctx.get_runner("cpp") is None: pytest.skip("CPP runner not available")
+    if ctx.get_runner("rust") is None: pytest.skip("Rust runner not available")
     ctx.get_runner("cpp").clear_output()
     assert ctx.get_runner("cpp").wait_for_output(r"\[2\] Add\(100, 200\)", timeout=20)
 
 @pytest.mark.needs_multicast
 def test_rust_to_python_math_inst3(ctx):
     """Verify Rust client calls Python MathService (Instance 3)"""
+    if ctx.get_runner("python") is None: pytest.skip("Python runner not available")
+    if ctx.get_runner("rust") is None: pytest.skip("Rust runner not available")
     ctx.get_runner("python").clear_output()
     assert ctx.get_runner("python").wait_for_output(r"\[3\] Add\(10, 20\)", timeout=20)
 
 @pytest.mark.needs_multicast
 def test_cpp_rpc_to_math(ctx):
     """Verify C++ client calls MathService (Rust Instance 1)"""
+    if ctx.get_runner("cpp") is None: pytest.skip("CPP runner not available")
+    if ctx.get_runner("rust") is None: pytest.skip("Rust runner not available")
     ctx.get_runner("cpp").clear_output()
     ctx.get_runner("rust").clear_output()
     assert ctx.get_runner("cpp").wait_for_output(r"Math\.Add Result:", timeout=10)

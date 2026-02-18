@@ -640,8 +640,8 @@ jobs:
       # Runs via main.py, which detects VNet and runs sequential tests (No-VNet -> VNet)
       # We explicitly run both unit tests and the 'usecases' demo
       run: |
-        sudo python3 -m tools.fusion.main --stage test --target python --base-port 400 --no-dashboard
-        sudo python3 -m tools.fusion.main --stage demos --demo usecases --base-port 500 --no-dashboard
+        sudo -E python3 -m tools.fusion.main --stage test --target python --base-port 400 --no-dashboard
+        sudo -E python3 -m tools.fusion.main --stage demos --demo usecases --base-port 500 --no-dashboard
     - name: Teardown Virtual Network
       if: always()
       run: sudo bash tools/fusion/scripts/teardown_vnet.sh

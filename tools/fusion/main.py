@@ -166,7 +166,7 @@ def main():
     parser.add_argument("--no-dashboard", action="store_true", help="Disable dashboard server (override)")
     parser.add_argument("--target", type=str, choices=["all", "rust", "python", "cpp", "js"], default="all", help="Target language to test")
 
-    parser.add_argument("--demo", type=str, choices=["all", "simple", "integrated", "pubsub", "someipy"], default="all", help="Specific demo to run")
+    parser.add_argument("--demo", type=str, choices=["all", "simple", "integrated", "pubsub", "someipy", "tp", "usecases"], default="all", help="Specific demo to run")
     parser.add_argument("--no-codegen", action="store_true", help="Skip codegen (assume artifacts exist)")
     parser.add_argument("--base-port", type=int, default=0, help="Port offset for test isolation")
     parser.add_argument("--with-coverage", action="store_true", help="Build C++ with coverage instrumentation")
@@ -363,7 +363,7 @@ def main():
                      current_results.update(run_build(root_dir, reporter, builder, tool_status, args.target, server, args.no_codegen, args.with_coverage, args.packet_dump))
 
             # TEST (Integration Suite - Runs in EVERY pass)
-            if stage in ["test", "all"]:
+            if stage in ["test", "all"] and args.target in ["all", "python"]:
                 res = tester.run_integration_tests()
                 for s in res.get("steps", []): s["name"] = f"[{run_name}] {s['name']}"
                 merge_results(all_test_results, res)
