@@ -62,6 +62,8 @@ def ctx():
         rust_bin = find_binary("rust_app_demo", search_dirs=[
             os.path.join(rust_demo_dir, "target", "debug"),
             os.path.join(rust_demo_dir, "target", "release"),
+            os.path.join(PROJECT_ROOT, "target", "debug"),
+            os.path.join(PROJECT_ROOT, "target", "release"),
         ])
         if rust_bin:
             env = os.environ.copy()
@@ -216,11 +218,13 @@ def test_js_rpc_to_rust(ctx):
     """Verify JS client calls Rust MathService"""
     if ctx.get_runner("js") is None: pytest.skip("JS runner not available")
     # Don't clear output; the JS runner might have finished before we got here
-    assert ctx.get_runner("js").wait_for_output("Result:", timeout=30)
+    # Use more specific regex to avoid consumption race
+    assert ctx.get_runner("js").wait_for_output(r"Result: \d+", timeout=30)
 
 @pytest.mark.needs_multicast
 def test_js_rpc_to_python(ctx):
     """Verify JS client calls Python StringService"""
     if ctx.get_runner("js") is None: pytest.skip("JS runner not available")
     # Result: 'OLLEH'
-    assert ctx.get_runner("js").wait_for_output("Result: '", timeout=30)
+    # Use more specific regex to avoid consumption race
+    assert ctx.get_runner("js").wait_for_output(r"Result: '.*'", timeout=30)

@@ -152,9 +152,11 @@ class AppRunner:
                     return line
             except queue.Empty:
                 if self.proc.poll() is not None:
-                    # Give reader thread time to flush everything to queue
-                    time.sleep(0.5)
-                    # Do a final sweep of the queue
+                    # Wait for reader thread to finish flushing stdout to queue
+                    if self.reader_thread:
+                        self.reader_thread.join(timeout=1.0)
+                    
+                    # Final sweep of the queue
                     while not self.output_queue.empty():
                         try:
                             line = self.output_queue.get_nowait()
