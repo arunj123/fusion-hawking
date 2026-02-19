@@ -46,7 +46,8 @@ class Tester:
             scripts = ["start_daemon.py", "service_someipy.py", "tmp_python_service", "client_fusion.py"]
             for script in scripts:
                 try:
-                    cmd = f'wmic process where "name=\'python.exe\' and commandline like \'%{script}%\'" get processid'
+                    # wmic is deprecated in Windows Server 2025+, using PowerShell Get-CimInstance
+                    cmd = f'powershell -Command "Get-CimInstance Win32_Process -Filter \\"Name = \'python.exe\' AND CommandLine LIKE \'%{script}%\'\\" | Select-Object -ExpandProperty ProcessId"'
                     output = subprocess.check_output(cmd, shell=True).decode('utf-8', 'ignore')
                     for line in output.strip().split('\n'):
                         line = line.strip()
