@@ -135,7 +135,7 @@ class AppRunner:
                 self.log_file.write(f"\n--- Process Exited with code {self.proc.poll()} ---\n")
                 self.log_file.flush()
 
-    def wait_for_output(self, pattern, timeout=30):
+    def wait_for_output(self, pattern, timeout=30, description=None):
         """
         Waits for a specific regex pattern in the output.
         Returns the matching line or None if timeout.
@@ -161,9 +161,27 @@ class AppRunner:
                                 return line
                         except queue.Empty:
                             break
+                    desc = f" ({description})" if description else ""
+                    logger.warning(f"Process {self.name} exited with code {self.proc.returncode} while waiting for '{pattern}'{desc}")
                     break
                 continue
         
+        # Diagnostics for timeout
+        recent_lines = []
+        while not self.output_queue.empty():
+            try:
+                recent_lines.append(self.output_queue.get_nowait())
+            except queue.Empty:
+                break
+        
+        err_msg = f"Timed out waiting for '{pattern}' in {self.name}{desc}"
+        if recent_lines:
+            logger.error(f"{err_msg}. Last {len(recent_lines)} lines of output:")
+            for l in recent_lines[-10:]:
+                logger.error(f"  [STDOUT] {l.rstrip()}")
+        else:
+            logger.error(err_msg)
+
         return None
     
     def clear_output(self):

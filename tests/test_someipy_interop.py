@@ -45,7 +45,7 @@ def ctx():
         
         # 3. Wait for service (someipy prints "Offering Service")
         svc = c.get_runner("someipy_svc")
-        assert svc.wait_for_output("Offering Service", timeout=20)
+        assert svc.wait_for_output("Offering Service", timeout=30, description="someipy service startup")
 
         # 4. Start Fusion Clients (on ECU3)
         

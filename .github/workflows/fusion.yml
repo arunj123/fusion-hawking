@@ -472,6 +472,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
     - uses: actions/setup-python@v5
       with:
         python-version: '3.10'
@@ -528,6 +530,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
     - uses: actions/setup-python@v5
       with:
         python-version: '3.10'
@@ -556,9 +560,12 @@ jobs:
       with:
         name: artifact-js-${{ matrix.os }}
         path: .
-    - name: Install JS Dependencies
+    - name: Install JS Dependencies (Runtime)
       run: npm install
       working-directory: src/js
+    - name: Install JS Dependencies (ADAS JS)
+      run: npm install
+      working-directory: examples/automotive_pubsub/adas_js
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
       run: chmod -R +x build/* target/debug/* || true
@@ -680,6 +687,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
