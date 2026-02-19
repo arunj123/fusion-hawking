@@ -82,7 +82,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: .
+        path: build/generated
     - name: Download State
       uses: actions/download-artifact@v4
       with:
@@ -141,7 +141,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: .
+        path: build/generated
     - name: Download State
       uses: actions/download-artifact@v4
       with:
@@ -205,7 +205,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: .
+        path: build/generated
     - name: Download State
       uses: actions/download-artifact@v4
       with:
@@ -265,7 +265,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: .
+        path: build/generated
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
       run: chmod -R +x build/release/* target/release/* target/debug/* || true
@@ -308,7 +308,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: .
+        path: build/generated
     - name: Download C++ Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -357,7 +357,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: .
+        path: build/generated
     - name: Download C++ Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -397,7 +397,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: .
+        path: build/generated
     - name: Download JS Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -484,7 +484,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: .
+        path: build/generated
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -540,7 +540,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: .
+        path: build/generated
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -596,7 +596,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: .
+        path: build/generated
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -650,7 +650,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: .
+        path: build/generated
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -692,7 +692,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: .
+        path: build/generated
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -747,7 +747,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: .
+        path: build/generated
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
