@@ -34,7 +34,7 @@ import {
     SdOptionType,
 } from './sd.js';
 import { TpHeader, TpReassembler, segmentPayload } from './tp.js';
-import { UdpTransport, type ITransport, type RemoteInfo } from './transport.js';
+import { UdpTransport, TcpTransport, TcpServerTransport, type ITransport, type RemoteInfo } from './transport.js';
 import { type ILogger, LogLevel, ConsoleLogger } from './logger.js';
 import { type AppConfig, loadConfig, type InterfaceConfig } from './config.js';
 
@@ -79,6 +79,8 @@ interface InterfaceContext {
     transportV6?: ITransport;
     sdTransport: ITransport;
     sdTransportV6?: ITransport;
+    tcpTransport?: TcpServerTransport;
+    tcpTransportV6?: TcpServerTransport;
     ip: string;
     ipV6?: string;
     ifIndex?: number;
@@ -222,7 +224,7 @@ export class SomeIpRuntime {
             const ip = bindAddress;
             const transport = new UdpTransport('udp4', this.logger);
             await transport.bind(ip, bindPort);
-            transport.onMessage((data, rinfo) => this.handleMessage(data, rinfo, undefined));
+            transport.onMessage((data: Buffer, rinfo: RemoteInfo) => this.handleMessage(data, rinfo, undefined));
             this.interfaces.set("default", { alias: "default", transport, sdTransport: transport, ip });
             this.logger.log(LogLevel.INFO, 'Runtime', `Started (minimal) on ${ip}:${bindPort}`);
         } else {
@@ -278,28 +280,30 @@ export class SomeIpRuntime {
                     const mainBindTarget = bindIpV4;
                     const mainTransport = new UdpTransport('udp4', this.logger);
                     await mainTransport.bind(mainBindTarget, bindPort);
-                    mainTransport.onMessage((data, rinfo) => this.handleMessage(data, rinfo, ctx));
+                    mainTransport.onMessage((data: Buffer, rinfo: RemoteInfo) => this.handleMessage(data, rinfo, ctx));
                     ctx.transport = mainTransport;
 
                     if (sdEp && sdEp.version === 4) {
                         const sdTransport = new UdpTransport('udp4', this.logger, true);
-                        // Bind to local interface IP from config.
-
                         const isWindows = os.platform() === 'win32';
-                        // Windows: Bind to Unicast Interface IP (Strict)
-                        // Linux: Bind to Multicast Group IP
                         const bindTarget = isWindows ? bindIpV4 : sdEp.ip;
-
                         await sdTransport.bind(bindTarget!, sdEp.port);
-
                         await sdTransport.joinMulticast(sdEp.ip, bindIpV4);
                         sdTransport.setMulticastLoopback(true);
                         sdTransport.setMulticastInterface(bindIpV4);
                         sdTransport.onMessage((data, rinfo) => this.handleMessage(data, rinfo, ctx));
                         ctx.sdTransport = sdTransport;
                     } else {
-                        // Fallback: use main transport for SD if no specific SD port
                         ctx.sdTransport = mainTransport;
+                    }
+
+                    // Check for TCP endpoints on IPv4
+                    const hasTcpV4 = Object.values(ifaceCfg.endpoints).some(ep => ep.version === 4 && ep.protocol === 'tcp');
+                    if (hasTcpV4) {
+                        const tcpServer = new TcpServerTransport(this.logger);
+                        await tcpServer.bind(bindIpV4!, bindPort);
+                        tcpServer.onMessage((data, rinfo) => this.handleMessage(data, rinfo, ctx));
+                        ctx.tcpTransport = tcpServer;
                     }
                 }
 
@@ -308,7 +312,7 @@ export class SomeIpRuntime {
                     const mainBindTargetV6 = isWindows ? '::' : bindIpV6;
                     const mainTransportV6 = new UdpTransport('udp6', this.logger);
                     await mainTransportV6.bind(mainBindTargetV6, bindPort);
-                    mainTransportV6.onMessage((data, rinfo) => this.handleMessage(data, rinfo, ctx));
+                    mainTransportV6.onMessage((data: Buffer, rinfo: RemoteInfo) => this.handleMessage(data, rinfo, ctx));
                     ctx.transportV6 = mainTransportV6;
 
                     // IPv6 SD transport with multicast
@@ -316,9 +320,6 @@ export class SomeIpRuntime {
                     const sdEpV6 = sdEpKeyV6 ? ifaceCfg.endpoints[sdEpKeyV6] : undefined;
                     if (sdEpV6 && sdEpV6.version === 6) {
                         const sdTransportV6 = new UdpTransport('udp6', this.logger, true);
-                        // Bind to local interface IPv6 from config.
-                        // Linux: Bind to '::' to allow multicast reception
-                        // Windows/Other: Bind to specific interface address
                         const bindTargetV6 = (os.platform() === 'linux' || os.platform() === 'win32') ? '::' : bindIpV6;
                         await sdTransportV6.bind(bindTargetV6!, sdEpV6.port);
                         await sdTransportV6.joinMulticast(sdEpV6.ip, bindIpV6);
@@ -327,6 +328,15 @@ export class SomeIpRuntime {
                         ctx.sdTransportV6 = sdTransportV6;
                     } else {
                         ctx.sdTransportV6 = mainTransportV6;
+                    }
+
+                    // Check for TCP endpoints on IPv6
+                    const hasTcpV6 = Object.values(ifaceCfg.endpoints).some(ep => ep.version === 6 && ep.protocol === 'tcp');
+                    if (hasTcpV6) {
+                        const tcpServerV6 = new TcpServerTransport(this.logger);
+                        await tcpServerV6.bind(bindIpV6!, bindPort);
+                        tcpServerV6.onMessage((data, rinfo) => this.handleMessage(data, rinfo, ctx));
+                        ctx.tcpTransportV6 = tcpServerV6;
                     }
                 }
 
@@ -364,7 +374,13 @@ export class SomeIpRuntime {
             ctx.transport.close();
             ctx.transportV6?.close();
             if (ctx.sdTransport !== ctx.transport) ctx.sdTransport.close();
+            ctx.tcpTransport?.close();
+            ctx.tcpTransportV6?.close();
         }
+        for (const client of this.tcpClients.values()) {
+            client.close();
+        }
+        this.tcpClients.clear();
         this.interfaces.clear();
         this.logger.log(LogLevel.INFO, 'Runtime', 'Stopped');
     }
@@ -393,17 +409,44 @@ export class SomeIpRuntime {
         if (!ctx) throw new Error("No available interfaces for request");
 
         const isV6 = targetAddress.includes(':');
-        const transport = isV6 ? (ctx.transportV6 || ctx.transport) : ctx.transport;
 
-        return new Promise<SomeIpResponse>((resolve, reject) => {
-            const timer = setTimeout(() => {
-                this.pendingRequests.delete(String(sessionId));
-                reject(new Error(`Request timeout for session ${sessionId}`));
-            }, timeoutMs);
+        let protocol = 'udp';
+        if (this.config) {
+            const req = Object.values(this.config.required).find(r => r.serviceId === serviceId);
+            if (req) protocol = req.protocol?.toLowerCase() || 'udp';
+        }
 
-            this.pendingRequests.set(String(sessionId), { resolve, reject, timer });
-            transport.send(packet, targetAddress, targetPort).catch(reject);
-        });
+        if (protocol === 'tcp') {
+            const clientKey = `${targetAddress}:${targetPort}`;
+            let tcpClient = this.tcpClients.get(clientKey);
+            if (!tcpClient) {
+                tcpClient = new TcpTransport(this.logger);
+                await tcpClient.connect(targetAddress, targetPort);
+                tcpClient.onMessage((data: Buffer, rinfo: RemoteInfo) => this.handleMessage(data, rinfo, ctx));
+                this.tcpClients.set(clientKey, tcpClient);
+            }
+
+            return new Promise<SomeIpResponse>((resolve, reject) => {
+                const timer = setTimeout(() => {
+                    this.pendingRequests.delete(String(sessionId));
+                    reject(new Error(`TCP Request timeout for session ${sessionId}`));
+                }, timeoutMs);
+
+                this.pendingRequests.set(String(sessionId), { resolve, reject, timer });
+                tcpClient.send(packet, targetAddress, targetPort).catch(reject);
+            });
+        } else {
+            const transport = isV6 ? (ctx.transportV6 || ctx.transport) : ctx.transport;
+            return new Promise<SomeIpResponse>((resolve, reject) => {
+                const timer = setTimeout(() => {
+                    this.pendingRequests.delete(String(sessionId));
+                    reject(new Error(`Request timeout for session ${sessionId}`));
+                }, timeoutMs);
+
+                this.pendingRequests.set(String(sessionId), { resolve, reject, timer });
+                transport.send(packet, targetAddress, targetPort).catch(reject);
+            });
+        }
     }
 
     /**
@@ -601,7 +644,9 @@ export class SomeIpRuntime {
                     { returnCode: ReturnCode.UNKNOWN_METHOD }
                 );
                 const isV6 = rinfo.address.includes(':');
-                const transport = isV6 ? (ctx?.transportV6 || ctx?.transport) : ctx?.transport;
+                const transport = rinfo.protocol === 'tcp'
+                    ? (isV6 ? ctx?.tcpTransportV6 : ctx?.tcpTransport)
+                    : (isV6 ? (ctx?.transportV6 || ctx?.transport) : ctx?.transport);
                 if (transport) transport.send(errPacket, rinfo.address, rinfo.port);
             }
             return;
@@ -612,7 +657,9 @@ export class SomeIpRuntime {
 
             const MAX_SEG = 1392;
             const isV6 = rinfo.address.includes(':');
-            const transport = isV6 ? (ctx?.transportV6 || ctx?.transport) : ctx?.transport;
+            const transport = rinfo.protocol === 'tcp'
+                ? (isV6 ? ctx?.tcpTransportV6 : ctx?.tcpTransport)
+                : (isV6 ? (ctx?.transportV6 || ctx?.transport) : ctx?.transport);
 
             if (!transport) return;
 

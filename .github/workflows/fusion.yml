@@ -431,14 +431,16 @@ jobs:
       working-directory: src/js
     - name: Install Python Dependencies
       run: pip install pytest pytest-cov
-    - name: Run JS Unit Tests
-      run: python -m tools.fusion.main --stage test --target js --no-dashboard --skip-demos
-    - name: Upload Logs
+    - name: Run JS Unit Tests with Coverage
+      run: python -m tools.fusion.main --stage coverage --target js --no-dashboard --skip-demos
+    - name: Upload Logs and Coverage
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: logs-unit-js-${{ matrix.os }}
-        path: logs
+        path: |
+          logs
+          logs/latest/coverage/js
 
   demo-simple:
     needs: [build-core, build-cpp, build-js]

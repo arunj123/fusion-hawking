@@ -1,7 +1,7 @@
 use std::convert::TryInto;
 
 /// SOME/IP Message Types as defined in AUTOSAR SOME/IP Protocol Specification
-/// [PRS_SOMEIP_00034]
+/// [PRS_SOMEIP_00044]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum MessageType {
@@ -146,23 +146,23 @@ impl From<ReturnCode> for u8 {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SomeIpHeader {
-    /// [PRS_SOMEIP_00053] Service ID (16-bit)
+    /// [PRS_SOMEIP_00032] Service ID (16-bit)
     pub service_id: u16,
-    /// [PRS_SOMEIP_00054] Method ID (16-bit)
+    /// [PRS_SOMEIP_00033] Method ID (16-bit)
     pub method_id: u16,
-    /// [PRS_SOMEIP_00042] Length (32-bit, covers Request ID + Protocol Version + Interface Version + Message Type + Return Code + Payload)
+    /// [PRS_SOMEIP_00932] Length (32-bit, covers Request ID + Protocol Version + Interface Version + Message Type + Return Code + Payload)
     pub length: u32,
     /// [PRS_SOMEIP_00038] Client ID within Request ID
     pub client_id: u16,
     /// [PRS_SOMEIP_00038] Session ID within Request ID
     pub session_id: u16,
-    /// [PRS_SOMEIP_00058] Protocol Version (8-bit) - MUST be 0x01
+    /// [PRS_SOMEIP_00042] Protocol Version (8-bit) - MUST be 0x01
     pub protocol_version: u8,
-    /// [PRS_SOMEIP_00059] Interface Version (8-bit)
+    /// [PRS_SOMEIP_00043] Interface Version (8-bit)
     pub interface_version: u8,
-    /// [PRS_SOMEIP_00034] Message Type (8-bit)
+    /// [PRS_SOMEIP_00044] Message Type (8-bit)
     pub message_type: u8,
-    /// [PRS_SOMEIP_00043] Return Code (8-bit)
+    /// [PRS_SOMEIP_00045] Return Code (8-bit)
     pub return_code: u8,
 }
 

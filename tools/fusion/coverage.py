@@ -46,6 +46,9 @@ class CoverageManager:
         if target in ["all", "cpp"]:
             results['coverage_cpp'] = self._run_cpp_coverage()
             
+        if target in ["all", "js"]:
+            results['coverage_js'] = self._run_js_coverage()
+            
         return results
         
     def _run_rust_coverage(self):
@@ -232,6 +235,24 @@ class CoverageManager:
             return "PASS"
         else:
             self._dump_log("coverage_cpp_html")
+            return "FAIL"
+
+    def _run_js_coverage(self):
+        print("Generating JS Coverage (c8)...")
+        js_dir = "src/js"
+        if not os.path.exists(js_dir):
+            return "SKIPPED (src/js not found)"
+
+        npm_bin = "npm.cmd" if os.name == "nt" else "npm"
+        # We use --prefix to avoid needing cwd in _run
+        cmd = [npm_bin, "--prefix", js_dir, "run", "test:coverage"]
+        
+        header = f"=== FUSION JS COVERAGE RUNNER ===\nCommand: {' '.join(cmd)}\n==============================\n\n"
+        
+        if self._run(cmd, "coverage_js", header=header):
+            return "PASS"
+        else:
+            self._dump_log("coverage_js")
             return "FAIL"
 
     def _dump_log(self, log_name):
