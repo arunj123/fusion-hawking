@@ -111,5 +111,5 @@ class ToolchainManager:
     def print_status(self):
         print("\n--- Toolchain Status ---")
         for tool, present in self.status.items():
-            icon = "[v]" if present else "[x]"
+            icon = "[v]" if present else "[ ]"
             print(f"{icon} {tool}")

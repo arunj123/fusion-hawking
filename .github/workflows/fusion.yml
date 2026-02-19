@@ -40,6 +40,13 @@ jobs:
       with:
         name: logs-codegen
         path: logs/
+    - name: Upload State
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: state-codegen
+        path: build/run_state.json
+        retention-days: 1
 
   # ============================================
   # Stage 1.1: Build Core (Rust + Python Bindings)
@@ -76,6 +83,12 @@ jobs:
       with:
         name: artifact-codegen
         path: build/generated
+    - name: Download State
+      uses: actions/download-artifact@v4
+      with:
+        name: state-codegen
+        path: build/
+      continue-on-error: true
     - name: Run Build Core
       run: python -m tools.fusion.main --stage build --target rust --no-codegen --no-dashboard
     - name: Upload Core Artifacts
@@ -85,16 +98,19 @@ jobs:
         path: |
           target/release/
           target/debug/
-          !target/release/.fingerprint/
-          !target/release/build/
-          !target/release/deps/
-          !target/release/examples/
-          !target/release/incremental/
-          !target/debug/.fingerprint/
-          !target/debug/build/
-          !target/debug/deps/
-          !target/debug/examples/
-          !target/debug/incremental/
+          examples/integrated_apps/rust_app/target/
+          examples/automotive_pubsub/rust_fusion/target/
+          !**/target/*/deps/
+          !**/target/*/.fingerprint/
+          !**/target/*/incremental/
+          !**/target/*/build/
+        retention-days: 1
+    - name: Upload State
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: state-core-${{ matrix.os }}
+        path: build/run_state.json
         retention-days: 1
     - name: Upload Logs
       if: always()
@@ -121,13 +137,14 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-    - name: Download Codegen Artifacts
+    - name: Download State
       uses: actions/download-artifact@v4
       with:
-        name: artifact-codegen
-        path: build/generated
+        name: state-codegen
+        path: build/
+      continue-on-error: true
     - name: Run Build C++
-      # Using --clean to ensure fresh build
+      # Using --clean to ensure fresh build if needed, but StateManager will skip if already PASS.
       run: python -m tools.fusion.main --stage build --target cpp --no-codegen --no-dashboard
     - name: Remove .gitignore (Force Upload)
       if: runner.os == 'Linux'
@@ -140,7 +157,16 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: artifact-cpp-${{ matrix.os }}
-        path: build/
+        path: |
+          build/
+          build_linux/
+        retention-days: 1
+    - name: Upload State
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: state-cpp-${{ matrix.os }}
+        path: build/run_state.json
         retention-days: 1
     - name: Upload Logs
       if: always()
@@ -175,6 +201,19 @@ jobs:
       with:
         name: artifact-codegen
         path: build/generated
+    - name: Download State
+      uses: actions/download-artifact@v4
+      with:
+        name: state-codegen
+        path: build/
+      continue-on-error: true
+    - name: Build JS Demos
+      run: |
+        npm install
+        npm run build
+        cd ../../examples/integrated_apps/js_app && npm install && npm run build
+        cd ../../automotive_pubsub/js_adas && npm install && npm run build
+      working-directory: src/js
     - name: Run Build JS
       run: python -m tools.fusion.main --stage build --target js --no-codegen --no-dashboard
     - name: Upload JS Artifacts
@@ -184,7 +223,17 @@ jobs:
         path: |
           src/js/dist/
           src/js/package.json
-          src/js/tsconfig.json
+          examples/integrated_apps/js_app/dist/
+          examples/automotive_pubsub/js_adas/dist/
+          examples/simple_no_sd/js/dist/
+          examples/someipy_demo/js_client/dist/
+        retention-days: 1
+    - name: Upload State
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: state-js-${{ matrix.os }}
+        path: build/run_state.json
         retention-days: 1
     - name: Upload Logs
       if: always()
@@ -225,9 +274,15 @@ jobs:
     - name: Install Dependencies
       run: pip install pytest pytest-cov
 
+    - name: Download State
+      uses: actions/download-artifact@v4
+      with:
+        name: state-core-${{ matrix.os }}
+        path: build/
+      continue-on-error: true
     - name: Run Rust Unit Tests
       # Note: No --clean here, as it would wipe downloaded artifacts
-      run: python -m tools.fusion.main --stage test --target rust --no-dashboard
+      run: python -m tools.fusion.main --stage test --target rust --pass-filter host --no-dashboard
     - name: Upload Logs
       if: always()
       uses: actions/upload-artifact@v4
@@ -267,6 +322,13 @@ jobs:
 
     - name: Install Pytest
       run: pip install pytest pytest-cov
+    - name: Download State
+      uses: actions/download-artifact@v4
+      with:
+        pattern: state-*
+        path: build/
+        merge-multiple: true
+      continue-on-error: true
     - name: Run Python Unit Tests
       env:
         PYTHONPATH: src/python:build:build/generated/integrated_apps/python:build/generated/automotive_pubsub/python
@@ -274,7 +336,7 @@ jobs:
       # Note: No --clean here
       run: |
         # Ensure we can bind to ports on Linux
-        python -m tools.fusion.main --stage test --target python --base-port 400 --no-dashboard
+        python -m tools.fusion.main --stage test --target python --pass-filter host --base-port auto --no-dashboard
     - name: Upload Logs
       if: always()
       uses: actions/upload-artifact@v4
@@ -617,7 +679,7 @@ jobs:
   # Stage 2.5: Virtual Network Tests (Linux-only)
   # ============================================
   vnet-test:
-    needs: [build-core]
+    needs: [codegen, build-core, build-cpp, build-js]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -629,19 +691,40 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pytest
+    - name: Download Codegen Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-codegen
+        path: build/generated
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-core-ubuntu-latest
         path: target
+    - name: Download C++ Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-cpp-ubuntu-latest
+        path: build
+    - name: Download JS Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-js-ubuntu-latest
+        path: src/js
+    - name: Download State
+      uses: actions/download-artifact@v4
+      with:
+        pattern: state-*
+        path: build/
+        merge-multiple: true
+      continue-on-error: true
     - name: Setup Virtual Network
       run: sudo bash tools/fusion/scripts/setup_vnet.sh
     - name: Run VNET Tests and Use-Cases
-      # Runs via main.py, which detects VNet and runs sequential tests (No-VNet -> VNet)
-      # We explicitly run both unit tests and the 'usecases' demo
+      # We use --pass-filter vnet to avoid re-running host tests
       run: |
-        sudo -E python3 -m tools.fusion.main --stage test --target python --base-port 400 --no-dashboard
-        sudo -E python3 -m tools.fusion.main --stage demos --demo usecases --base-port 500 --no-dashboard
+        sudo -E python3 -m tools.fusion.main --stage test --target python --pass-filter vnet --base-port auto --no-dashboard
+        sudo -E python3 -m tools.fusion.main --stage demos --demo usecases --pass-filter vnet --base-port auto --no-dashboard
     - name: Teardown Virtual Network
       if: always()
       run: sudo bash tools/fusion/scripts/teardown_vnet.sh

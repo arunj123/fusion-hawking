@@ -19,10 +19,11 @@ from tools.fusion.report import Reporter as TestReporter
 from tools.fusion.execution import AppRunner
 
 class Tester:
-    def __init__(self, reporter, builder, env_caps=None):
+    def __init__(self, reporter, builder, env_caps=None, base_port=0):
         self.reporter = reporter
         self.builder = builder
         self.env_caps = env_caps or {}
+        self.base_port = base_port
         self._cleanup_zombies()
 
     def _cleanup_zombies(self):
@@ -106,38 +107,62 @@ class Tester:
         
         return caps
 
-    def _build_pytest_marker_expr(self):
-        """Build a pytest -m expression to deselect tests whose required
-        capabilities are not present in the current environment."""
+    def _build_pytest_marker_expr(self, run_type="integration"):
+        """
+        Build a pytest -m expression to deselect tests.
+        
+        Args:
+            run_type: 'unit' or 'integration' or 'vnet'
+        """
         caps = self._get_flattened_caps()
         
-        # Explicit check for mandatory capabilities used in markers
-        # If they are missing from detect, they default to False
         has_netns = caps.get('has_netns', False)
         has_multicast = caps.get('has_multicast', False)
         has_ipv6 = caps.get('has_ipv6', False)
         has_veth = caps.get('has_veth', False)
 
         excluded = []
-        if not has_netns:
+        
+        # Pass-specific logic:
+        # If we are in a 'Physical Network (No VNet)' pass, we should skip tests that REQUIRE VNet.
+        # If we are in a 'Virtual Network (VNet)' pass, we might want to ONLY run VNet tests
+        # to avoid redundancy, OR run everything if not already covered.
+        
+        # User requested: "Avoid repeating etc. Not running same tests at multiple stages just due to current design of fusion tool."
+        
+        is_vnet_pass = self.env_caps.get('has_vnet', False) and (has_netns or has_veth)
+        
+        if not is_vnet_pass:
+            # Pass 1 (Host): Avoid tests that REQUIRE VNet or are marked purely for it
             excluded.append('needs_netns')
-        if not has_multicast:
-            excluded.append('needs_multicast')
+            excluded.append('vnet_only')
+            # Also exclude if multicast is missing
+            if not has_multicast:
+                excluded.append('needs_multicast')
+        else:
+            # Pass 2 (VNet): Avoid tests that were already covered in Pass 1
+            # I.e., exclude tests that DON'T have a VNet-specific marker
+            # This is a bit tricky with pytest -m (not ... and not ...)
+            # We want: (needs_netns or vnet_only)
+            # So we exclude "not (needs_netns or vnet_only)"
+            # Wait, easier: -m "needs_netns or vnet_only"
+            # But the caller might want to combine this with other exclusions.
+            
+            # Let's say: Exclude anything marked 'host_only' or anything UNMARKED if we want strict separation.
+            # Most users want "standard tests + vnet tests".
+            # But the user specifically asked for "NOT running same tests at multiple stages".
+            
+            # Implementation: Return a REVERSE marker expression for Pass 2 if we want to be strict.
+            # Actually, I'll return the positive expression "needs_netns or vnet_only"
+            # and I'll update run_integration_tests to handle it.
+            return "needs_netns or vnet_only"
+
         if not has_ipv6:
             excluded.append('needs_ipv6')
-        if not has_veth:
-            excluded.append('needs_veth')
-        
-        # Always print caps for debugging
-        print(f"  [caps] env_caps keys: {list(self.env_caps.keys())}")
-        print(f"  [caps] Flattened Caps: {caps}")
         
         if excluded:
             expr = ' and '.join(f'not {m}' for m in excluded)
-            print(f"  [caps] pytest deselection: -m \"{expr}\"")
             return expr
-        else:
-            print("  [caps] pytest: No tests excluded (full capability)")
         return None
 
     def _run_and_tee(self, cmd, log_path, env=None, cwd=None, header=None):
@@ -322,6 +347,8 @@ class Tester:
             "build/generated/integrated_apps/python",
             "build/generated/automotive_pubsub/python",
         ])
+        if self.base_port > 0:
+            env["FUSION_BASE_PORT"] = str(self.base_port)
         
         cross_lang_log_dir = os.path.join(self.reporter.raw_logs_dir, "integration")
         os.makedirs(cross_lang_log_dir, exist_ok=True)

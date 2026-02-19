@@ -71,23 +71,46 @@ def find_binary(name, search_dirs=None, root=None):
     # Default search locations
     candidates = [
         os.path.join(root, "build", "Release", target),
+        os.path.join(root, "build", "debug", target),
+        # Nested MSVC patterns (Release/Debug inside example folders)
+        os.path.join(root, "build", "examples", "integrated_apps", "cpp_app", "Release", target),
+        os.path.join(root, "build", "examples", "integrated_apps", "cpp_app", "Debug", target),
+        os.path.join(root, "build", "examples", "automotive_pubsub", "cpp_radar", "Release", target),
+        os.path.join(root, "build", "examples", "automotive_pubsub", "cpp_radar", "Debug", target),
+        os.path.join(root, "build", "Release", "examples", "integrated_apps", "cpp_app", target),
+        os.path.join(root, "build", "debug", "examples", "integrated_apps", "cpp_app", target),
         os.path.join(root, "build", target),
         os.path.join(root, "build_linux", target),
+        os.path.join(root, "build_linux", "examples", "integrated_apps", "cpp_app", target),
         os.path.join(root, "build_linux", "examples", "someipy_demo", target),
+        os.path.join(root, "build_wsl", target),
+        os.path.join(root, "build_wsl", "examples", "integrated_apps", "cpp_app", target),
         os.path.join(root, "examples", "someipy_demo", "build", "Release", target),
         os.path.join(root, "examples", "someipy_demo", "build", target),
         os.path.join(root, "target", "debug", target),
         os.path.join(root, "target", "release", target),
     ]
+
+    # Add demo-specific Rust target paths
+    rust_apps = ["integrated_apps/rust_app", "automotive_pubsub/rust_fusion"]
+    for app in rust_apps:
+        candidates.append(os.path.join(root, "examples", app, "target", "debug", target))
+        candidates.append(os.path.join(root, "examples", app, "target", "release", target))
     
     # Add custom search dirs
     if search_dirs:
         for d in search_dirs:
             candidates.append(os.path.join(d, target))
     
+    # Log the search start for CI diagnostics
+    logger.debug(f"Searching for binary '{target}' in {len(candidates)} locations")
+    
     for c in candidates:
         if os.path.exists(c):
+            logger.info(f"Binary found: {c}")
             return c
+            
+    logger.warning(f"Binary NOT found: {target}")
     return None
 
 

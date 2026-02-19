@@ -93,7 +93,7 @@ class SomeIpRuntime:
         self.tp_reassembler = TpReassembler()
 
         self.config, self.interfaces, self.endpoints = self._load_config(config_path, instance_name)
-        if not self.config:
+        if self.config is None:
             self.logger.log(LogLevel.ERROR, "Runtime", f"Instance '{instance_name}' not found.")
             return
 
@@ -103,11 +103,13 @@ class SomeIpRuntime:
     def _load_config(self, path, name):
         try:
             with open(path, 'r') as f: data = json.load(f)
-            inst = data.get('instances', {}).get(name, {})
             ifaces = data.get('interfaces', {})
             eps = data.get('endpoints', {})
-            if not inst:
-                print(f"ERROR: Instance '{name}' not found in {path}. Keys: {list(data.get('instances', {}).keys())}")
+            inst_dict = data.get('instances', {})
+            if name not in inst_dict:
+                print(f"ERROR: Instance '{name}' not found in {path}. Keys: {list(inst_dict.keys())}")
+                return None, ifaces, eps
+            inst = inst_dict[name]
             return inst, ifaces, eps
         except Exception as e:
             print(f"ERROR: Failed to load config from {path}: {e}")

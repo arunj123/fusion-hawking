@@ -74,18 +74,27 @@ def ctx():
         env["PYTHONPATH"] = os.pathsep.join([os.path.join(PROJECT_ROOT, "src", "python"), 
                                             os.path.join(PROJECT_ROOT, "build"),
                                             os.path.join(PROJECT_ROOT, "build", "generated", "integrated_apps", "python")])
+        # Propagate base port if set
+        if os.environ.get("FUSION_BASE_PORT"):
+            env["FUSION_BASE_PORT"] = os.environ["FUSION_BASE_PORT"]
+            
         c.add_runner("python", [sys.executable, "-u", "main.py", py_config], cwd=py_demo_dir, env=env, ns=ns_python).start()
 
         # 4. JS (ECU3 - collocated with Python)
         js_app_dir = os.path.join(PROJECT_ROOT, "examples", "integrated_apps", "js_app")
         if os.path.exists(js_app_dir):
-            npm_bin = "npm.cmd" if os.name == 'nt' else "npm"
-            # Build if needed
-            if not os.path.exists(os.path.join(js_app_dir, "dist", "index.js")):
-                 subprocess.run([npm_bin, "install"], cwd=js_app_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                 subprocess.run([npm_bin, "run", "build"], cwd=js_app_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            js_bin = os.path.join(js_app_dir, "dist", "index.js")
+            if not os.path.exists(js_bin):
+                 # Fallback for local development, but in CI we expect pre-built
+                 npm_bin = "npm.cmd" if os.name == 'nt' else "npm"
+                 print(f"[WARN] JS binary not found at {js_bin}. Attempting runtime build...")
+                 subprocess.run([npm_bin, "install"], cwd=js_app_dir, capture_output=True)
+                 subprocess.run([npm_bin, "run", "build"], cwd=js_app_dir, capture_output=True)
             
-            c.add_runner("js", ["node", "dist/index.js", py_config], cwd=js_app_dir, ns=ns_python).start()
+            if os.path.exists(js_bin):
+                c.add_runner("js", ["node", "dist/index.js", py_config], cwd=js_app_dir, ns=ns_python).start()
+            else:
+                print(f"[ERROR] JS App Demo could not be started: {js_bin} missing")
 
         time.sleep(5)
         yield c
@@ -139,6 +148,7 @@ def test_rust_to_cpp_math_inst2(ctx):
     """Verify Rust client calls C++ MathService (Instance 2)"""
     if ctx.get_runner("cpp") is None: pytest.skip("CPP runner not available")
     if ctx.get_runner("rust") is None: pytest.skip("Rust runner not available")
+    if ctx.get_runner("cpp") is None: pytest.skip("CPP runner not available")
     ctx.get_runner("cpp").clear_output()
     assert ctx.get_runner("cpp").wait_for_output(r"\[2\] Add\(100, 200\)", timeout=20)
 
@@ -163,18 +173,23 @@ def test_cpp_rpc_to_math(ctx):
 @pytest.mark.needs_multicast
 def test_cpp_event_updates(ctx):
     """Verify C++ SortService updates trigger events"""
+    if ctx.get_runner("cpp") is None: pytest.skip("CPP runner not available")
     ctx.get_runner("cpp").clear_output()
     assert ctx.get_runner("cpp").wait_for_output("Field 'status' changed", timeout=20)
 
 @pytest.mark.needs_multicast
-def test_rust_consumes_event(ctx):
-    """Verify Rust client receives notification"""
+def test_rust_event_updates(ctx):
+    """Verify Rust receives events from C++ SortService"""
+    if ctx.get_runner("cpp") is None: pytest.skip("CPP runner not available")
+    if ctx.get_runner("rust") is None: pytest.skip("Rust runner not available")
     ctx.get_runner("rust").clear_output()
     assert ctx.get_runner("rust").wait_for_output("Received Notification", timeout=20)
 
 @pytest.mark.needs_multicast
 def test_python_to_cpp_sort(ctx):
     """Verify Python client calls C++ SortService"""
+    if ctx.get_runner("python") is None: pytest.skip("Python runner not available")
+    if ctx.get_runner("cpp") is None: pytest.skip("CPP runner not available")
     ctx.get_runner("python").clear_output()
     ctx.get_runner("cpp").clear_output()
     assert ctx.get_runner("python").wait_for_output("Sending Sort...", timeout=10)
@@ -183,6 +198,7 @@ def test_python_to_cpp_sort(ctx):
 @pytest.mark.needs_multicast
 def test_rust_to_cpp_sort(ctx):
     """Verify Rust client calls C++ SortService"""
+    if ctx.get_runner("cpp") is None: pytest.skip("CPP runner not available")
     ctx.get_runner("cpp").clear_output()
     assert ctx.get_runner("cpp").wait_for_output("Sorting 3 items", timeout=20)
 

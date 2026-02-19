@@ -42,11 +42,12 @@ class IntegrationTestContext:
         """Generates a temporary JS script and runs it using node."""
         path = os.path.join(js_app_dir, f"tmp_{instance_name}_{self.name}.mjs")
         
-        # Ensure directory exists and manual bindings are built
-        os.makedirs(js_app_dir, exist_ok=True)
-        npm = "npm.cmd" if sys.platform == "win32" else "npm"
-        if not os.path.exists(os.path.join(js_app_dir, "dist", "manual_bindings.js")):
-             import subprocess
+        # Ensure manual bindings are present (either pre-built or built now)
+        dist_dir = os.path.join(js_app_dir, "dist")
+        if not os.path.exists(dist_dir) or not os.listdir(dist_dir):
+             print(f"[info] JS dist missing in {js_app_dir}. Building...")
+             os.makedirs(js_app_dir, exist_ok=True)
+             npm = "npm.cmd" if sys.platform == "win32" else "npm"
              subprocess.run([npm, "install"], cwd=js_app_dir, capture_output=True)
              subprocess.run([npm, "run", "build"], cwd=js_app_dir, capture_output=True)
 

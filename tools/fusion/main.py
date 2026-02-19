@@ -1,6 +1,14 @@
 import argparse
 import sys
 import os
+
+# Support direct execution
+if __name__ == "__main__" and __package__ is None:
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+    __package__ = "tools.fusion"
+
 import time
 
 from tools.fusion.toolchains import ToolchainManager
@@ -10,6 +18,10 @@ from tools.fusion.test import Tester
 from tools.fusion.coverage import CoverageManager
 from tools.fusion.server import ProgressServer
 from tools.fusion.utils import get_local_ip, detect_environment, merge_results
+import json
+import logging
+
+logger = logging.getLogger("fusion.main")
 from tools.fusion.diagrams import DiagramManager
 
 
@@ -157,6 +169,60 @@ def run_coverage(reporter, cover, server, test_results, target):
     return test_results
 
 
+class StateManager:
+    """Manages persistence of stage completion to avoid redundant work in CI."""
+    def __init__(self, root_dir):
+        self.state_file = os.path.join(root_dir, "build", "run_state.json")
+        self.state = {}
+        self.load()
+
+    def load(self):
+        if os.path.exists(self.state_file):
+            try:
+                with open(self.state_file, "r") as f:
+                    self.state = json.load(f)
+            except Exception as e:
+                logger.warning(f"Failed to load state: {e}")
+
+    def save(self):
+        os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
+        try:
+            with open(self.state_file, "w") as f:
+                json.dump(self.state, f, indent=4)
+        except Exception as e:
+            logger.warning(f"Failed to save state: {e}")
+
+    def clear(self):
+        self.state = {}
+        if os.path.exists(self.state_file):
+            try: os.remove(self.state_file)
+            except: pass
+
+    def is_complete(self, stage, target="all"):
+        key = f"{stage}:{target}"
+        return self.state.get(key) == "PASS"
+
+    def mark_complete(self, stage, target="all", status="PASS"):
+        key = f"{stage}:{target}"
+        self.state[key] = status
+        self.save()
+
+def get_auto_port(base_port_arg, run_name):
+    """Determine a stable port offset for the current run to avoid CI conflicts."""
+    if base_port_arg != "auto":
+        try:
+            val = int(base_port_arg)
+            if val != 0: return val
+        except (ValueError, TypeError):
+            pass
+
+    # Deterministic offset based on job name or PID if not in CI
+    import hashlib
+    seed = os.environ.get("GITHUB_RUN_ID", run_name)
+    h = int(hashlib.md5(seed.encode()).hexdigest(), 16)
+    return 1000 + (h % 500) * 10
+
+
 def main():
     parser = argparse.ArgumentParser(description="Fusion Hawking Automation Tool")
     parser.add_argument("--skip-demos", action="store_true", help="Skip integration demos")
@@ -168,11 +234,13 @@ def main():
 
     parser.add_argument("--demo", type=str, choices=["all", "simple", "integrated", "pubsub", "someipy", "tp", "usecases"], default="all", help="Specific demo to run")
     parser.add_argument("--no-codegen", action="store_true", help="Skip codegen (assume artifacts exist)")
-    parser.add_argument("--base-port", type=int, default=0, help="Port offset for test isolation")
+    parser.add_argument("--base-port", type=str, default="0", help="Port offset for test isolation ('auto' for CI-stable ports)")
+    parser.add_argument("--force", action="store_true", help="Force re-run of completed stages")
     parser.add_argument("--with-coverage", action="store_true", help="Build C++ with coverage instrumentation")
     parser.add_argument("--packet-dump", action="store_true", help="Enable Wireshark-like packet dumping in runtimes")
     parser.add_argument("--no-vnet", action="store_true", help="Force disable virtual network tests")
     parser.add_argument("--vnet", action="store_true", help="Force enable virtual network tests (if detected)")
+    parser.add_argument("--pass-filter", type=str, choices=["all", "host", "vnet"], default="all", help="Filter for execution passes (CI optimization)")
     parser.add_argument("--stage", type=str, 
                         choices=["diagrams", "codegen", "build", "test", "coverage", "docs", "demos", "all"],
                         default="all", help="Run specific build stage (for CI)")
@@ -195,6 +263,8 @@ def main():
     
     tools = ToolchainManager()
     tool_status = tools.check_all()
+    
+    state = StateManager(root_dir)
     
     # Detect environment capabilities - Initial Pass
     real_env_caps = detect_environment()
@@ -226,7 +296,7 @@ def main():
         if key == 'interfaces':
             print(f"  interfaces: {', '.join(val) if val else '(none)'}")
         else:
-            icon = '[v]' if val else '[x]' if isinstance(val, bool) else '   '
+            icon = '[v]' if val else '[ ]' if isinstance(val, bool) else '   '
             print(f"  {icon} {key}: {val}")
 
 
@@ -269,6 +339,7 @@ def main():
         if args.clean:
             if server: server.update({"current_step": "Cleaning"})
             print("\n=== Cleaning Build Artifacts ===")
+            state.clear()
             import shutil
             dirs_to_clean = [
                 "build", "build_cpp", "build_linux", 
@@ -297,6 +368,15 @@ def main():
 
         # Run Loop
         for run_name, force_no_vnet in execution_plan:
+            # Pass Filtering
+            is_vnet = not force_no_vnet
+            if args.pass_filter == "host" and is_vnet:
+                print(f"[info] Skipping {run_name} (host-only filter active)")
+                continue
+            if args.pass_filter == "vnet" and not is_vnet:
+                print(f"[info] Skipping {run_name} (vnet-only filter active)")
+                continue
+
             # Create a slug for the run name
             run_slug = run_name.lower().replace(" ", "_").replace("(", "").replace(")", "").replace("/", "_")
             
@@ -327,6 +407,11 @@ def main():
             if env_caps['is_ci'] or wsl_needs_lo or force_lo_env:
                 local_ip = '127.0.0.1'
 
+            # Auto Port Selection
+            base_port = get_auto_port(args.base_port, run_name)
+            if base_port != args.base_port:
+                print(f"[info] Using auto-port offset: {base_port}")
+
             if server: server.update({"tools": tool_status})
             tools.print_status()
             
@@ -334,7 +419,7 @@ def main():
             caps = tools.check_network_capabilities()
             
             builder = Builder(reporter)
-            tester = Tester(reporter, builder, env_caps=env_caps)
+            tester = Tester(reporter, builder, env_caps=env_caps, base_port=base_port)
             cover = CoverageManager(reporter, tools, env_caps=env_caps)
             
             current_results = {}
@@ -346,21 +431,28 @@ def main():
 
             # CODEGEN (Once is enough)
             if stage in ["codegen", "all"] and not args.no_codegen and execution_plan.index((run_name, force_no_vnet)) == 0:
-                 if server: server.update({"current_step": "Codegen"})
-                 print("Running Codegen...")
-                 if not builder.generate_bindings(): 
-                     raise Exception("Bindings Generation Failed")
-                 
-                 # Archive and validate configs generated by codegen
-                 archive_and_validate_configs(reporter)
+                 if not args.force and state.is_complete("codegen"):
+                     print("[info] Codegen already complete. Skipping (use --force to override).")
+                 else:
+                     if server: server.update({"current_step": "Codegen"})
+                     print("Running Codegen...")
+                     if not builder.generate_bindings(): 
+                         raise Exception("Bindings Generation Failed")
+                     
+                     # Archive and validate configs generated by codegen
+                     archive_and_validate_configs(reporter)
+                     state.mark_complete("codegen")
                  current_results["codegen"] = "PASS"
 
             # BUILD (Once is enough usually, but safely idempotent)
             if stage in ["build", "all"]:
                  # Optimization: Only build once if possible.
-                 # But sticking to simple loop for now.
                  if execution_plan.index((run_name, force_no_vnet)) == 0:
-                     current_results.update(run_build(root_dir, reporter, builder, tool_status, args.target, server, args.no_codegen, args.with_coverage, args.packet_dump))
+                     if not args.force and state.is_complete("build", args.target):
+                         print(f"[info] Build for {args.target} already complete. Skipping.")
+                     else:
+                         current_results.update(run_build(root_dir, reporter, builder, tool_status, args.target, server, args.no_codegen, args.with_coverage, args.packet_dump))
+                         state.mark_complete("build", args.target)
 
             # TEST (Integration Suite - Runs in EVERY pass)
             if stage in ["test", "all"] and args.target in ["all", "python"]:
