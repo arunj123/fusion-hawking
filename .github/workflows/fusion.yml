@@ -289,6 +289,13 @@ jobs:
       with:
         name: logs-unit-rust-${{ matrix.os }}
         path: logs
+    - name: Upload State
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: state-unit-rust-${{ matrix.os }}
+        path: build/run_state.json
+        retention-days: 1
 
   unit-test-python:
     needs: [build-core, build-cpp, build-js]
@@ -360,6 +367,13 @@ jobs:
       with:
         name: logs-unit-python-${{ matrix.os }}
         path: logs
+    - name: Upload State
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: state-unit-python-${{ matrix.os }}
+        path: build/run_state.json
+        retention-days: 1
 
   unit-test-cpp:
     needs: [codegen, build-cpp]
@@ -399,6 +413,13 @@ jobs:
       with:
         name: logs-unit-cpp-${{ matrix.os }}
         path: logs
+    - name: Upload State
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: state-unit-cpp-${{ matrix.os }}
+        path: build/run_state.json
+        retention-days: 1
 
   unit-test-js:
     needs: [codegen, build-js]
@@ -441,6 +462,13 @@ jobs:
         path: |
           logs
           logs/latest/coverage/js
+    - name: Upload State
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: state-unit-js-${{ matrix.os }}
+        path: build/run_state.json
+        retention-days: 1
 
   demo-simple:
     needs: [build-core, build-cpp, build-js]
@@ -490,6 +518,13 @@ jobs:
         path: |
           logs
           build/generated
+    - name: Upload State
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: state-demo-simple-${{ matrix.os }}
+        path: build/run_state.json
+        retention-days: 1
 
   demo-integrated:
     needs: [codegen, build-core, build-cpp, build-js]
@@ -552,6 +587,13 @@ jobs:
         path: |
           logs
           build/generated
+    - name: Upload State
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: state-demo-integrated-${{ matrix.os }}
+        path: build/run_state.json
+        retention-days: 1
 
   demo-pubsub:
     needs: [codegen, build-core, build-cpp, build-js]
@@ -620,6 +662,13 @@ jobs:
         path: |
           logs
           build/generated
+    - name: Upload State
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: state-demo-pubsub-${{ matrix.os }}
+        path: build/run_state.json
+        retention-days: 1
 
   demo-someipy:
     needs: [codegen, build-core, build-cpp, build-js]
@@ -684,6 +733,13 @@ jobs:
         path: |
           logs
           build/generated
+    - name: Upload State
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: state-demo-someipy-${{ matrix.os }}
+        path: build/run_state.json
+        retention-days: 1
 
   demo-tp:
     needs: [codegen, build-core]
@@ -726,6 +782,13 @@ jobs:
         path: |
           logs
           build/generated
+    - name: Upload State
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: state-demo-tp-${{ matrix.os }}
+        path: build/run_state.json
+        retention-days: 1
 
   # ============================================
   # Stage 2.5: Virtual Network Tests (Linux-only)
@@ -806,6 +869,13 @@ jobs:
         path: |
           logs
           build/generated
+    - name: Upload State
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: state-vnet-test-${{ matrix.os }}
+        path: build/run_state.json
+        retention-days: 1
 
   coverage:
     # Coverage typically easiest on Linux (lcov, llvm-cov)
@@ -859,6 +929,13 @@ jobs:
       with:
         name: logs-coverage
         path: logs
+    - name: Upload State
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: state-coverage
+        path: build/run_state.json
+        retention-days: 1
 
   # ============================================
   # Stage 3: Generate Documentation (depends on build)
@@ -882,6 +959,14 @@ jobs:
         path: .
         merge-multiple: true
 
+    - name: Download All States
+      uses: actions/download-artifact@v4
+      with:
+        pattern: state-*
+        path: build/state
+        merge-multiple: false
+      continue-on-error: true
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
@@ -889,6 +974,9 @@ jobs:
         
     - name: Install dependencies
       run: pip install plantuml markdown
+
+    - name: Update Documentation Checklist
+      run: python -m tools.fusion.main --stage update-docs --no-dashboard
 
     - name: Generate Diagrams
       run: python -m tools.fusion.main --stage diagrams --no-dashboard
