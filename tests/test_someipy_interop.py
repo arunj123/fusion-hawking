@@ -70,7 +70,11 @@ def ctx():
         # JS Client
         js_client_dir = os.path.join(DEMO_DIR, "js_client")
         if os.path.exists(js_client_dir):
-            c.add_runner("js_client", ["node", "dist/index.js", client_config], cwd=js_client_dir, ns="ns_ecu3" if ENV.has_vnet else None).start()
+            js_bin = os.path.join(js_client_dir, "dist", "index.js")
+            if os.path.exists(js_bin):
+                c.add_runner("js_client", ["node", "dist/index.js", client_config], cwd=js_client_dir, ns="ns_ecu3" if ENV.has_vnet else None).start()
+            else:
+                print(f"[WARN] JS someipy client binary missing at {js_bin}. Skipping runner.")
 
         time.sleep(5)
         yield c

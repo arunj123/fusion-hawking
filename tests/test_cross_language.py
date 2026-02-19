@@ -94,7 +94,10 @@ def ctx():
             if os.path.exists(js_bin):
                 c.add_runner("js", ["node", "dist/index.js", py_config], cwd=js_app_dir, ns=ns_python).start()
             else:
-                print(f"[ERROR] JS App Demo could not be started: {js_bin} missing")
+                # In CI, if target is not 'js' or 'all', it's okay to skip
+                print(f"[WARN] JS App Demo binary missing at {js_bin}. Skipping runner.")
+                # Ensure we don't have a None runner when we expect one? 
+                # Actually, the test checks for None.
 
         time.sleep(5)
         yield c

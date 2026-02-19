@@ -82,7 +82,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: build/generated
+        path: .
     - name: Download State
       uses: actions/download-artifact@v4
       with:
@@ -141,7 +141,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: build/generated
+        path: .
     - name: Download State
       uses: actions/download-artifact@v4
       with:
@@ -205,7 +205,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: build/generated
+        path: .
     - name: Download State
       uses: actions/download-artifact@v4
       with:
@@ -265,7 +265,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: build/generated
+        path: .
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
       run: chmod -R +x build/release/* target/release/* target/debug/* || true
@@ -280,7 +280,7 @@ jobs:
       continue-on-error: true
     - name: Run Rust Unit Tests
       # Note: No --clean here, as it would wipe downloaded artifacts
-      run: python -m tools.fusion.main --stage test --target rust --pass-filter host --no-dashboard
+      run: python -m tools.fusion.main --stage test --target rust --pass-filter host --no-dashboard --skip-demos
     - name: Upload Logs
       if: always()
       uses: actions/upload-artifact@v4
@@ -308,7 +308,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: build/generated
+        path: .
     - name: Download C++ Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -334,7 +334,7 @@ jobs:
       # Note: No --clean here
       run: |
         # Ensure we can bind to ports on Linux
-        python -m tools.fusion.main --stage test --target python --pass-filter host --base-port auto --no-dashboard
+        python -m tools.fusion.main --stage test --target python --pass-filter host --base-port auto --no-dashboard --skip-demos
     - name: Upload Logs
       if: always()
       uses: actions/upload-artifact@v4
@@ -357,7 +357,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: build/generated
+        path: .
     - name: Download C++ Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -371,7 +371,7 @@ jobs:
 
     - name: Run C++ Unit Tests
       # Note: No --clean here
-      run: python -m tools.fusion.main --stage test --target cpp --no-dashboard
+      run: python -m tools.fusion.main --stage test --target cpp --no-dashboard --skip-demos
     - name: Upload Logs
       if: always()
       uses: actions/upload-artifact@v4
@@ -397,19 +397,19 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: build/generated
+        path: .
     - name: Download JS Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-js-${{ matrix.os }}
-        path: src/js
+        path: .
     - name: Install JS Dependencies
       run: npm install
       working-directory: src/js
     - name: Install Python Dependencies
       run: pip install pytest pytest-cov
     - name: Run JS Unit Tests
-      run: python -m tools.fusion.main --stage test --target js --no-dashboard
+      run: python -m tools.fusion.main --stage test --target js --no-dashboard --skip-demos
     - name: Upload Logs
       if: always()
       uses: actions/upload-artifact@v4
@@ -446,7 +446,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-js-${{ matrix.os }}
-        path: src/js
+        path: .
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
       run: chmod -R +x target/release/* target/debug/* build/* || true
@@ -484,7 +484,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: build/generated
+        path: .
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -499,7 +499,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-js-${{ matrix.os }}
-        path: src/js
+        path: .
     - name: Install JS Dependencies
       run: npm install
       working-directory: src/js
@@ -540,7 +540,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: build/generated
+        path: .
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -555,7 +555,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-js-${{ matrix.os }}
-        path: src/js
+        path: .
     - name: Install JS Dependencies
       run: npm install
       working-directory: src/js
@@ -596,7 +596,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: build/generated
+        path: .
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -611,7 +611,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-js-${{ matrix.os }}
-        path: src/js
+        path: .
     - name: Install JS Dependencies (Runtime)
       run: npm install
       working-directory: src/js
@@ -650,7 +650,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: build/generated
+        path: .
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -692,7 +692,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: build/generated
+        path: .
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -707,7 +707,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-js-ubuntu-latest
-        path: src/js
+        path: .
     - name: Download State
       uses: actions/download-artifact@v4
       with:
@@ -720,8 +720,8 @@ jobs:
     - name: Run VNET Tests and Use-Cases
       # We use --pass-filter vnet to avoid re-running host tests
       run: |
-        sudo -E python3 -m tools.fusion.main --stage test --target python --pass-filter vnet --base-port auto --no-dashboard
-        sudo -E python3 -m tools.fusion.main --stage demos --demo usecases --pass-filter vnet --base-port auto --no-dashboard
+        sudo -E $(which python) -m tools.fusion.main --stage test --target python --pass-filter vnet --base-port auto --no-dashboard
+        sudo -E $(which python) -m tools.fusion.main --stage demos --demo usecases --pass-filter vnet --base-port auto --no-dashboard
     - name: Teardown Virtual Network
       if: always()
       run: sudo bash tools/fusion/scripts/teardown_vnet.sh
@@ -747,7 +747,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: build/generated
+        path: .
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:

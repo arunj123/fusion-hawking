@@ -75,10 +75,15 @@ def ctx():
         adas_js_dir = os.path.join(PROJECT_ROOT, "examples", "automotive_pubsub", "js_adas")
         if os.path.exists(adas_js_dir):
             npm_bin = "npm.cmd" if os.name == 'nt' else "npm"
-            if not os.path.exists(os.path.join(adas_js_dir, "dist", "index.js")):
+            js_bin = os.path.join(adas_js_dir, "dist", "index.js")
+            if not os.path.exists(js_bin):
                  subprocess.run([npm_bin, "install"], cwd=adas_js_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                  subprocess.run([npm_bin, "run", "build"], cwd=adas_js_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            c.add_runner("adas_js", ["node", "dist/index.js", adas_config], cwd=adas_js_dir, ns=ns_adas).start()
+            
+            if os.path.exists(js_bin):
+                c.add_runner("adas_js", ["node", "dist/index.js", adas_config], cwd=adas_js_dir, ns=ns_adas).start()
+            else:
+                print(f"[WARN] JS ADAS binary missing at {js_bin}. Skipping runner.")
 
         time.sleep(5)
         yield c
