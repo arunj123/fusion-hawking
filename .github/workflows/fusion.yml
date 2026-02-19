@@ -782,8 +782,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         pattern: state-*
-        path: build
-        merge-multiple: true
+        path: build/state
       continue-on-error: true
     - name: Restore Permissions (Linux)
       run: chmod -R +x build/* build_linux/* target/release/* target/debug/* || true

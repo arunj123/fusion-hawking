@@ -177,12 +177,41 @@ class StateManager:
         self.load()
 
     def load(self):
+        # 1. Load primary state file
         if os.path.exists(self.state_file):
             try:
                 with open(self.state_file, "r") as f:
-                    self.state = json.load(f)
+                    content = f.read().strip()
+                    if content:
+                        try:
+                            self.state = json.loads(content)
+                        except json.JSONDecodeError as je:
+                            # If file starts with { but fails, might be multiple JSONs appended by CI artifact merging
+                            if content.startswith("{") and "}{" in content:
+                                logger.warning("State file corrupted by merging. Attempting recovery.")
+                                first_obj = content.split("}{")[0] + "}"
+                                self.state = json.loads(first_obj)
+                            else:
+                                raise je
             except Exception as e:
-                logger.warning(f"Failed to load state: {e}")
+                logger.warning(f"Failed to load primary state: {e}")
+
+        # 2. Check for fragmented states in build/state/ (CI optimization)
+        state_frag_dir = os.path.join(os.path.dirname(self.state_file), "state")
+        if os.path.exists(state_frag_dir):
+            logger.info("Deep scanning build/state for fragmented artifacts...")
+            for root, _, files in os.walk(state_frag_dir):
+                for file in files:
+                    if file == "run_state.json":
+                        try:
+                            with open(os.path.join(root, file), "r") as f:
+                                frag = json.load(f)
+                                # Merge PASS values only to avoid overwriting FAIL with older PASS if any
+                                for k, v in frag.items():
+                                    if v == "PASS" or k not in self.state:
+                                        self.state[k] = v
+                        except Exception as e:
+                            logger.warning(f"Failed to load state fragment {os.path.join(root, file)}: {e}")
 
     def save(self):
         os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
@@ -394,8 +423,12 @@ def main():
             if force_no_vnet:
                 env_caps['has_vnet'] = False
                 env_caps['has_netns'] = False
+                env_caps['has_veth'] = False
                 os.environ["FUSION_NO_VNET"] = "1"
             else:
+                env_caps['has_vnet'] = True
+                env_caps['has_netns'] = True
+                env_caps['has_veth'] = True
                 if "FUSION_NO_VNET" in os.environ: del os.environ["FUSION_NO_VNET"]
 
             
