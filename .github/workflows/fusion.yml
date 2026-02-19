@@ -23,6 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
@@ -63,6 +65,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
@@ -126,6 +130,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
@@ -185,6 +191,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
@@ -245,6 +253,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
     - uses: actions/setup-python@v5
       with:
         python-version: '3.10'
@@ -288,6 +298,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
     - uses: actions/setup-python@v5
       with:
         python-version: '3.10'
@@ -357,6 +369,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
     - uses: actions/setup-python@v5
       with:
         python-version: '3.10'
@@ -394,6 +408,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
     - uses: actions/setup-python@v5
       with:
         python-version: '3.10'
@@ -409,7 +425,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-js-${{ matrix.os }}
-        path: src/js
+        path: .
     - name: Install JS Dependencies
       run: npm install
       working-directory: src/js
@@ -433,6 +449,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
     - uses: actions/setup-python@v5
       with:
         python-version: '3.10'
@@ -453,7 +471,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-js-${{ matrix.os }}
-        path: src/js
+        path: .
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
       run: chmod -R +x build/* build_linux/* target/release/* target/debug/* || true
@@ -673,6 +691,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
     - uses: actions/setup-python@v5
       with:
         python-version: '3.10'
@@ -789,6 +809,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
     - uses: actions/setup-python@v5
       with:
         python-version: '3.10'
@@ -846,6 +868,8 @@ jobs:
       id-token: write
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
     
     - name: Download All Logs
       uses: actions/download-artifact@v4
