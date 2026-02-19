@@ -215,16 +215,24 @@ def test_rust_to_cpp_sort(ctx):
 
 @pytest.mark.needs_multicast
 def test_js_rpc_to_rust(ctx):
-    """Verify JS client calls Rust MathService"""
+    """Verify JS client calls Rust MathService (UDP)"""
     if ctx.get_runner("js") is None: pytest.skip("JS runner not available")
-    # Don't clear output; the JS runner might have finished before we got here
-    # Use more specific regex to avoid consumption race
-    assert ctx.get_runner("js").wait_for_output(r"Result: \d+", timeout=30)
+    assert ctx.get_runner("js").wait_for_output(r"\[Client\] Result \(UDP\): 30", timeout=30)
 
 @pytest.mark.needs_multicast
-def test_js_rpc_to_python(ctx):
-    """Verify JS client calls Python StringService"""
+def test_js_rpc_tcp_to_python_math(ctx):
+    """Verify JS client calls Python MathService Instance 3 (TCP)"""
     if ctx.get_runner("js") is None: pytest.skip("JS runner not available")
-    # Result: 'OLLEH'
-    # Use more specific regex to avoid consumption race
-    assert ctx.get_runner("js").wait_for_output(r"Result: '.*'", timeout=30)
+    assert ctx.get_runner("js").wait_for_output(r"\[Client\] Result \(TCP\): 100", timeout=30)
+
+@pytest.mark.needs_multicast
+def test_js_rpc_to_python_string(ctx):
+    """Verify JS client calls Python StringService (UDP)"""
+    if ctx.get_runner("js") is None: pytest.skip("JS runner not available")
+    assert ctx.get_runner("js").wait_for_output(r"\[Client\] Result string: 'SJ olleH'", timeout=30)
+
+@pytest.mark.needs_multicast
+def test_js_rpc_tcp_to_python_diag(ctx):
+    """Verify JS client calls Python DiagnosticService (TCP)"""
+    if ctx.get_runner("js") is None: pytest.skip("JS runner not available")
+    assert ctx.get_runner("js").wait_for_output(r"\[Client\] Result \(TCP\): '1.2.3-py'", timeout=30)

@@ -129,11 +129,11 @@ class TsGenerator(AbstractGenerator):
 
             if is_ff:
                 lines.append(f"        await this.runtime.sendRequestNoReturn(")
-                lines.append(f"            ids.serviceId, {m.id}, payload, svc.address, svc.port")
+                lines.append(f"            ids.serviceId, {m.id}, payload, svc.address, svc.port, this.alias")
                 lines.append(f"        );")
             else:
                 lines.append(f"        const result: SomeIpResponse = await this.runtime.sendRequest(")
-                lines.append(f"            ids.serviceId, {m.id}, payload, svc.address, svc.port")
+                lines.append(f"            ids.serviceId, {m.id}, payload, svc.address, svc.port, 8000, this.alias")
                 lines.append(f"        );")
 
             if not is_ff and m.ret_type.name != "None":

@@ -370,6 +370,8 @@ class SmartConfigFactory:
                 required={
                     "math-client": {"service_id": 4097, "instance_id": 1, "major_version": 1, "find_on": ["primary"]},
                     "string-client": {"service_id": 8193, "instance_id": 1, "major_version": 1, "find_on": ["primary"]},
+                    "diag-client": {"service_id": 20481, "instance_id": 1, "major_version": 1, "find_on": ["primary"], "protocol": "tcp"},
+                    "math-client-tcp": {"service_id": 4097, "instance_id": 3, "major_version": 2, "find_on": ["primary"], "protocol": "tcp"},
                 }
             )
             
@@ -455,6 +457,8 @@ class SmartConfigFactory:
                 required={
                     "math-client": {"service_id": 4097, "instance_id": 1, "major_version": 1, "find_on": ["primary"]},
                     "string-client": {"service_id": 8193, "instance_id": 1, "major_version": 1, "find_on": ["primary"]},
+                    "diag-client": {"service_id": 20481, "instance_id": 1, "major_version": 1, "find_on": ["primary"], "protocol": "tcp"},
+                    "math-client-tcp": {"service_id": 4097, "instance_id": 3, "major_version": 2, "find_on": ["primary"], "protocol": "tcp"},
                 }
             )
         

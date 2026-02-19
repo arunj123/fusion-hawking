@@ -216,8 +216,16 @@ export class TcpTransport implements ITransport {
     ) { }
 
     async connect(address: string, port: number): Promise<void> {
+        this.logger?.log(LogLevel.INFO, 'Transport', `Connecting to TCP ${address}:${port}...`);
         return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                this.logger?.log(LogLevel.ERROR, 'Transport', `TCP connection timeout to ${address}:${port}`);
+                if (this.socket) this.socket.destroy();
+                reject(new Error(`TCP connection timeout to ${address}:${port}`));
+            }, 5000);
+
             this.socket = net.connect({ host: address, port }, () => {
+                clearTimeout(timeout);
                 this._localAddress = this.socket!.localAddress || '';
                 this._localPort = this.socket!.localPort || 0;
                 this.logger?.log(LogLevel.INFO, 'Transport', `Connected to TCP ${address}:${port}`);
@@ -226,11 +234,13 @@ export class TcpTransport implements ITransport {
 
             this.socket.on('data', (data) => this._handleData(data, { address, port, family: address.includes(':') ? 'IPv6' : 'IPv4', protocol: 'tcp' }));
             this.socket.on('error', (err) => {
-                this.logger?.log(LogLevel.ERROR, 'Transport', `TCP error: ${err.message}`);
+                clearTimeout(timeout);
+                this.logger?.log(LogLevel.ERROR, 'Transport', `TCP error to ${address}:${port}: ${err.message}`);
                 reject(err);
             });
             this.socket.on('close', () => {
-                this.logger?.log(LogLevel.INFO, 'Transport', `TCP connection closed`);
+                clearTimeout(timeout);
+                this.logger?.log(LogLevel.INFO, 'Transport', `TCP connection closed to ${address}:${port}`);
             });
         });
     }

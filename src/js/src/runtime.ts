@@ -395,14 +395,22 @@ export class SomeIpRuntime {
         targetAddress: string,
         targetPort: number,
         timeoutMs: number = 8000,
+        alias?: string
     ): Promise<SomeIpResponse> {
         const sessionId = this.sessionMgr.nextSessionId(serviceId, methodId);
         const packet = buildPacket(serviceId, methodId, sessionId, MessageType.REQUEST, payload);
 
         let ifAlias = "";
         if (this.config) {
-            for (const client of Object.values(this.config.required)) {
-                if (client.serviceId === serviceId) ifAlias = client.interfaces?.[0] || "";
+            if (alias && this.config.required[alias]) {
+                ifAlias = this.config.required[alias].interfaces?.[0] || "";
+            } else {
+                for (const client of Object.values(this.config.required)) {
+                    if (client.serviceId === serviceId) {
+                        ifAlias = client.interfaces?.[0] || "";
+                        break;
+                    }
+                }
             }
         }
         const ctx = this.interfaces.get(ifAlias) || this.interfaces.values().next().value;
@@ -412,8 +420,12 @@ export class SomeIpRuntime {
 
         let protocol = 'udp';
         if (this.config) {
-            const req = Object.values(this.config.required).find(r => r.serviceId === serviceId);
-            if (req) protocol = req.protocol?.toLowerCase() || 'udp';
+            if (alias && this.config.required[alias]) {
+                protocol = this.config.required[alias].protocol?.toLowerCase() || 'udp';
+            } else {
+                const req = Object.values(this.config.required).find(r => r.serviceId === serviceId);
+                if (req) protocol = req.protocol?.toLowerCase() || 'udp';
+            }
         }
 
         if (protocol === 'tcp') {
@@ -427,23 +439,25 @@ export class SomeIpRuntime {
             }
 
             return new Promise<SomeIpResponse>((resolve, reject) => {
+                const requestKey = `${serviceId}:${methodId}:${sessionId}`;
                 const timer = setTimeout(() => {
-                    this.pendingRequests.delete(String(sessionId));
+                    this.pendingRequests.delete(requestKey);
                     reject(new Error(`TCP Request timeout for session ${sessionId}`));
                 }, timeoutMs);
 
-                this.pendingRequests.set(String(sessionId), { resolve, reject, timer });
+                this.pendingRequests.set(requestKey, { resolve, reject, timer });
                 tcpClient.send(packet, targetAddress, targetPort).catch(reject);
             });
         } else {
             const transport = isV6 ? (ctx.transportV6 || ctx.transport) : ctx.transport;
+            const requestKey = `${serviceId}:${methodId}:${sessionId}`;
             return new Promise<SomeIpResponse>((resolve, reject) => {
                 const timer = setTimeout(() => {
-                    this.pendingRequests.delete(String(sessionId));
+                    this.pendingRequests.delete(requestKey);
                     reject(new Error(`Request timeout for session ${sessionId}`));
                 }, timeoutMs);
 
-                this.pendingRequests.set(String(sessionId), { resolve, reject, timer });
+                this.pendingRequests.set(requestKey, { resolve, reject, timer });
                 transport.send(packet, targetAddress, targetPort).catch(reject);
             });
         }
@@ -458,6 +472,7 @@ export class SomeIpRuntime {
         payload: Buffer,
         targetAddress: string,
         targetPort: number,
+        alias?: string
     ): Promise<void> {
         const sessionId = this.sessionMgr.nextSessionId(serviceId, methodId);
         const packet = buildPacket(serviceId, methodId, sessionId, MessageType.REQUEST_NO_RETURN, payload);
@@ -699,10 +714,11 @@ export class SomeIpRuntime {
     }
 
     private handleResponse(header: SomeIpHeader, payload: Buffer): void {
-        const pending = this.pendingRequests.get(String(header.sessionId));
+        const requestKey = `${header.serviceId}:${header.methodId}:${header.sessionId}`;
+        const pending = this.pendingRequests.get(requestKey);
         if (pending) {
             clearTimeout(pending.timer);
-            this.pendingRequests.delete(String(header.sessionId));
+            this.pendingRequests.delete(requestKey);
             pending.resolve({ returnCode: header.returnCode, payload });
         }
     }
