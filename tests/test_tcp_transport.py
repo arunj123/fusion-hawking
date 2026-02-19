@@ -119,6 +119,9 @@ def test_tcp_transport_cpp_server():
             break
             
     if not server_exe:
+        print(f"ERROR: Could not find tcp_server_test executable. Searched in:")
+        for p in possible_paths:
+            print(f"  - {p}")
         pytest.fail("Could not find tcp_server_test executable. Make sure to build the project first.")
         
     print(f"DEBUG: Starting server: {server_exe} {config_path}")

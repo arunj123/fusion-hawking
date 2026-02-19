@@ -565,7 +565,7 @@ jobs:
       working-directory: src/js
     - name: Install JS Dependencies (ADAS JS)
       run: npm install
-      working-directory: examples/automotive_pubsub/adas_js
+      working-directory: examples/automotive_pubsub/js_adas
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
       run: chmod -R +x build/* target/debug/* || true

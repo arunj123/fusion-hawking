@@ -142,6 +142,7 @@ class AppRunner:
         """
         start_time = time.time()
         regex = re.compile(pattern)
+        desc = f" ({description})" if description else ""
         
         while time.time() - start_time < timeout:
             try:
@@ -161,7 +162,6 @@ class AppRunner:
                                 return line
                         except queue.Empty:
                             break
-                    desc = f" ({description})" if description else ""
                     logger.warning(f"Process {self.name} exited with code {self.proc.returncode} while waiting for '{pattern}'{desc}")
                     break
                 continue
@@ -178,9 +178,12 @@ class AppRunner:
         if recent_lines:
             logger.error(f"{err_msg}. Last {len(recent_lines)} lines of output:")
             for l in recent_lines[-10:]:
-                logger.error(f"  [STDOUT] {l.rstrip()}")
+                logger.error(f"  [{self.name} STDOUT] {l.rstrip()}")
         else:
             logger.error(err_msg)
+
+        if self.proc.poll() is not None:
+             logger.error(f"  [PROCESS STATUS] {self.name} has already exited with code {self.proc.returncode}")
 
         return None
     
