@@ -899,6 +899,7 @@ jobs:
         
         # Copy documentation markdown files
         cp docs/*.md _site/
+        cp docs/requirements.html _site/
         cp README.md _site/
         cp examples/README.md _site/examples.md
         cp examples/automotive_pubsub/README.md _site/automotive_pubsub.md
@@ -991,6 +992,7 @@ jobs:
             <a href="user_guide.html">User Guide</a>
             <a href="IDL.html">IDL</a>
             <a href="design_and_requirements.html">Design</a>
+            <a href="requirements.html">Requirements</a>
             <a href="examples.html">Examples</a>
             <a href="test_matrix.html">Tests</a>
             <a href="reports/index.html">Reports</a>
@@ -1036,6 +1038,7 @@ jobs:
             <a href="user_guide.html">User Guide</a>
             <a href="IDL.html">IDL</a>
             <a href="design_and_requirements.html">Design</a>
+            <a href="requirements.html">Requirements</a>
             <a href="examples.html">Examples</a>
             <a href="test_matrix.html">Tests</a>
             <a href="reports/index.html">Reports</a>
@@ -1072,6 +1075,11 @@ jobs:
           <div class="card">
             <h3>✅ <a href="test_matrix.html">Test Matrix</a></h3>
             <p>Test coverage, cross-language interoperability, and verification status.</p>
+          </div>
+          
+          <div class="card">
+            <h3>📋 <a href="requirements.html">Requirements Traceability</a></h3>
+            <p>Full mapping of SOME/IP and SOME/IP-SD implementation to AUTOSAR standard requirements.</p>
           </div>
           
           <div class="card">

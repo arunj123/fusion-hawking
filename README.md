@@ -11,7 +11,7 @@ A lightweight, dependency-free SOME/IP library implemented in Rust, adhering to 
 - **Concurrency**: ThreadPool for handling concurrent requests.
 - **Cross-Language Support**:
     - **Rust**: Native implementation with fully async-compatible SD machine.
-    - **Python**: generated bindings and runtime with Event support.
+    - **Python**: Generated bindings and runtime with Event support.
     - **C++**: High-performance runtime with modern C++23 support.
     - **JavaScript/TypeScript**: Pure TS implementation running on Node.js (no native bindings required).
 - **IDL Compiler**: Python-based tool (`tools/codegen`) to generate code from simple Python dataclasses. Supports recursive types and synchronous RPC. See [IDL Documentation](docs/IDL.md).
@@ -33,7 +33,7 @@ The `fusion` tool will verify these for you, but you need:
 
 ### 1. Build & Run All Demos (Windows)
 
-The easiest way to see everything in action is the new automation dashboard:
+The easiest way to see everything in action is the automation dashboard:
 
 ```powershell
 .\fusion.bat
@@ -73,9 +73,9 @@ python -m tools.fusion.main --stage test --target js         # Test JS only
 
 ## Architecture
 
-- **`src/`**: Core source code (Rust, Python, C++).
+- **`src/`**: Core source code (Rust, Python, C++, JS).
 - **`tools/fusion/`**: Automation infrastructure (Python).
-- **`examples/`**: Demo applications.
+- **`examples/`**: Demo applications (including Automotive Pub-Sub).
 
 > **Detailed Architecture:** See [Architecture Document](docs/architecture.md) for diagrams covering the interface-centric deployment model, layers, and service discovery.
 
@@ -109,38 +109,38 @@ After a run, artifacts are organized in `logs/latest/`:
     - `coverage/rust/index.html`
     - `coverage/python/index.html`
     - `coverage/cpp/index.html`
-- **Raw Logs**: Categorized into:
-    - `raw_logs/build/` (Compilation logs)
-    - `raw_logs/test/` (Unit test logs)
-    - `raw_logs/demo/` (Integration logs with command headers)
-- **Configs**: `configs/` (Snapshot of generated bindings and build configurations)
+    - `coverage/js/index.html`
+- **Raw Logs**: Categorized into `raw_logs/build/`, `raw_logs/test/`, and `raw_logs/demo/`.
 
-### Manual Run
-You can still run individual steps if preferred, but `fusion.bat` is recommended.
+### CI/CD Validation
+The project includes a robust CI/CD pipeline implemented via GitHub Actions (`.github/workflows/fusion.yml`).
 
-```bash
-# Run only unit tests
-cargo test
-python -m unittest discover tests
-```
+**Key Pipeline Stages:**
+1.  **Codegen**: Generates service bindings for all languages.
+2.  **Multi-Platform Build**: Builds binaries/packages for Ubuntu and Windows (x64 and ARM64).
+3.  **Unit Tests**: Executes test suites for Rust, Python, C++, and JS.
+4.  **Integration Demos**: Runs the "Automotive Pub-Sub" and "Integrated App" demos.
+5.  **Virtual Network (VNet)**: On Linux, performs high-fidelity network testing using namespaces and `setup_vnet.sh`.
+
+**How to verify:**
+- **Trigger**: Every push or PR to `main` triggers a run.
+- **Status**: View badge or Actions tab.
+- **Artifacts**: CI uploads full `logs` and `generated` bindings as artifacts for every run.
 
 ## Integrating with Your Project
 
-Fusion Hawking is designed to be easily integrated into larger projects.
-
 ### 1. Rust
-Add it as a git dependency in your `Cargo.toml`:
+Add as a git dependency in `Cargo.toml`:
 ```toml
 [dependencies]
 fusion-hawking = { git = "https://github.com/arunj123/fusion-hawking.git" }
 ```
 
 ### 2. Python
-You can install the Python package directly from the repo:
+Install directly via pip:
 ```bash
 pip install "git+https://github.com/arunj123/fusion-hawking.git#egg=fusion-hawking&subdirectory=src/python"
 ```
-Or simply add `src/python` to your `PYTHONPATH`.
 
 ### 3. C++
 Use CMake's `FetchContent` or `add_subdirectory`:
@@ -149,8 +149,8 @@ add_subdirectory(path/to/fusion-hawking)
 target_link_libraries(your_app PRIVATE fusion_hawking_cpp)
 ```
 
-### 4. JavaScript/TypeScript
-Import directly from the source or build the package:
+### 4. JavaScript/TypeScript (Node.js)
+The JS/TS runtime is pure TypeScript. Install dependencies and build:
 ```bash
 cd src/js && npm install && npm run build
 ```
@@ -158,15 +158,29 @@ Then import in your project:
 ```typescript
 import { SomeIpRuntime } from 'fusion-hawking/runtime';
 ```
+Demos are available in `examples/integrated_apps/js_app` and `examples/automotive_pubsub/js_adas`.
 
-### 4. Custom Code Generation (IDL)
-To generate your own service bindings:
-1. Define your interface in a Python file using dataclasses (see `examples/integrated_apps/interface.py`).
+### 5. Custom Code Generation (IDL)
+1. Define your interface in a Python file using dataclasses.
 2. Run the generator:
 ```bash
-python -m tools.codegen.main your_interface.py
+python -m tools.codegen.main your_interface.py --all
 ```
-Bindings will be generated for all three languages.
+This generates bindings for Rust, Python, C++, and TypeScript simultaneously.
+
+## Intended Use & Disclaimer
+
+This project is an independent implementation of the SOME/IP protocol and is intended primarily for **hobbyist experimentation, educational purposes, and non-critical test environments**.
+
+> [!IMPORTANT]
+> **AUTOSAR** is a registered trademark of the AUTOSAR partner companies. SOME/IP and SOME/IP-SD are open standards defined by AUTOSAR. This project is **not** affiliated with, endorsed by, or sponsored by AUTOSAR.
+
+### Usage Disclaimer
+- **No Warranty**: This software is provided "as is," without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and non-infringement.
+- **Liability**: In no event shall the authors or copyright holders be liable for any claim, damages, or other liability, whether in an action of contract, tort, or otherwise, arising from, out of, or in connection with the software or the use or other dealings in the software.
+- **User Responsibility**: Any individual or organization choosing to use this implementation does so at their own risk. It is the user's responsibility to ensure that its use complies with any relevant safety standards or legal requirements in their specific application context.
+
+This implementation is **not** certified for use in production automotive systems or any safety-critical applications.
 
 ## References
 

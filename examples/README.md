@@ -1,6 +1,4 @@
-# Fusion Hawking Examples
-
-This directory contains examples demonstrating how to use the `fusion-hawking` SOME/IP stack. The examples are categorized into four levels of complexity.
+This directory contains examples demonstrating how to use the `fusion-hawking` SOME/IP stack. The examples are categorized into four levels of complexity and showcase cross-language communication between Rust, Python, C++, and JavaScript/TypeScript.
 
 ## Directory Structure
 
@@ -10,7 +8,8 @@ examples/
 ├── simple_no_sd/       # 2. Minimal Wire-Protocol (No SD)
 │   ├── rust/
 │   ├── python/
-│   └── cpp/
+│   ├── cpp/
+│   └── js/             # Pure TS implementation
 ├── integrated_apps/    # 3. Full Runtime Integration (RPC)
 │   ├── rust_app/
 │   ├── python_app/
@@ -43,6 +42,7 @@ These examples manually construct the **16-byte SOME/IP Header** and send raw UD
 - **Rust**: `rust/server.rs` (Port 40000) & `rust/client.rs`
 - **Python**: `python/server.py` (Port 40001) & `python/client.py`
 - **C++**: `cpp/server.cpp` (Port 40002) & `cpp/client.cpp`
+- **JS/TS**: `js/server.ts` & `js/client.ts`
 
 ![Simple No-SD Sequence](../docs/images/simple_no_sd_sequence.png)
 
@@ -90,11 +90,8 @@ To develop these apps, we first generate bindings from an IDL using the `codegen
 
 **Usage**:
 ```bash
-# Generate Rust Bindings
-cargo run --bin codegen -- --idl interface.json --lang rust --out src/generated
-
-# Generate Python Bindings
-cargo run --bin codegen -- --idl interface.json --lang python --out src/python/generated
+# Generate bindings for ALL supported languages
+python -m tools.codegen.main interface.py --all
 ```
 
 **Architecture**:
@@ -109,7 +106,7 @@ cargo run --bin codegen -- --idl interface.json --lang python --out src/python/g
 ---
 
 ## 4. Automotive Pub-Sub (`automotive_pubsub/`)
-**Purpose**: To demonstrate the **publish-subscribe** pattern using SOME/IP events, inspired by automotive middleware patterns.
+**Purpose**: The primary **cross-language showcase** demonstrating the publish-subscribe pattern with SOME/IP events.
 
 This example shows a realistic automotive data flow:
 - **RadarService** (C++): Publishes radar object detections at 10Hz

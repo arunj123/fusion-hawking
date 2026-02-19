@@ -23,6 +23,7 @@ import logging
 
 logger = logging.getLogger("fusion.main")
 from tools.fusion.diagrams import DiagramManager
+from tools.fusion.docs_updater import update_docs
 
 
 
@@ -271,7 +272,7 @@ def main():
     parser.add_argument("--vnet", action="store_true", help="Force enable virtual network tests (if detected)")
     parser.add_argument("--pass-filter", type=str, choices=["all", "host", "vnet"], default="all", help="Filter for execution passes (CI optimization)")
     parser.add_argument("--stage", type=str, 
-                        choices=["diagrams", "codegen", "build", "test", "coverage", "docs", "demos", "all"],
+                        choices=["diagrams", "codegen", "build", "test", "coverage", "docs", "demos", "update-docs", "all"],
                         default="all", help="Run specific build stage (for CI)")
     args = parser.parse_args()
 
@@ -524,16 +525,47 @@ def main():
 
         # Final Reporting using all_test_results
         
-        # DOCS stage
-        if args.stage == "docs":
-            print("\n[PASS] Documentation generated successfully")
-
         # Finalize
         failures = []
+        passed_steps = []
         for step in all_test_results.get("steps", []):
             if step["status"] == "FAIL": 
                 overall_status = "FAILED"
                 failures.append(step["name"])
+            else:
+                passed_steps.append(step["name"])
+
+        # Record successes in StateManager for documentation updates
+        if args.stage in ["test", "demos", "all"]:
+            # Check for specific demo passes (case-insensitive contains)
+            demo_map = {
+                "Simple UDP": "demos:simple",
+                "Automotive Pub-Sub": "demos:pubsub",
+                "Integrated Apps": "demos:integrated",
+                "someipy Interop": "demos:someipy",
+                "Large Payload": "demos:tp",
+                "VNet Configuration": "demos:usecases"
+            }
+            for label, key in demo_map.items():
+                if any(label in s for s in passed_steps) and not any(label in s for s in failures):
+                    state.mark_complete(key.split(":")[0], key.split(":")[1])
+            
+            # Overall test/demos status
+            if overall_status == "SUCCESS":
+                if args.stage in ["test", "all"]: state.mark_complete("test", "all")
+                if args.stage in ["demos", "all"]: state.mark_complete("demos", "all")
+
+        if args.stage in ["coverage", "all"] and overall_status == "SUCCESS":
+            state.mark_complete("coverage", "all")
+
+        # DOCS stage
+        if args.stage == "docs":
+            print("\n[PASS] Documentation generated successfully")
+
+        # UPDATE-DOCS stage
+        if args.stage in ["update-docs", "all"] and overall_status == "SUCCESS":
+            print("\n=== Updating Documentation Checklist ===")
+            update_docs(root_dir)
         
         # Check explicit component failures in keys
         # (Simplified aggregation: we rely mostly on steps for status)
