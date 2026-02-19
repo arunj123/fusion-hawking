@@ -95,9 +95,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: artifact-core-${{ matrix.os }}
-        path: |
-          target/release/
-          target/debug/
+        path: target/
         retention-days: 1
     - name: Upload State
       if: always()
@@ -210,9 +208,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: artifact-js-${{ matrix.os }}
-        path: |
-          src/js/dist/
-          src/js/package.json
+        path: src/js/
         retention-days: 1
     - name: Upload State
       if: always()
@@ -251,12 +247,12 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-core-${{ matrix.os }}
-        path: target
+        path: target/
     - name: Download Codegen Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: build/generated
+        path: build/generated/
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
       run: chmod -R +x build/* build_linux/* target/release/* target/debug/* || true
@@ -297,17 +293,17 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-core-${{ matrix.os }}
-        path: target
+        path: target/
     - name: Download Codegen Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: build/generated
+        path: build/generated/
     - name: Download C++ Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-cpp-${{ matrix.os }}
-        path: build
+        path: ${{ matrix.os == 'ubuntu-latest' && 'build_linux/' || 'build/' }}
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
       run: chmod -R +x build/* build_linux/* target/release/* target/debug/* || true
@@ -354,12 +350,12 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: build/generated
+        path: build/generated/
     - name: Download C++ Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-cpp-${{ matrix.os }}
-        path: build
+        path: ${{ matrix.os == 'ubuntu-latest' && 'build_linux/' || 'build/' }}
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
       run: chmod -R +x build/* build_linux/* target/release/* target/debug/* || true
@@ -390,19 +386,16 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: '18'
-    - uses: actions/setup-node@v4
-      with:
-        node-version: '18'
     - name: Download Codegen Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: build/generated
+        path: build/generated/
     - name: Download JS Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-js-${{ matrix.os }}
-        path: src/js
+        path: src/js/
     - name: Install JS Dependencies
       run: npm install
       working-directory: src/js
@@ -432,24 +425,21 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: '18'
-    - uses: actions/setup-node@v4
-      with:
-        node-version: '18'
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-core-${{ matrix.os }}
-        path: target
+        path: target/
     - name: Download C++ Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-cpp-${{ matrix.os }}
-        path: build
+        path: ${{ matrix.os == 'ubuntu-latest' && 'build_linux/' || 'build/' }}
     - name: Download JS Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-js-${{ matrix.os }}
-        path: src/js
+        path: src/js/
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
       run: chmod -R +x build/* build_linux/* target/release/* target/debug/* || true
@@ -483,31 +473,26 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: '18'
-    - uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-
     - name: Download Codegen Artifacts
-
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: build/generated
+        path: build/generated/
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-core-${{ matrix.os }}
-        path: target
+        path: target/
     - name: Download C++ Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-cpp-${{ matrix.os }}
-        path: build
+        path: ${{ matrix.os == 'ubuntu-latest' && 'build_linux/' || 'build/' }}
     - name: Download JS Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-js-${{ matrix.os }}
-        path: src/js
+        path: src/js/
     - name: Install JS Dependencies
       run: |
         npm install
@@ -546,41 +531,41 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: '18'
-    - uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-
     - name: Download Codegen Artifacts
-
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: build/generated
+        path: build/generated/
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-core-${{ matrix.os }}
-        path: target
+        path: target/
     - name: Download C++ Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-cpp-${{ matrix.os }}
-        path: build
+        path: ${{ matrix.os == 'ubuntu-latest' && 'build_linux/' || 'build/' }}
     - name: Download JS Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-js-${{ matrix.os }}
-        path: src/js
+        path: src/js/
+    - name: Download Codegen for JS Demo
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-codegen
+        path: examples/automotive_pubsub/js_adas/src/generated/
     - name: Install JS Dependencies (Runtime)
       run: |
         npm install
         npm run build
-      working-directory: src/js
+      working-directory: src/js/
     - name: Install JS Dependencies (ADAS JS)
       run: |
         npm install
         npm run build
-      working-directory: examples/automotive_pubsub/js_adas
+      working-directory: examples/automotive_pubsub/js_adas/
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
       run: chmod -R +x build/* build_linux/* target/release/* target/debug/* || true
@@ -618,32 +603,32 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: build/generated
+        path: build/generated/
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-core-${{ matrix.os }}
-        path: target
+        path: target/
     - name: Download C++ Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-cpp-${{ matrix.os }}
-        path: build
+        path: ${{ matrix.os == 'ubuntu-latest' && 'build_linux/' || 'build/' }}
     - name: Download JS Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-js-${{ matrix.os }}
-        path: src/js
+        path: src/js/
     - name: Install JS Dependencies (Runtime)
       run: |
         npm install
         npm run build
-      working-directory: src/js
+      working-directory: src/js/
     - name: Install JS Dependencies (Demo Client)
       run: |
         npm install
         npm run build
-      working-directory: examples/someipy_demo/js_client
+      working-directory: examples/someipy_demo/js_client/
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
       run: chmod -R +x build/* build_linux/* target/release/* target/debug/* || true
@@ -678,12 +663,12 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: build/generated
+        path: build/generated/
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-core-${{ matrix.os }}
-        path: target
+        path: target/
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
       run: chmod -R +x build/* build_linux/* target/release/* target/debug/* || true
@@ -728,22 +713,22 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: build/generated
+        path: build/generated/
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-core-ubuntu-latest
-        path: target
+        path: target/
     - name: Download C++ Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-cpp-ubuntu-latest
-        path: build_linux
+        path: build_linux/
     - name: Download JS Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-js-ubuntu-latest
-        path: src/js
+        path: src/js/
     - name: Download State
       uses: actions/download-artifact@v4
       with:
@@ -788,17 +773,17 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: build/generated
+        path: build/generated/
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-core-ubuntu-latest
-        path: target
+        path: target/
     - name: Download C++ Artifacts
       uses: actions/download-artifact@v4
       with:
         name: artifact-cpp-ubuntu-latest
-        path: build_linux
+        path: build_linux/
     - name: Restore Permissions (Linux)
       run: chmod -R +x build/* build_linux/* target/release/* target/debug/* || true
     - name: Install Coverage Tools
