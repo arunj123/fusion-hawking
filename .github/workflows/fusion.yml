@@ -271,7 +271,7 @@ jobs:
         path: build/generated
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
-      run: chmod -R +x build/release/* target/release/* target/debug/* || true
+      run: chmod -R +x build/* build_linux/* target/release/* target/debug/* || true
     - name: Install Dependencies
       run: pip install pytest pytest-cov
 
@@ -322,7 +322,7 @@ jobs:
         path: .
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
-      run: chmod -R +x build/* target/release/* target/debug/* || true
+      run: chmod -R +x build/* build_linux/* target/release/* target/debug/* || true
 
     - name: Install Pytest
       run: pip install pytest pytest-cov
@@ -374,7 +374,7 @@ jobs:
         path: .
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
-      run: chmod -R +x build/* || true
+      run: chmod -R +x build/* build_linux/* target/release/* target/debug/* || true
     - name: Install Dependencies
       run: pip install pytest pytest-cov
 
@@ -464,7 +464,7 @@ jobs:
         path: .
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
-      run: chmod -R +x target/release/* target/debug/* build/* || true
+      run: chmod -R +x build/* build_linux/* target/release/* target/debug/* || true
     - name: Install Dependencies
       run: pip install pytest pytest-cov
 
@@ -521,11 +521,13 @@ jobs:
         name: artifact-js-${{ matrix.os }}
         path: .
     - name: Install JS Dependencies
-      run: npm install
+      run: |
+        npm install
+        npm run build
       working-directory: src/js
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
-      run: chmod -R +x build/* target/debug/* || true
+      run: chmod -R +x build/* build_linux/* target/release/* target/debug/* || true
     - name: Install Dependencies
       run: pip install pytest pytest-cov
 
@@ -582,14 +584,18 @@ jobs:
         name: artifact-js-${{ matrix.os }}
         path: .
     - name: Install JS Dependencies (Runtime)
-      run: npm install
+      run: |
+        npm install
+        npm run build
       working-directory: src/js
     - name: Install JS Dependencies (ADAS JS)
-      run: npm install
+      run: |
+        npm install
+        npm run build
       working-directory: examples/automotive_pubsub/js_adas
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
-      run: chmod -R +x build/* target/debug/* || true
+      run: chmod -R +x build/* build_linux/* target/release/* target/debug/* || true
     - name: Install Dependencies
       run: pip install pytest pytest-cov
 
@@ -641,15 +647,18 @@ jobs:
         name: artifact-js-${{ matrix.os }}
         path: .
     - name: Install JS Dependencies (Runtime)
-      run: npm install
+      run: |
+        npm install
+        npm run build
       working-directory: src/js
     - name: Install JS Dependencies (Demo Client)
       run: |
         npm install
+        npm run build
       working-directory: examples/someipy_demo/js_client
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
-      run: chmod -R +x build/* target/debug/* || true
+      run: chmod -R +x build/* build_linux/* target/release/* target/debug/* || true
     - name: Install Dependencies
       run: pip install pytest pytest-cov
     - name: Run someipy Demo
@@ -689,7 +698,7 @@ jobs:
         path: target
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
-      run: chmod -R +x build/* target/debug/* || true
+      run: chmod -R +x build/* build_linux/* target/release/* target/debug/* || true
     - name: Install Dependencies
       run: pip install pytest pytest-cov
     - name: Run Large Payload (TP) Demo
@@ -721,9 +730,12 @@ jobs:
         node-version: '18'
     - name: Install Python dependencies
       run: |
-        python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pytest
+    - name: Install JS Dependencies
+      run: |
+        npm install
+      working-directory: src/js
     - name: Download Codegen Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -751,6 +763,8 @@ jobs:
         path: build/
         merge-multiple: true
       continue-on-error: true
+    - name: Restore Permissions (Linux)
+      run: chmod -R +x build/* build_linux/* target/release/* target/debug/* || true
     - name: Setup Virtual Network
       run: sudo bash tools/fusion/scripts/setup_vnet.sh
     - name: Run VNET Tests and Use-Cases
@@ -797,6 +811,8 @@ jobs:
       with:
         name: artifact-cpp-ubuntu-latest
         path: .
+    - name: Restore Permissions (Linux)
+      run: chmod -R +x build/* build_linux/* target/release/* target/debug/* || true
     - name: Install Coverage Tools
       run: |
         sudo apt-get update && sudo apt-get install -y lcov
@@ -808,7 +824,7 @@ jobs:
       run: |
         python -m tools.fusion.main --stage build --target cpp --with-coverage --no-codegen --no-dashboard --clean
     - name: Restore Permissions
-      run: chmod -R +x build/* target/debug/* || true
+      run: chmod -R +x build/* build_linux/* target/release/* target/debug/* || true
 
     - name: Run Coverage
       run: python -m tools.fusion.main --stage coverage --base-port 400 --no-dashboard

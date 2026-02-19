@@ -231,6 +231,16 @@ class AppRunner:
             
         self.proc = None
 
+    def get_output(self):
+        """Returns the current log output as a string."""
+        if os.path.exists(self.log_path):
+            try:
+                with open(self.log_path, "r", encoding='utf-8', errors='ignore') as f:
+                    return f.read()
+            except Exception as e:
+                return f"[Error reading log {self.log_path}: {e}]"
+        return ""
+
     def is_running(self):
         return self.proc is not None and self.proc.poll() is None
 
