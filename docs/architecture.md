@@ -10,7 +10,7 @@ This document provides a comprehensive view of the Fusion Hawking SOME/IP stack 
 
 ## High-Level System Overview
 
-Fusion Hawking is a **lightweight, dependency-free SOME/IP library** implemented primarily in Rust, with native bindings for Python and C++. The stack adheres to the AUTOSAR SOME/IP and SOME/IP-SD protocol specifications.
+Fusion Hawking is a **lightweight, dependency-free SOME/IP library** implemented primarily in Rust, with high-performance runtimes for Python and C++, and a pure-TypeScript implementation for JavaScript/TypeScript. The stack adheres to the AUTOSAR SOME/IP and SOME/IP-SD protocol specifications.
 
 ![System Overview](images/system_overview.png)
 

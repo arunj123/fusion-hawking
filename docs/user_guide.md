@@ -47,7 +47,11 @@ class MathService:
 ### 3. Generate Bindings
 
 ```bash
-python -m tools.codegen.main examples/integrated_apps/interface.py
+# Generate for a specific language
+python -m tools.codegen.main examples/integrated_apps/interface.py --lang rust
+
+# Generate for ALL supported languages (Rust, Python, C++, TS)
+python -m tools.codegen.main examples/integrated_apps/interface.py --all
 ```
 
 Generated files appear in `build/generated/{rust,python,cpp,js}/`.
@@ -56,7 +60,7 @@ Generated files appear in `build/generated/{rust,python,cpp,js}/`.
 
 ## Configuration
 
-Applications load a shared `config.json` that defines the network topology:
+Applications load a shared `config.json` that defines the network topology. The same configuration is used across all language runtimes.
 
 ```json
 {
@@ -100,7 +104,7 @@ Applications load a shared `config.json` that defines the network topology:
 
 ## Runtime API
 
-All three language runtimes share the same semantics:
+All runtimes share the same semantics and service-oriented lifecycle.
 
 ### Rust
 
@@ -120,6 +124,8 @@ rt.start()
 
 ### C++ (C++23)
 
+High-performance implementation with minimal overhead.
+
 ```cpp
 SomeIpRuntime rt("config.json", "my_instance");
 rt.offer_service("math-service", &my_service_impl);
@@ -128,21 +134,56 @@ rt.run();
 
 ### JavaScript/TypeScript (Node.js 18+)
 
+Pure TypeScript implementation. No native addons required.
+
 ```typescript
 import { SomeIpRuntime } from 'fusion-hawking';
 
 const rt = new SomeIpRuntime();
 await rt.loadConfigFile('config.json', 'js_app_instance');
 
-// Register handlers for methods
+// Method Handler
 rt.registerHandler(0x0001, (header, payload) => {
-    return Buffer.from("Response from JS");
+    const result = handleRequest(payload);
+    return Buffer.from(result);
+});
+
+// Event Subscription
+rt.subscribeEvent(0x1001, 0x01, (payload) => {
+    console.log("Received event notification:", payload);
 });
 
 await rt.start();
 ```
 
-> **Architecture:** See the [Cross-Language Runtime diagram](architecture.md#cross-language-runtime-architecture) for internals.
+---
+
+## CI/CD Validation & Verification
+
+### The Automation Pipeline
+Fusion Hawking uses a multi-stage CI pipeline via GitHub Actions. You can replicate this pipeline locally using the `fusion` tool.
+
+| Stage | Command | Purpose |
+|-------|---------|---------|
+| **Codegen** | `python -m tools.fusion.main --stage codegen` | Validates IDLs and generates all bindings |
+| **Build** | `python -m tools.fusion.main --stage build` | Compiles Rust, C++, and TS on the current host |
+| **Test** | `python -m tools.fusion.main --stage test` | Runs unit tests for all runtimes |
+| **Demos** | `python -m tools.fusion.main --stage demos` | Executes cross-language integration scenarios |
+| **Coverage**| `python -m tools.fusion.main --stage coverage` | Generates aggregated coverage reports |
+
+### Virtual Network (VNet) Testing
+On Linux (including WSL2), the `fusion` tool can perform advanced network simulation using network namespaces:
+
+```bash
+# Setup virtual interfaces and bridges
+sudo bash tools/fusion/scripts/setup_vnet.sh
+
+# Run tests within namespaces
+sudo -E python3 -m tools.fusion.main --stage test --pass-filter vnet
+
+# Teardown
+sudo bash tools/fusion/scripts/teardown_vnet.sh
+```
 
 ---
 
@@ -157,18 +198,6 @@ All runtimes use a pluggable logger interface for DLT compatibility:
 | C++ | `ILogger` abstract class | `ConsoleLogger` |
 | JS/TS | `ILogger` interface | `ConsoleLogger` |
 
-Example (Python):
-
-```python
-from fusion_hawking.logger import ILogger, LogLevel
-
-class MyLogger(ILogger):
-    def log(self, level: LogLevel, component: str, msg: str):
-        print(f"[{level.name}] {component}: {msg}")
-
-rt = SomeIpRuntime("config.json", "my_instance", logger=MyLogger())
-```
-
 ---
 
 ## Running Examples
@@ -177,41 +206,11 @@ The `examples/` directory contains four categories:
 
 | Directory | Purpose | Docs |
 |-----------|---------|------|
+| `sd_demos/` | Service Discovery isolation | [Examples README](../examples/README.md#1-raw-service-discovery) |
 | `simple_no_sd/` | Raw wire protocol (no Service Discovery) | [Examples README](../examples/README.md#2-simple-no-sd) |
 | `integrated_apps/` | Full runtime with RPC | [Examples README](../examples/README.md#3-integrated-apps) |
 | `automotive_pubsub/` | Pub/Sub event pattern | [Examples README](../examples/README.md#4-automotive-pub-sub) |
-| `sd_demos/` | Service Discovery isolation | [Examples README](../examples/README.md#1-raw-service-discovery) |
-
----
-
-## Testing
-
-### Automated Testing
-
-```powershell
-.\fusion.bat   # Runs everything with live dashboard
-```
-
-### Manual Testing
-
-```bash
-# Rust only
-cargo test
-
-# Python only  
-pytest tests/
-
-# C++ only
-cmake --build build --config Release
-.\build\Release\cpp_test.exe
-
-# JS/TS only
-cd src/js
-npm install
-npm test
-```
-
-> **Coverage Matrix:** See [Test Matrix](test_matrix.md) for detailed coverage by component.
+| `someipy_demo/` | Interop with 3rd party stacks | [Examples README](../examples/README.md#5-external-interop) |
 
 ---
 

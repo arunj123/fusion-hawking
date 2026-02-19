@@ -31,6 +31,7 @@ This document tracks test coverage and cross-language interoperability status ag
 | SOME/IP Serialization | Rust | Python | ✅ |
 | SOME/IP Serialization | Python | Rust | ✅ |
 | SOME/IP Serialization | C++ | Rust | ✅ |
+| SOME/IP Serialization | JS/TS | Python | ✅ |
 | Service Discovery | All | All | ✅ |
 | Request/Response RPC | Rust | Python | ✅ |
 | Request/Response RPC | Python | C++ | ✅ |
@@ -38,9 +39,11 @@ This document tracks test coverage and cross-language interoperability status ag
 | Request/Response RPC | C++ | JS/TS | ✅ |
 | Event Subscription | Rust | Python | ✅ |
 | Event Subscription | JS/TS | Rust | ✅ |
+| Event Subscription | C++ | JS/TS | ✅ |
 | **External Interop** | | | |
 | someipy (Python) | Fusion Python | someipyd | ✅ |
 | someipy (Python) | Fusion C++ | someipyd | ✅ |
+| someipy (Python) | Fusion JS/TS | someipyd | ✅ |
 
 
 > **Data Flow Diagram:** See [Architecture - Request/Response](architecture.md#requestresponse-data-flow)
@@ -120,8 +123,8 @@ After a test run, coverage reports are available in `logs/latest/coverage/`:
 
 ## Verification Checklist
 
-- [ ] All unit tests pass (`cargo test`, `pytest`)
-- [ ] Cross-language RPC verified (Rust ↔ Python ↔ C++)
-- [ ] Service Discovery works on multicast `224.0.0.1:30490`
-- [ ] Events delivered to all subscribers
-- [ ] Coverage reports generated for all languages
+- [x] All unit tests pass (`cargo test`, `pytest`, `npm test`)
+- [ ] Cross-language RPC verified (Rust ↔ Python ↔ C++ ↔ JS/TS)
+- [x] Service Discovery works on multicast `224.0.0.1:30490`
+- [ ] Events delivered to all subscribers (Automotive Pub-Sub Demo)
+- [x] Coverage reports generated for all languages (including JS/TS)
