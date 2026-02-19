@@ -2,6 +2,7 @@ import os
 import sys
 import tempfile
 import shutil
+import subprocess
 from .execution import AppRunner
 from .config_gen import ConfigGenerator
 
@@ -42,14 +43,23 @@ class IntegrationTestContext:
         """Generates a temporary JS script and runs it using node."""
         path = os.path.join(js_app_dir, f"tmp_{instance_name}_{self.name}.mjs")
         
-        # Ensure manual bindings are present (either pre-built or built now)
+        # Ensure manual bindings and dependencies are present
         dist_dir = os.path.join(js_app_dir, "dist")
-        if not os.path.exists(dist_dir) or not os.listdir(dist_dir):
-             print(f"[info] JS dist missing in {js_app_dir}. Building...")
-             os.makedirs(js_app_dir, exist_ok=True)
+        node_modules = os.path.join(js_app_dir, "node_modules")
+        
+        needs_install = not os.path.exists(node_modules)
+        needs_build = not os.path.exists(dist_dir) or not os.listdir(dist_dir)
+        
+        if needs_install or needs_build:
              npm = "npm.cmd" if sys.platform == "win32" else "npm"
-             subprocess.run([npm, "install"], cwd=js_app_dir, capture_output=True)
-             subprocess.run([npm, "run", "build"], cwd=js_app_dir, capture_output=True)
+             if needs_install:
+                 print(f"[info] JS node_modules missing in {js_app_dir}. Running npm install...")
+                 subprocess.run([npm, "install"], cwd=js_app_dir, capture_output=True)
+             
+             if needs_build:
+                 print(f"[info] JS dist missing in {js_app_dir}. Building...")
+                 os.makedirs(js_app_dir, exist_ok=True)
+                 subprocess.run([npm, "run", "build"], cwd=js_app_dir, capture_output=True)
 
         wrapper = f"""
 import {{ SomeIpRuntime }} from 'fusion-hawking';

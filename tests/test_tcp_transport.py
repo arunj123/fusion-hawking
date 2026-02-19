@@ -102,6 +102,7 @@ def test_tcp_transport_cpp_server():
         os.path.abspath(os.path.join(PROJECT_ROOT, "build/Debug/tcp_server_test.exe")),
         os.path.abspath(os.path.join(PROJECT_ROOT, "build/tcp_server_test.exe")),
         os.path.abspath(os.path.join(PROJECT_ROOT, "build/tcp_server_test")),
+        os.path.abspath(os.path.join(PROJECT_ROOT, "tcp_server_test")),
     ]
     
     import platform

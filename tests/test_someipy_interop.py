@@ -106,4 +106,8 @@ def test_js_client_interop(ctx):
 
     runner = ctx.get_runner("js_client")
     if runner:
-        assert runner.wait_for_output("Got Response:", timeout=20)
+        res = runner.wait_for_output("Got Response:", timeout=20)
+        if res is None:
+            print(f"ERROR: JS Client failed to get response. Logs follow:")
+            print(runner.get_output())
+        assert res

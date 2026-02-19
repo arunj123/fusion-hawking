@@ -256,6 +256,9 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.10'
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '18'
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -299,6 +302,9 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.10'
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '18'
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -313,7 +319,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-cpp-${{ matrix.os }}
-        path: build
+        path: .
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
       run: chmod -R +x build/* target/release/* target/debug/* || true
@@ -353,6 +359,9 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.10'
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '18'
     - name: Download Codegen Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -362,7 +371,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-cpp-${{ matrix.os }}
-        path: build
+        path: .
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
       run: chmod -R +x build/* || true
@@ -390,6 +399,9 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.10'
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '18'
     - uses: actions/setup-node@v4
       with:
         node-version: '18'
@@ -432,6 +444,9 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: '18'
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '18'
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -441,7 +456,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-cpp-${{ matrix.os }}
-        path: build
+        path: .
     - name: Download JS Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -480,6 +495,9 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: '18'
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '18'
 
     - name: Download Codegen Artifacts
 
@@ -496,7 +514,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-cpp-${{ matrix.os }}
-        path: build
+        path: .
     - name: Download JS Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -538,6 +556,9 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: '18'
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '18'
 
     - name: Download Codegen Artifacts
 
@@ -554,7 +575,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-cpp-${{ matrix.os }}
-        path: build
+        path: .
     - name: Download JS Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -613,7 +634,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-cpp-${{ matrix.os }}
-        path: build
+        path: .
     - name: Download JS Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -653,6 +674,9 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.10'
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '18'
     - name: Download Codegen Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -692,6 +716,9 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '18'
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
@@ -711,7 +738,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-cpp-ubuntu-latest
-        path: build
+        path: .
     - name: Download JS Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -752,6 +779,9 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.10'
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '18'
     - name: Download Codegen Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -766,7 +796,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-cpp-ubuntu-latest
-        path: build
+        path: .
     - name: Install Coverage Tools
       run: |
         sudo apt-get update && sudo apt-get install -y lcov
