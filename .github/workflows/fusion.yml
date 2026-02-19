@@ -61,7 +61,7 @@ jobs:
     needs: codegen
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, ubuntu-24.04-arm, windows-11-arm]
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
@@ -126,7 +126,7 @@ jobs:
     needs: codegen
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, ubuntu-24.04-arm, windows-11-arm]
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
@@ -187,7 +187,7 @@ jobs:
     needs: codegen
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, ubuntu-24.04-arm, windows-11-arm]
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
@@ -249,7 +249,7 @@ jobs:
     needs: build-core
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, ubuntu-24.04-arm, windows-11-arm]
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
@@ -294,7 +294,7 @@ jobs:
     needs: [build-core, build-cpp, build-js]
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, ubuntu-24.04-arm, windows-11-arm]
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
@@ -365,7 +365,7 @@ jobs:
     needs: [codegen, build-cpp]
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, ubuntu-24.04-arm, windows-11-arm]
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
@@ -404,7 +404,7 @@ jobs:
     needs: [codegen, build-js]
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, ubuntu-24.04-arm, windows-11-arm]
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
@@ -447,7 +447,7 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, ubuntu-24.04-arm, windows-11-arm]
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
@@ -495,7 +495,7 @@ jobs:
     needs: [codegen, build-core, build-cpp, build-js]
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, ubuntu-24.04-arm, windows-11-arm]
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
@@ -557,7 +557,7 @@ jobs:
     needs: [codegen, build-core, build-cpp, build-js]
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, ubuntu-24.04-arm, windows-11-arm]
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
@@ -625,7 +625,7 @@ jobs:
     needs: [codegen, build-core, build-cpp, build-js]
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, ubuntu-24.04-arm, windows-11-arm]
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
@@ -689,7 +689,7 @@ jobs:
     needs: [codegen, build-core]
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, ubuntu-24.04-arm, windows-11-arm]
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
@@ -732,7 +732,10 @@ jobs:
   # ============================================
   vnet-test:
     needs: [codegen, build-core, build-cpp, build-js]
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
       with:
@@ -763,17 +766,17 @@ jobs:
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
-        name: artifact-core-ubuntu-latest
+        name: artifact-core-${{ matrix.os }}
         path: target
     - name: Download C++ Artifacts
       uses: actions/download-artifact@v4
       with:
-        name: artifact-cpp-ubuntu-latest
+        name: artifact-cpp-${{ matrix.os }}
         path: build
     - name: Download JS Artifacts
       uses: actions/download-artifact@v4
       with:
-        name: artifact-js-ubuntu-latest
+        name: artifact-js-${{ matrix.os }}
         path: .
     - name: Download State
       uses: actions/download-artifact@v4
