@@ -164,7 +164,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: artifact-cpp-${{ matrix.os }}
-        path: ${{ matrix.os == 'ubuntu-latest' && 'build_linux' || 'build' }}
+        path: ${{ runner.os == 'Linux' && 'build_linux' || 'build' }}
         retention-days: 1
     - name: Upload State
       if: always()
@@ -257,7 +257,7 @@ jobs:
         submodules: recursive
     - uses: actions/setup-python@v5
       with:
-        python-version: '3.10'
+        python-version: '3.12'
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -302,7 +302,7 @@ jobs:
         submodules: recursive
     - uses: actions/setup-python@v5
       with:
-        python-version: '3.10'
+        python-version: '3.12'
     - uses: actions/setup-node@v4
       with:
         node-version: '20'
@@ -373,7 +373,7 @@ jobs:
         submodules: recursive
     - uses: actions/setup-python@v5
       with:
-        python-version: '3.10'
+        python-version: '3.12'
     - name: Download Codegen Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -412,7 +412,7 @@ jobs:
         submodules: recursive
     - uses: actions/setup-python@v5
       with:
-        python-version: '3.10'
+        python-version: '3.12'
     - uses: actions/setup-node@v4
       with:
         node-version: '20'
@@ -455,7 +455,7 @@ jobs:
         submodules: recursive
     - uses: actions/setup-python@v5
       with:
-        python-version: '3.10'
+        python-version: '3.12'
     - uses: actions/setup-node@v4
       with:
         node-version: '20'
@@ -468,7 +468,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-cpp-${{ matrix.os }}
-        path: ${{ matrix.os == 'ubuntu-latest' && 'build_linux' || 'build' }}
+        path: ${{ runner.os == 'Linux' && 'build_linux' || 'build' }}
     - name: Download JS Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -503,7 +503,7 @@ jobs:
         submodules: recursive
     - uses: actions/setup-python@v5
       with:
-        python-version: '3.10'
+        python-version: '3.12'
     - uses: actions/setup-node@v4
       with:
         node-version: '20'
@@ -521,7 +521,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-cpp-${{ matrix.os }}
-        path: ${{ matrix.os == 'ubuntu-latest' && 'build_linux' || 'build' }}
+        path: ${{ runner.os == 'Linux' && 'build_linux' || 'build' }}
     - name: Download JS Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -565,7 +565,7 @@ jobs:
         submodules: recursive
     - uses: actions/setup-python@v5
       with:
-        python-version: '3.10'
+        python-version: '3.12'
     - uses: actions/setup-node@v4
       with:
         node-version: '20'
@@ -583,7 +583,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-cpp-${{ matrix.os }}
-        path: ${{ matrix.os == 'ubuntu-latest' && 'build_linux' || 'build' }}
+        path: ${{ runner.os == 'Linux' && 'build_linux' || 'build' }}
     - name: Download JS Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -633,7 +633,7 @@ jobs:
         submodules: recursive
     - uses: actions/setup-python@v5
       with:
-        python-version: '3.10'
+        python-version: '3.12'
     - uses: actions/setup-node@v4
       with:
         node-version: '20'
@@ -651,7 +651,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-cpp-${{ matrix.os }}
-        path: ${{ matrix.os == 'ubuntu-latest' && 'build_linux' || 'build' }}
+        path: ${{ runner.os == 'Linux' && 'build_linux' || 'build' }}
     - name: Download JS Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -697,7 +697,7 @@ jobs:
         submodules: recursive
     - uses: actions/setup-python@v5
       with:
-        python-version: '3.10'
+        python-version: '3.12'
     - uses: actions/setup-node@v4
       with:
         node-version: '20'
@@ -803,7 +803,7 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: logs-vnet-test
+        name: logs-vnet-test-${{ matrix.os }}
         path: |
           logs
           build/generated
@@ -818,7 +818,7 @@ jobs:
         submodules: recursive
     - uses: actions/setup-python@v5
       with:
-        python-version: '3.10'
+        python-version: '3.12'
     - uses: actions/setup-node@v4
       with:
         node-version: '20'
@@ -886,7 +886,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.10'
+        python-version: '3.12'
         
     - name: Install dependencies
       run: pip install plantuml markdown

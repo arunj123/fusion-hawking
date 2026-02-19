@@ -122,6 +122,7 @@ SCHEMA = {
                                             "type": "array",
                                             "items": {"type": "string"}
                                         },
+                                        "protocol": {"type": "string", "enum": ["udp", "tcp"]},
                                         "preferred_interface": {"type": "string"} # Deprecated but allow for now? No, stick to design.
                                     },
                                     "additionalProperties": False
