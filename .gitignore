@@ -49,6 +49,8 @@ htmlcov/
 # Reference documents
 AUTOSAR_PRS_SOMEIPProtocol.pdf
 AUTOSAR_PRS_SOMEIPServiceDiscoveryProtocol.pdf
+AUTOSAR_FO_PRS_SOMEIPProtocol.pdf
+AUTOSAR_FO_PRS_SOMEIPServiceDiscoveryProtocol.pdf
 
 # JS/TS
 **/dist/

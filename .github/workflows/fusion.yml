@@ -212,7 +212,11 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: artifact-js-${{ matrix.os }}
-        path: src/js
+        path: |
+          src/js
+          examples/**/js*
+          examples/integrated_apps/js_app
+          examples/automotive_pubsub/js_adas
         retention-days: 1
     - name: Upload State
       if: always()
@@ -277,7 +281,7 @@ jobs:
         path: logs
 
   unit-test-python:
-    needs: [build-core, build-cpp]
+    needs: [build-core, build-cpp, build-js]
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
@@ -287,6 +291,9 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.10'
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '18'
     - name: Download Core Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -302,12 +309,24 @@ jobs:
       with:
         name: artifact-cpp-${{ matrix.os }}
         path: build
+    - name: Download JS Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: artifact-js-${{ matrix.os }}
+        path: .
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
       run: chmod -R +x build/* build_linux/* target/release/* target/debug/* || true
 
-    - name: Install Pytest
-      run: pip install pytest pytest-cov
+    - name: Install Dependencies
+      run: |
+        pip install pytest pytest-cov
+        npm install
+      working-directory: src/js
+    - name: Install JS App Dependencies
+      run: |
+        npm install
+      working-directory: examples/integrated_apps/js_app
     - name: Download State
       uses: actions/download-artifact@v4
       with:
@@ -317,7 +336,7 @@ jobs:
       continue-on-error: true
     - name: Run Python Unit Tests
       env:
-        PYTHONPATH: src/python:build:build/generated/integrated_apps/python:build/generated/automotive_pubsub/python
+        PYTHONPATH: src/python:build:build/generated/integrated_apps/python:build/generated/automotive_pubsub/python:third_party/someipy/src
         FUSION_LOG_DIR: logs/unit_python
       # Note: No --clean here
       run: |
@@ -487,12 +506,16 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-js-${{ matrix.os }}
-        path: src/js
+        path: .
     - name: Install JS Dependencies
       run: |
         npm install
         npm run build || true
       working-directory: src/js
+    - name: Install JS App Dependencies
+      run: |
+        npm install
+      working-directory: examples/integrated_apps/js_app
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
       run: chmod -R +x build/* build_linux/* target/release/* target/debug/* || true
@@ -545,12 +568,12 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-js-${{ matrix.os }}
-        path: src/js
+        path: .
     - name: Download Codegen for JS Demo
       uses: actions/download-artifact@v4
       with:
         name: artifact-codegen
-        path: examples/automotive_pubsub/js_adas/src/generated/
+        path: examples/automotive_pubsub/js_adas/src/generated
     - name: Install JS Dependencies (Runtime)
       run: |
         npm install
@@ -613,7 +636,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-js-${{ matrix.os }}
-        path: src/js
+        path: .
     - name: Install JS Dependencies (Runtime)
       run: |
         npm install
@@ -630,6 +653,8 @@ jobs:
     - name: Install Dependencies
       run: pip install pytest pytest-cov
     - name: Run someipy Demo
+      env:
+        PYTHONPATH: src/python:build:build/generated/integrated_apps/python:build/generated/automotive_pubsub/python:third_party/someipy/src
       run: python -m tools.fusion.main --stage demos --demo someipy --no-dashboard
     - name: Upload Logs and Configs
       if: always()
@@ -704,6 +729,10 @@ jobs:
       run: |
         npm install
       working-directory: src/js
+    - name: Install JS App Dependencies
+      run: |
+        npm install
+      working-directory: examples/integrated_apps/js_app
     - name: Download Codegen Artifacts
       uses: actions/download-artifact@v4
       with:
@@ -723,7 +752,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: artifact-js-ubuntu-latest
-        path: src/js
+        path: .
     - name: Download State
       uses: actions/download-artifact@v4
       with:
@@ -737,6 +766,8 @@ jobs:
       run: sudo bash tools/fusion/scripts/setup_vnet.sh
     - name: Run VNET Tests and Use-Cases
       # We use --pass-filter vnet to avoid re-running host tests
+      env:
+        PYTHONPATH: src/python:build:build/generated/integrated_apps/python:build/generated/automotive_pubsub/python:third_party/someipy/src
       run: |
         sudo -E $(which python) -m tools.fusion.main --stage test --target python --pass-filter vnet --base-port auto --no-dashboard
         sudo -E $(which python) -m tools.fusion.main --stage demos --demo usecases --pass-filter vnet --base-port auto --no-dashboard

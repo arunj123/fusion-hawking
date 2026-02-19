@@ -87,15 +87,21 @@ def ctx():
             if not os.path.exists(js_bin):
                  # Fallback for local development, but in CI we expect pre-built
                  npm_bin = "npm.cmd" if os.name == 'nt' else "npm"
-                 print(f"[WARN] JS binary not found at {js_bin}. Attempting runtime build...")
-                 subprocess.run([npm_bin, "install"], cwd=js_app_dir, capture_output=True)
-                 subprocess.run([npm_bin, "run", "build"], cwd=js_app_dir, capture_output=True)
+                 print(f"[WARN] JS binary not found at {js_bin}. Attempting runtime build in {js_app_dir}...")
+                 res_inst = subprocess.run([npm_bin, "install"], cwd=js_app_dir, capture_output=True, text=True)
+                 if res_inst.returncode != 0:
+                     print(f"[ERROR] npm install failed:\n{res_inst.stdout}\n{res_inst.stderr}")
+                 
+                 res_build = subprocess.run([npm_bin, "run", "build"], cwd=js_app_dir, capture_output=True, text=True)
+                 if res_build.returncode != 0:
+                     print(f"[ERROR] npm run build failed:\n{res_build.stdout}\n{res_build.stderr}")
             
             if os.path.exists(js_bin):
+                print(f"[INFO] Starting JS runner: node dist/index.js {py_config}")
                 c.add_runner("js", ["node", "dist/index.js", py_config], cwd=js_app_dir, ns=ns_python).start()
             else:
                 # In CI, if target is not 'js' or 'all', it's okay to skip
-                print(f"[WARN] JS App Demo binary missing at {js_bin}. Skipping runner.")
+                print(f"[ERROR] JS App Demo binary missing at {js_bin} even after build attempt.")
                 # Ensure we don't have a None runner when we expect one? 
                 # Actually, the test checks for None.
 
