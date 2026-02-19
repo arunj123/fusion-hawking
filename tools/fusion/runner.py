@@ -98,6 +98,7 @@ class Tester:
             vnet = self.env_caps.get('vnet', {})
             caps['has_netns'] = vnet.get('available', False)
             caps['has_veth'] = vnet.get('available', False)
+            caps['has_vnet'] = vnet.get('available', False)
         else:
             # Legacy flat format (detect_environment)
             caps['has_ipv4'] = self.env_caps.get('has_ipv4', False)
@@ -105,6 +106,7 @@ class Tester:
             caps['has_multicast'] = self.env_caps.get('has_multicast', False)
             caps['has_netns'] = self.env_caps.get('has_netns', False)
             caps['has_veth'] = self.env_caps.get('has_veth', False)
+            caps['has_vnet'] = self.env_caps.get('has_vnet', False)
         
         return caps
 

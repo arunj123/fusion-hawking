@@ -160,6 +160,7 @@ def detect_environment():
         'has_multicast': env.supports_multicast,
         'has_ipv4': env.has_ipv4,
         'has_ipv6': env.has_ipv6,
+        'has_vnet': env.has_vnet,
         'has_netns': env.has_vnet,
         'has_veth': env.has_vnet,
         'interfaces': list(env.interfaces.keys()),

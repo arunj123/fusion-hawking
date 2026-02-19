@@ -193,10 +193,19 @@ for i in "${!ECUS[@]}"; do
     NS=${ECUS[$i]}
     IDX=$((i + 1))
     echo -n "  $NS (${SUBNET6}::${IDX}): "
-    if ip netns exec "$NS" ping -6 -c 1 -W 2 ${SUBNET6}::254 > /dev/null 2>&1; then
-        echo "OK"
-    else
-        echo "FAIL (IPv6 may need a moment to settle)"
+    
+    # Retry loop because IPv6 DAD (Duplicate Address Detection) might take a moment
+    SUCCESS=0
+    for retry in {1..5}; do
+        if ip netns exec "$NS" ping -6 -c 1 -W 1 ${SUBNET6}::254 > /dev/null 2>&1; then
+            echo "OK"
+            SUCCESS=1
+            break
+        fi
+        sleep 1
+    done
+    if [ $SUCCESS -eq 0 ]; then
+        echo "FAIL (IPv6 failed to settle after 5 seconds)"
     fi
 done
 
