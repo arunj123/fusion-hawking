@@ -212,13 +212,6 @@ jobs:
         name: state-codegen
         path: build/
       continue-on-error: true
-    - name: Build JS Demos
-      run: |
-        npm install
-        npm run build
-        cd ../../examples/integrated_apps/js_app && npm install && npm run build
-        cd ../../automotive_pubsub/js_adas && npm install && npm run build
-      working-directory: src/js
     - name: Run Build JS
       run: python -m tools.fusion.main --stage build --target js --no-codegen --no-dashboard
     - name: Upload JS Artifacts
@@ -625,7 +618,6 @@ jobs:
     - name: Install JS Dependencies (Demo Client)
       run: |
         npm install
-        npm run build
       working-directory: examples/someipy_demo/js_client
     - name: Restore Permissions (Linux)
       if: runner.os == 'Linux'
