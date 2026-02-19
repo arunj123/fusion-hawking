@@ -13,7 +13,8 @@
     },
     "scripts": {
         "build": "tsc",
-        "test": "node --test tests/test_codec.mjs tests/test_config.mjs tests/test_sd.mjs tests/test_cross_decode.mjs",
+        "test": "node --test tests/test_codec.mjs tests/test_config.mjs tests/test_sd.mjs tests/test_cross_decode.mjs tests/test_tcp.mjs",
+        "test:coverage": "c8 --reporter=html --reporter=text --output=../../logs/latest/coverage/js npm test",
         "clean": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true})\""
     },
     "keywords": [
@@ -27,7 +28,8 @@
         "node": ">=18.0.0"
     },
     "devDependencies": {
-        "typescript": "^5.3.0",
-        "@types/node": "^20.0.0"
+        "@types/node": "^20.0.0",
+        "c8": "^9.0.0",
+        "typescript": "^5.3.0"
     }
 }

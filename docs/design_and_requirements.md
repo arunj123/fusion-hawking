@@ -389,8 +389,9 @@ All runtimes implement a pluggable logger for future DLT (Diagnostic Log and Tra
 | Language | Interface | Injection Point |
 |----------|-----------|-----------------|
 | Rust | `trait FusionLogger` | Via builder or `with_logger()` |
-| Python | `class ILogger` | Constructor parameter |
-| C++ | `class ILogger` | Constructor parameter |
+| Python | `Logger` | [runtime.py](file:///c:/Users/arunj/./playground/fusion-hawking/src/python/fusion_hawking/runtime.py) | `self.logger` |
+| C++ | `ILogger` / `ConsoleLogger` | [runtime.hpp](file:///c:/Users/arunj/./playground/fusion-hawking/src/cpp/include/fusion_hawking/runtime.hpp) | Constructor param |
+| JS/TS | `ILogger` | [logger.ts](file:///c:/Users/arunj/./playground/fusion-hawking/src/js/src/logger.ts) | Constructor param (Injection) |
 
 ```rust
 // Rust trait
@@ -449,9 +450,10 @@ Configuration auto-detects IP version from address format:
 
 | Language | Dependencies | Notes |
 |----------|--------------|-------|
-| Rust | `serde`, `serde_json` | Standard ecosystem, statically linked |
-| C++ | None | Custom header-only JSON parser |
-| Python | None | Standard library only (`json`, `socket`, `threading`) |
+| Rust | `serde`, `serde_json`, `tokio`, `socket2`, `ctrlc` | Statically linked, standard ecosystem |
+| Python | `pytest`, `plantuml` | Standard library for core; pytest/plantuml for tests/diagrams |
+| C++ | `Winsock2` (Win), `POSIX` (Linux) | No external runtime dependencies; uses OS networking |
+| JS/TS | `node (>=18)`, `typescript`, `@types/node` | Dev dependencies for build and types |
 
 **Rule:** No OS-level package installs required.
 

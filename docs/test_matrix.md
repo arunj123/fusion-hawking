@@ -52,13 +52,14 @@ This document tracks test coverage and cross-language interoperability status ag
 | Feature | Rust | Python | C++ | JS/TS | Notes |
 |---------|------|--------|-----|-------|-------|
 | UDP Transport | ✅ | ✅ | ✅ | ✅ | |
-| TCP Transport | ✅ | ✅ | ✅ | 🔲 | Rust/Py/C++ verified |
+| TCP Transport | ✅ | ✅ | ✅ | ✅ | Rust/Py/C++ verified |
 | Service Discovery | ✅ | ✅ | ✅ | ✅ | Multi-interface |
 | IPv4 | ✅ | ✅ | ✅ | ✅ | |
 | IPv6 | ✅ | ✅ | ✅ | ✅ | |
 | Configuration | ✅ | ✅ | ✅ | ✅ | Interface-centric |
 | Logging | ✅ | ✅ | ✅ | ✅ | DLT-ready |
 | Events (Pub/Sub) | ✅ | ✅ | ✅ | ✅ | |
+| SOME/IP-TP | ✅ | ✅ | ✅ | ✅ | Large payload support |
 | Packet Dump | ✅ | ✅ | ✅ | ✅ | Runtime diagnostics |
 
 
@@ -92,9 +93,9 @@ pytest tests/
 # C++
 cmake --build build --config Release
 .\build\Release\cpp_test.exe
-82: 
-83: # JS/TS
-84: cd src/js && npm test
+
+# JS/TS
+cd src/js && npm test
 
 ```
 
@@ -110,7 +111,7 @@ After a test run, coverage reports are available in `logs/latest/coverage/`:
 | Python | `coverage/python/index.html` | `coverage.py` |
 | C++ (Windows) | `coverage/cpp/index.html` | `OpenCppCoverage` |
 | C++ (Linux) | `coverage/cpp/index.html` | `lcov` / `genhtml` |
-| JS/TS | `coverage/js/index.html` | `c8` (Planned) |
+| JS/TS | `coverage/js/index.html` | `c8` |
 
 
 > **CI/CD Pipeline:** See [Architecture - Automation Pipeline](architecture.md#automation--cicd-pipeline)

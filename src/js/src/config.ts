@@ -14,6 +14,7 @@ export interface EndpointConfig {
     port: number;
     version: 4 | 6;
     interface?: string;
+    protocol?: string;
 }
 
 /** Service configuration within providing/required sections. */
