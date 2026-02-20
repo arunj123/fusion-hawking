@@ -172,11 +172,12 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
         }
 
         // 1. SD Sockets
+        ctx->if_index = ResolveInterfaceIndex(if_cfg.name);
+
         if (!if_cfg.sd.endpoint.empty() && if_cfg.endpoints.count(if_cfg.sd.endpoint)) {
             const auto& ep = if_cfg.endpoints.at(if_cfg.sd.endpoint);
             ctx->sd_multicast_ip = ep.ip;
             ctx->sd_multicast_port = ep.port;
-            ctx->if_index = ResolveInterfaceIndex(if_cfg.name);
 
             int reuse = 1;
             ctx->sd_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -191,8 +192,8 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
             sockaddr_in sd_addr = {0};
             sd_addr.sin_family = AF_INET;
 #ifdef _WIN32
-            // Windows: Bind to INADDR_ANY to allow sharing with other processes
-            sd_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+            // Windows: Bind to the Specific Interface IP
+            sd_addr.sin_addr.s_addr = inet_addr(ctx->ip.c_str());
 #else
             // Linux: Bind to Multicast Group IP to allow reception
             // Binding to Unicast IP blocks multicast packets on Linux
@@ -215,7 +216,8 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
 #endif
 
             if (bind(ctx->sd_sock, (struct sockaddr*)&sd_addr, sizeof(sd_addr)) < 0) {
-                this->logger->Log(LogLevel::WARN, "Runtime", "Failed to bind SD socket on " + alias);
+                this->logger->Log(LogLevel::ERR, "Runtime", "Strict binding failed: Failed to bind SD socket on " + alias);
+                throw std::runtime_error("Strict binding failed on " + alias);
             }
 
             int loop = 1;
@@ -227,12 +229,14 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
             mreq.imr_multiaddr.s_addr = inet_addr(ctx->sd_multicast_ip.c_str());
             mreq.imr_interface.s_addr = inet_addr(ctx->ip.c_str());
             if (setsockopt(ctx->sd_sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, (const char*)&mreq, sizeof(mreq)) < 0) {
-                this->logger->Log(LogLevel::WARN, "Runtime", "Failed to join SD group on " + alias);
+                this->logger->Log(LogLevel::ERR, "Runtime", "Failed to join SD group on " + alias);
+                throw std::runtime_error("Failed to join SD group on " + alias);
             }
+        } // Close IPv4 block here
 
-            // IPv6 SD socket (if endpoint_v6 is configured)
-            if (!if_cfg.sd.endpoint_v6.empty() && if_cfg.endpoints.count(if_cfg.sd.endpoint_v6)) {
-                const auto& ep6 = if_cfg.endpoints.at(if_cfg.sd.endpoint_v6);
+        // IPv6 SD socket (if endpoint_v6 is configured)
+        if (!if_cfg.sd.endpoint_v6.empty() && if_cfg.endpoints.count(if_cfg.sd.endpoint_v6)) {
+            const auto& ep6 = if_cfg.endpoints.at(if_cfg.sd.endpoint_v6);
                 ctx->sd_multicast_ip_v6 = ep6.ip;
                 ctx->sd_multicast_port_v6 = ep6.port;
 
@@ -246,15 +250,20 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
                 sd_addr6.sin6_family = AF_INET6;
                 sd_addr6.sin6_port = htons(ctx->sd_multicast_port_v6);
 #ifdef _WIN32
-                // Windows: Bind to in6addr_any to allow sharing
-                sd_addr6.sin6_addr = in6addr_any;
+                // Windows: Bind to specific interface IP
+                inet_pton(AF_INET6, ctx->ip_v6.c_str(), &sd_addr6.sin6_addr);
 #else
-                if (!ctx->ip_v6.empty()) {
-                    inet_pton(AF_INET6, ctx->ip_v6.c_str(), &sd_addr6.sin6_addr);
+                // Linux: Bind to Multicast Group IP to allow reception
+                // Binding to Unicast IP blocks multicast packets on Linux
+                inet_pton(AF_INET6, ctx->sd_multicast_ip_v6.c_str(), &sd_addr6.sin6_addr);
+                // For link-local addresses (ff02::), we must specify the interface scope
+                if (ctx->sd_multicast_ip_v6.find("ff02") == 0 || ctx->sd_multicast_ip_v6.find("FF02") == 0) {
+                    sd_addr6.sin6_scope_id = ctx->if_index;
                 }
 #endif
                 if (bind(ctx->sd_sock_v6, (struct sockaddr*)&sd_addr6, sizeof(sd_addr6)) < 0) {
-                    this->logger->Log(LogLevel::WARN, "Runtime", "Failed to bind IPv6 SD socket on " + alias);
+                    this->logger->Log(LogLevel::ERR, "Runtime", "Strict binding failed: Failed to bind IPv6 SD socket on " + alias);
+                    throw std::runtime_error("Strict binding failed on " + alias + " (IPv6)");
                 }
 
                 int loop6 = 1;
@@ -267,7 +276,8 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
                 inet_pton(AF_INET6, ctx->sd_multicast_ip_v6.c_str(), &mreq6.ipv6mr_multiaddr);
                 mreq6.ipv6mr_interface = ctx->if_index;
                 if (setsockopt(ctx->sd_sock_v6, IPPROTO_IPV6, IPV6_JOIN_GROUP, (const char*)&mreq6, sizeof(mreq6)) < 0) {
-                    this->logger->Log(LogLevel::WARN, "Runtime", "Failed to join IPv6 SD group on " + alias);
+                    this->logger->Log(LogLevel::ERR, "Runtime", "Failed to join IPv6 SD group on " + alias);
+                    throw std::runtime_error("Failed to join IPv6 SD group on " + alias);
                 }
 
                 // Set multicast interface
@@ -275,45 +285,81 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
 
                 this->logger->Log(LogLevel::INFO, "Runtime", "IPv6 SD listener on " + alias + " (" + ctx->sd_multicast_ip_v6 + ":" + std::to_string(ctx->sd_multicast_port_v6) + ")");
             }
-        }
 
         // 2. Transport Sockets
-        ctx->sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        // Determine if we should use IPv6 for transport
+        bool use_v6_transport = !ctx->ip_v6.empty() && (ctx->ip.empty() || ctx->ip.find(':') != std::string::npos || ctx->ip == if_cfg.name);
+        int af = use_v6_transport ? AF_INET6 : AF_INET;
+        std::string bind_ip = use_v6_transport ? ctx->ip_v6 : ctx->ip;
+
+        ctx->sock = socket(af, SOCK_DGRAM, IPPROTO_UDP);
         int reuse = 1;
         setsockopt(ctx->sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse));
         
-        sockaddr_in addr = {0};
-        addr.sin_family = AF_INET;
-        addr.sin_addr.s_addr = inet_addr(ctx->ip.c_str());
-        addr.sin_port = htons(this->port);
-        if (bind(ctx->sock, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
-            this->logger->Log(LogLevel::WARN, "Runtime", "Failed to bind transport socket on " + alias);
-        } else if (this->port == 0) {
-            // Resolve ephemeral port: read actual bound port from OS
-            sockaddr_in bound_addr = {0};
-            SOCKLEN_T bound_len = sizeof(bound_addr);
-            if (getsockname(ctx->sock, (struct sockaddr*)&bound_addr, &bound_len) == 0) {
-                this->port = ntohs(bound_addr.sin_port);
-                this->logger->Log(LogLevel::INFO, "Runtime", "Resolved ephemeral UDP port to " + std::to_string(this->port));
+        if (use_v6_transport) {
+            sockaddr_in6 addr6 = {0};
+            addr6.sin6_family = AF_INET6;
+            inet_pton(AF_INET6, bind_ip.c_str(), &addr6.sin6_addr);
+            addr6.sin6_port = htons(this->port);
+            if (bind(ctx->sock, (struct sockaddr*)&addr6, sizeof(addr6)) == SOCKET_ERROR) {
+                this->logger->Log(LogLevel::ERR, "Runtime", "Strict binding failed: Failed to bind UDP transport on " + alias);
+                throw std::runtime_error("Strict binding failed on " + alias);
+            } else if (this->port == 0) {
+                sockaddr_in6 bound6 = {0};
+                SOCKLEN_T bound_len = sizeof(bound6);
+                if (getsockname(ctx->sock, (struct sockaddr*)&bound6, &bound_len) == 0) {
+                    this->port = ntohs(bound6.sin6_port);
+                    this->logger->Log(LogLevel::INFO, "Runtime", "Resolved ephemeral UDP port to " + std::to_string(this->port));
+                }
+            }
+        } else {
+            sockaddr_in addr = {0};
+            addr.sin_family = AF_INET;
+            addr.sin_addr.s_addr = inet_addr(bind_ip.c_str());
+            addr.sin_port = htons(this->port);
+            if (bind(ctx->sock, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
+                this->logger->Log(LogLevel::ERR, "Runtime", "Strict binding failed: Failed to bind UDP transport on " + alias);
+                throw std::runtime_error("Strict binding failed on " + alias);
+            } else if (this->port == 0) {
+                sockaddr_in bound_addr = {0};
+                SOCKLEN_T bound_len = sizeof(bound_addr);
+                if (getsockname(ctx->sock, (struct sockaddr*)&bound_addr, &bound_len) == 0) {
+                    this->port = ntohs(bound_addr.sin_port);
+                    this->logger->Log(LogLevel::INFO, "Runtime", "Resolved ephemeral UDP port to " + std::to_string(this->port));
+                }
             }
         }
 
         if (protocol == "tcp") {
-            ctx->tcp_listener = socket(AF_INET, SOCK_STREAM, 0);
+            ctx->tcp_listener = socket(af, SOCK_STREAM, 0);
             setsockopt(ctx->tcp_listener, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse));
-            // For TCP, use the resolved port (which may have been updated from ephemeral above)
-            sockaddr_in tcp_addr = {0};
-            tcp_addr.sin_family = AF_INET;
-            tcp_addr.sin_addr.s_addr = inet_addr(ctx->ip.c_str());
-            tcp_addr.sin_port = htons(this->port);
-            if (bind(ctx->tcp_listener, (struct sockaddr*)&tcp_addr, sizeof(tcp_addr)) != SOCKET_ERROR) {
-                listen(ctx->tcp_listener, 5);
-                // Resolve actual TCP port (may differ if port was 0)
-                sockaddr_in tcp_bound = {0};
-                SOCKLEN_T tcp_bound_len = sizeof(tcp_bound);
-                if (getsockname(ctx->tcp_listener, (struct sockaddr*)&tcp_bound, &tcp_bound_len) == 0) {
-                    uint16_t actual_tcp_port = ntohs(tcp_bound.sin_port);
-                    this->logger->Log(LogLevel::INFO, "Runtime", "TCP listener on " + alias + " bound to port " + std::to_string(actual_tcp_port));
+            if (use_v6_transport) {
+                sockaddr_in6 tcp_addr6 = {0};
+                tcp_addr6.sin6_family = AF_INET6;
+                inet_pton(AF_INET6, bind_ip.c_str(), &tcp_addr6.sin6_addr);
+                tcp_addr6.sin6_port = htons(this->port);
+                if (bind(ctx->tcp_listener, (struct sockaddr*)&tcp_addr6, sizeof(tcp_addr6)) != SOCKET_ERROR) {
+                    listen(ctx->tcp_listener, 5);
+                    sockaddr_in6 tcp_bound6 = {0};
+                    SOCKLEN_T tcp_bound_len = sizeof(tcp_bound6);
+                    if (getsockname(ctx->tcp_listener, (struct sockaddr*)&tcp_bound6, &tcp_bound_len) == 0) {
+                        uint16_t actual_tcp_port = ntohs(tcp_bound6.sin6_port);
+                        this->logger->Log(LogLevel::INFO, "Runtime", "TCP listener on " + alias + " bound to port " + std::to_string(actual_tcp_port));
+                    }
+                }
+            } else {
+                sockaddr_in tcp_addr = {0};
+                tcp_addr.sin_family = AF_INET;
+                tcp_addr.sin_addr.s_addr = inet_addr(bind_ip.c_str());
+                tcp_addr.sin_port = htons(this->port);
+                if (bind(ctx->tcp_listener, (struct sockaddr*)&tcp_addr, sizeof(tcp_addr)) != SOCKET_ERROR) {
+                    listen(ctx->tcp_listener, 5);
+                    sockaddr_in tcp_bound = {0};
+                    SOCKLEN_T tcp_bound_len = sizeof(tcp_bound);
+                    if (getsockname(ctx->tcp_listener, (struct sockaddr*)&tcp_bound, &tcp_bound_len) == 0) {
+                        uint16_t actual_tcp_port = ntohs(tcp_bound.sin_port);
+                        this->logger->Log(LogLevel::INFO, "Runtime", "TCP listener on " + alias + " bound to port " + std::to_string(actual_tcp_port));
+                    }
                 }
             }
         }

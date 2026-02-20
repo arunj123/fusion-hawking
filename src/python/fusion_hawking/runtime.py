@@ -78,6 +78,7 @@ class SomeIpRuntime:
         self.offer_interval = 2.0
         self.packet_dump = os.environ.get("FUSION_PACKET_DUMP") == "1"
         
+
         self.interfaces: Dict[str, Dict] = {}
         self.sd_listeners: Dict[str, socket.socket] = {}
         self.listeners: Dict[Tuple[str, int, str], socket.socket] = {}
@@ -142,7 +143,13 @@ class SomeIpRuntime:
                 if iface_ip_v6:
                     # Strict Binding: Bind to the specific interface IP
                     s = self._create_sd_socket_v6(ep["ip"], ep["port"], iface["name"], iface_ip_v6)
-                    if s: self.sd_listeners[f"{alias}_v6"] = s
+                    if s:
+                        self.logger.log(LogLevel.INFO, "Runtime", f"Bound IPv6 SD socket on {alias} to {ep['ip']}:{ep['port']}")
+                        self.sd_listeners[f"{alias}_v6"] = s
+                    else:
+                        self.logger.log(LogLevel.ERROR, "Runtime", f"Failed to create IPv6 SD socket on {alias}")
+                else:
+                    self.logger.log(LogLevel.WARN, "Runtime", f"No local IPv6 unicast IP found for SD on {alias}")
 
     def _create_sd_socket_v4(self, iface_ip, m_ip, port, bind_ip="", iface_name=""):
         try:
@@ -163,13 +170,8 @@ class SomeIpRuntime:
                     except Exception as e:
                         self.logger.log(LogLevel.WARN, "Runtime", f"Failed to set SO_BINDTODEVICE on {iface_name}: {e}")
             elif os.name == "nt":
-                # Windows: Bind to wildcard to allow sharing with other processes (like someipy)
-                # relying on the same behavior.
-                try:
-                    s.bind(("", port))
-                except Exception:
-                    # Fallback to interface IP if wildcard fails
-                    s.bind((iface_ip, port))
+                # Windows: Strict binding to interface IP
+                s.bind((iface_ip, port))
             else:
                 # Others: Strict binding to interface IP
                 s.bind((iface_ip, port))
@@ -193,15 +195,35 @@ class SomeIpRuntime:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try: s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
             except: pass
-            s.bind((bind_ip, port))
+            
             idx = self._resolve_interface_index(iface_name)
+
+            # Windows/WSA: Bind to wildcard (::) to allow sharing
+            # Linux: Bind to Multicast Group IP to allow reception
+            final_bind_ip = bind_ip
+            if platform.system() == "Linux":
+                final_bind_ip = m_ip
+                # For link-local addresses (ff02::), we must specify the interface scope index
+                if m_ip.lower().startswith("ff02"):
+                    s.bind((final_bind_ip, port, 0, idx))
+                else:
+                    s.bind((final_bind_ip, port))
+            elif os.name == "nt":
+                final_bind_ip = bind_ip
+                s.bind((final_bind_ip, port))
+            else:
+                s.bind((bind_ip, port))
+
             s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, struct.pack("16si", socket.inet_pton(socket.AF_INET6, m_ip), idx))
             s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_IF, idx)
             s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS, 1)
             s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_LOOP, 1)
             s.setblocking(False)
+            # self.logger.log(LogLevel.DEBUG, "Runtime", f"Bound IPv6 SD socket on {iface_name} to {final_bind_ip}:{port} (scope={idx})")
             return s
-        except: return None
+        except Exception as e:
+            self.logger.log(LogLevel.ERROR, "Runtime", f"FAILED to bind IPv6 SD socket on {iface_name}: {e}")
+            return None
 
     def _setup_transports(self):
         # Infer required interfaces from config
@@ -251,8 +273,8 @@ class SomeIpRuntime:
                         self.listeners_by_name[ep_name] = s
                         self.logger.log(LogLevel.INFO, "Runtime", f"Bound {ip}:{actual_port} ({proto}) on {alias} (endpoint={ep_name})")
                     except Exception as e:
-                        self.logger.log(LogLevel.WARN, "Runtime", f"Failed to bind {ip}:{port} on {alias}: {e}")
-                        continue
+                        self.logger.log(LogLevel.ERROR, "Runtime", f"Failed to bind {ip}:{port} on {alias}: {e}")
+                        raise RuntimeError(f"Strict binding failed: {e}")
         
         # Better: iterate providing services and find their actual bound ports
         if 'providing' in self.config:
@@ -473,6 +495,8 @@ class SomeIpRuntime:
                         if s.type == socket.SOCK_DGRAM: d, a = s.recvfrom(4096)
                         else:
                             d, a = s.recv(4096), next((addr for c, addr in self.tcp_clients if c == s), ("?", 0))
+                        if self.packet_dump and d:
+                            self.logger.log(LogLevel.DEBUG, "Runtime", f"RAW RECV: {len(d)} bytes from {a}")
                     except:
                         if s.type == socket.SOCK_STREAM:
                             self.tcp_clients = [(c, a) for c, a in self.tcp_clients if c != s]

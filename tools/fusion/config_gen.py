@@ -178,13 +178,13 @@ class SmartConfigFactory:
         if self.env.primary_interface and self.env.primary_interface in self.env.interfaces:
             v6_list = self.env.interfaces[self.env.primary_interface].get('ip_v6', [])
             if v6_list:
-                # Prefer non-link-local
+                # Only use non-link-local (global/ULA) IPv6 addresses.
+                # Link-local (fe80::) requires scope IDs (%iface) which
+                # runtimes don't handle, causing bind EINVAL errors.
                 for v6 in v6_list:
                     if not v6.startswith('fe80'):
                         ipv6 = v6
                         break
-                if not ipv6:
-                    ipv6 = v6_list[0]
         
         return {"name": name, "ipv4": ipv4, "ipv6": ipv6}
     

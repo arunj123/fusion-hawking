@@ -64,12 +64,14 @@ class NetworkEnvironment:
         if os.environ.get("FUSION_NO_VNET") == "1":
             self.platform = sys.platform
             self.is_wsl = "microsoft" in platform.release().lower()
-            self.has_vnet = False # Forced False
+            self._detect_os()
+            self._detect_privileges()
+            self.has_vnet = False
             self.has_netns = False
             self.has_veth = False
-            self.interfaces = {} # Minimal/empty or re-scan properly without vnet assumptions
-            # Still detect basic interfaces for physical run
-            self._detect_network_interfaces() # Corrected from _detect_interfaces()
+            self.interfaces = {}
+            self._detect_network_interfaces()
+            self._detect_capabilities()
             return
 
         # 1. Platform & WSL
@@ -78,10 +80,12 @@ class NetworkEnvironment:
         self._detect_privileges()
         self._detect_network_interfaces()
         self._detect_capabilities()
-        # Try to set up VNet if on Linux and we have sudo
+        self._detect_vnet()
+        
+        # Try to set up VNet if on Linux and missing topology
         if self.os_type == 'Linux' and not self.has_vnet:
             self._try_setup_vnet()
-        self._detect_vnet()
+            self._detect_vnet() # Re-detect after potential setup
 
     def _detect_os(self):
         if self.os_type == 'Linux':
@@ -198,12 +202,20 @@ class NetworkEnvironment:
         except Exception: 
             pass
 
+        # Apply WSL/Linux local IPv6 multicast fixes if we have privileges
+        if self.os_type == 'Linux' and self.has_ipv6 and (self.can_sudo or self.is_root):
+            try:
+                cmd_prefix = ['sudo', '-n'] if not self.is_root else []
+                # Ensure loopback has multicast flag
+                subprocess.run(cmd_prefix + ['ip', 'link', 'set', 'lo', 'multicast', 'on'], check=False, capture_output=True)
+                # Add route for multicast on loopback
+                subprocess.run(cmd_prefix + ['ip', '-6', 'route', 'add', 'ff00::/8', 'dev', 'lo', 'table', 'local'], check=False, capture_output=True)
+            except Exception:
+                pass
+
+
     def _try_setup_vnet(self):
         """Attempt to set up VNet if not already present."""
-        # Quick check: is br0 already there?
-        if 'br0' in self.interfaces:
-            return  # VNet likely already set up
-        
         if not self.can_sudo and not self.is_root:
             return  # Can't set up without privileges
             
@@ -223,29 +235,43 @@ class NetworkEnvironment:
     def _detect_vnet(self):
         if self.os_type == 'Linux':
             # Check for br0
-            if 'br0' in self.interfaces:
-                self.has_vnet = True
-            
-            # Check namespaces
-            if self.can_sudo or self.is_root:
+            # Check namespaces and vnet availability
+            vnet_possible = 'br0' in self.interfaces
+            if (self.can_sudo or self.is_root):
                 cmd = ['sudo', '-n', 'ip', 'netns', 'list'] if self.can_sudo and not self.is_root else ['ip', 'netns', 'list']
                 try:
                     r = subprocess.run(cmd, capture_output=True, text=True)
                     for line in r.stdout.splitlines():
+                        if not line.strip(): continue
                         ns = line.split()[0]
                         self.vnet_namespaces.append(ns)
                         
                         # Deep inspection — returns rich topology info
                         ns_info = self._inspect_namespace(ns)
-                        self.vnet_topology[ns] = ns_info
-                        
-                        # Build legacy interface map for backward compat
-                        legacy_map = {}
-                        for iface_name, iface_data in ns_info.items():
-                            if iface_data.get('ipv4'):
-                                legacy_map[iface_data['ipv4']] = iface_name
-                        self.vnet_interface_map[ns] = legacy_map
+                        if ns_info:
+                            self.vnet_topology[ns] = ns_info
+                            # Build legacy interface map for backward compat
+                            legacy_map = {}
+                            for iface_name, iface_data in ns_info.items():
+                                if iface_data.get('ipv4'):
+                                    legacy_map[iface_data['ipv4']] = iface_name
+                            self.vnet_interface_map[ns] = legacy_map
                 except Exception: pass
+
+            # Derive overall VNet status: requires both br0 AND ALL expected ECU namespaces
+            expected_ns = {'ns_ecu1', 'ns_ecu2', 'ns_ecu3'}
+            found_all_ns = expected_ns.issubset(set(self.vnet_namespaces))
+            
+            if vnet_possible and found_all_ns:
+                # One last check: verify we can actually 'exec' into them (sudo permissions)
+                try:
+                    test_ns = "ns_ecu1"
+                    cmd = ['sudo', '-n', 'ip', 'netns', 'exec', test_ns, 'ip', 'addr'] if self.can_sudo and not self.is_root else ['ip', 'netns', 'exec', test_ns, 'ip', 'addr']
+                    r = subprocess.run(cmd, capture_output=True, timeout=2)
+                    if r.returncode == 0:
+                        self.has_vnet = True
+                except Exception:
+                    pass
             
             # Derive VNet capabilities from topology
             for ns, topology in self.vnet_topology.items():
@@ -314,6 +340,37 @@ class NetworkEnvironment:
             self.has_ipv6 = True
         except Exception:
             self.has_ipv6 = False
+        
+        # IPv6 multicast functional check (WSL2 doesn't support IPv6 multicast on loopback)
+        self.has_ipv6_multicast = False
+        if self.has_ipv6:
+            try:
+                import struct as _st
+                _mcast = 'ff02::5'
+                _port = 0  # Use ephemeral port
+                _idx = socket.if_nametoindex('lo')
+                rx = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+                rx.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                rx.bind(('::', 0))
+                _port = rx.getsockname()[1]
+                mreq = _st.pack("16sI", socket.inet_pton(socket.AF_INET6, _mcast), _idx)
+                rx.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
+                rx.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_LOOP, 1)
+                rx.settimeout(0.5)
+                
+                tx = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+                tx.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_IF, _st.pack("I", _idx))
+                tx.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_LOOP, 1)
+                tx.sendto(b'probe', (_mcast, _port, 0, _idx))
+                try:
+                    rx.recvfrom(16)
+                    self.has_ipv6_multicast = True
+                except socket.timeout:
+                    self.has_ipv6_multicast = False
+                rx.close()
+                tx.close()
+            except Exception:
+                self.has_ipv6_multicast = False
         
         # Multicast check — assumes available (validated by runtime binding)
         self.supports_multicast = True

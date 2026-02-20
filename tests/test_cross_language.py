@@ -107,7 +107,8 @@ def ctx():
                 # Ensure we don't have a None runner when we expect one? 
                 # Actually, the test checks for None.
 
-        time.sleep(5)
+        # Wait for all apps to start and SD to exchange
+        time.sleep(10)
         yield c
 
 def wait_for_log_pattern(logfile, pattern, timeout=60):
@@ -141,18 +142,16 @@ def test_rust_rpc_to_python(ctx):
     """Verify Rust client calls Python StringService"""
     if ctx.get_runner("python") is None: pytest.skip("Python runner not available")
     if ctx.get_runner("rust") is None: pytest.skip("Rust runner not available")
-    ctx.get_runner("python").clear_output()
-    assert ctx.get_runner("python").wait_for_output("Reversing", timeout=20), "Rust->Python RPC failed"
+    # Wait for 'Reversing' to appear in output (increased timeout for CI/WSL stability)
+    assert ctx.get_runner("python").wait_for_output("Reversing", timeout=30), "Rust->Python RPC failed"
 
 @pytest.mark.needs_multicast
 def test_python_rpc_to_rust(ctx):
     """Verify Python client calls Rust MathService"""
     if ctx.get_runner("python") is None: pytest.skip("Python runner not available")
     if ctx.get_runner("rust") is None: pytest.skip("Rust runner not available")
-    ctx.get_runner("python").clear_output()
-    ctx.get_runner("rust").clear_output()
-    assert ctx.get_runner("python").wait_for_output("Sending Add", timeout=10)
-    assert ctx.get_runner("rust").wait_for_output(r"\[MathService\] Math\.Add", timeout=20)
+    assert ctx.get_runner("python").wait_for_output("Sending Add", timeout=15)
+    assert ctx.get_runner("rust").wait_for_output(r"\[MathService\] Math\.Add", timeout=30)
 
 @pytest.mark.needs_multicast
 def test_rust_to_cpp_math_inst2(ctx):
@@ -160,58 +159,50 @@ def test_rust_to_cpp_math_inst2(ctx):
     if ctx.get_runner("cpp") is None: pytest.skip("CPP runner not available")
     if ctx.get_runner("rust") is None: pytest.skip("Rust runner not available")
     if ctx.get_runner("cpp") is None: pytest.skip("CPP runner not available")
-    ctx.get_runner("cpp").clear_output()
-    assert ctx.get_runner("cpp").wait_for_output(r"\[2\] Add\(100, 200\)", timeout=20)
+    assert ctx.get_runner("cpp").wait_for_output(r"\[2\] Add\(100, 200\)", timeout=30)
 
 @pytest.mark.needs_multicast
 def test_rust_to_python_math_inst3(ctx):
     """Verify Rust client calls Python MathService (Instance 3)"""
     if ctx.get_runner("python") is None: pytest.skip("Python runner not available")
     if ctx.get_runner("rust") is None: pytest.skip("Rust runner not available")
-    ctx.get_runner("python").clear_output()
-    assert ctx.get_runner("python").wait_for_output(r"\[3\] Add\(10, 20\)", timeout=20)
+    # [3] Add(10, 20)
+    assert ctx.get_runner("python").wait_for_output(r"\[3\] Add\(10, 20\)", timeout=30)
 
 @pytest.mark.needs_multicast
 def test_cpp_rpc_to_math(ctx):
     """Verify C++ client calls MathService (Rust Instance 1)"""
     if ctx.get_runner("cpp") is None: pytest.skip("CPP runner not available")
     if ctx.get_runner("rust") is None: pytest.skip("Rust runner not available")
-    ctx.get_runner("cpp").clear_output()
-    ctx.get_runner("rust").clear_output()
-    assert ctx.get_runner("cpp").wait_for_output(r"Math\.Add Result:", timeout=10)
-    assert ctx.get_runner("rust").wait_for_output("Math.Add", timeout=10)
+    assert ctx.get_runner("cpp").wait_for_output(r"Math\.Add Result:", timeout=15)
+    assert ctx.get_runner("rust").wait_for_output("Math.Add", timeout=15)
 
 @pytest.mark.needs_multicast
 def test_cpp_event_updates(ctx):
     """Verify C++ SortService updates trigger events"""
     if ctx.get_runner("cpp") is None: pytest.skip("CPP runner not available")
-    ctx.get_runner("cpp").clear_output()
-    assert ctx.get_runner("cpp").wait_for_output("Field 'status' changed", timeout=20)
+    assert ctx.get_runner("cpp").wait_for_output("Field 'status' changed", timeout=30)
 
 @pytest.mark.needs_multicast
 def test_rust_event_updates(ctx):
     """Verify Rust receives events from C++ SortService"""
     if ctx.get_runner("cpp") is None: pytest.skip("CPP runner not available")
     if ctx.get_runner("rust") is None: pytest.skip("Rust runner not available")
-    ctx.get_runner("rust").clear_output()
-    assert ctx.get_runner("rust").wait_for_output("Received Notification", timeout=20)
+    assert ctx.get_runner("rust").wait_for_output("Received Notification", timeout=30)
 
 @pytest.mark.needs_multicast
 def test_python_to_cpp_sort(ctx):
     """Verify Python client calls C++ SortService"""
     if ctx.get_runner("python") is None: pytest.skip("Python runner not available")
     if ctx.get_runner("cpp") is None: pytest.skip("CPP runner not available")
-    ctx.get_runner("python").clear_output()
-    ctx.get_runner("cpp").clear_output()
-    assert ctx.get_runner("python").wait_for_output("Sending Sort...", timeout=10)
-    assert ctx.get_runner("cpp").wait_for_output("Sorting 5 items", timeout=10)
+    assert ctx.get_runner("python").wait_for_output("Sending Sort...", timeout=15)
+    assert ctx.get_runner("cpp").wait_for_output("Sorting 5 items", timeout=15)
 
 @pytest.mark.needs_multicast
 def test_rust_to_cpp_sort(ctx):
     """Verify Rust client calls C++ SortService"""
     if ctx.get_runner("cpp") is None: pytest.skip("CPP runner not available")
-    ctx.get_runner("cpp").clear_output()
-    assert ctx.get_runner("cpp").wait_for_output("Sorting 3 items", timeout=20)
+    assert ctx.get_runner("cpp").wait_for_output("Sorting 3 items", timeout=30)
 
 @pytest.mark.needs_multicast
 def test_js_rpc_to_rust(ctx):

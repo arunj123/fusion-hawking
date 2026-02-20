@@ -124,7 +124,7 @@ After a test run, coverage reports are available in `logs/latest/coverage/`:
 ## Verification Checklist
 
 - [x] All unit tests pass (`cargo test`, `pytest`, `npm test`)
-- [ ] Cross-language RPC verified (Rust ↔ Python ↔ C++ ↔ JS/TS)
+- [x] Cross-language RPC verified (Rust ↔ Python ↔ C++ ↔ JS/TS)
 - [x] Service Discovery works on multicast `224.0.0.1:30490`
-- [ ] Events delivered to all subscribers (Automotive Pub-Sub Demo)
+- [x] Events delivered to all subscribers (Automotive Pub-Sub Demo)
 - [x] Coverage reports generated for all languages (including JS/TS)

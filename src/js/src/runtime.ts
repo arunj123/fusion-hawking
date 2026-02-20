@@ -309,7 +309,7 @@ export class SomeIpRuntime {
 
                 if (bindIpV6) {
                     const isWindows = os.platform() === 'win32';
-                    const mainBindTargetV6 = isWindows ? '::' : bindIpV6;
+                    const mainBindTargetV6 = bindIpV6;
                     const mainTransportV6 = new UdpTransport('udp6', this.logger);
                     await mainTransportV6.bind(mainBindTargetV6, bindPort);
                     mainTransportV6.onMessage((data: Buffer, rinfo: RemoteInfo) => this.handleMessage(data, rinfo, ctx));
@@ -320,7 +320,7 @@ export class SomeIpRuntime {
                     const sdEpV6 = sdEpKeyV6 ? ifaceCfg.endpoints[sdEpKeyV6] : undefined;
                     if (sdEpV6 && sdEpV6.version === 6) {
                         const sdTransportV6 = new UdpTransport('udp6', this.logger, true);
-                        const bindTargetV6 = (os.platform() === 'linux' || os.platform() === 'win32') ? '::' : bindIpV6;
+                        const bindTargetV6 = isWindows ? bindIpV6 : sdEpV6.ip;
                         await sdTransportV6.bind(bindTargetV6!, sdEpV6.port);
                         await sdTransportV6.joinMulticast(sdEpV6.ip, bindIpV6);
                         sdTransportV6.setMulticastLoopback(true);
@@ -403,11 +403,11 @@ export class SomeIpRuntime {
         let ifAlias = "";
         if (this.config) {
             if (alias && this.config.required[alias]) {
-                ifAlias = this.config.required[alias].interfaces?.[0] || "";
+                ifAlias = this.config.required[alias].findOn?.[0] || this.config.required[alias].interfaces?.[0] || "";
             } else {
                 for (const client of Object.values(this.config.required)) {
                     if (client.serviceId === serviceId) {
-                        ifAlias = client.interfaces?.[0] || "";
+                        ifAlias = client.findOn?.[0] || client.interfaces?.[0] || "";
                         break;
                     }
                 }
@@ -419,16 +419,26 @@ export class SomeIpRuntime {
         const isV6 = targetAddress.includes(':');
 
         let protocol = 'udp';
-        if (this.config) {
-            if (alias && this.config.required[alias]) {
-                protocol = this.config.required[alias].protocol?.toLowerCase() || 'udp';
-            } else {
+        if (alias && this.config?.required[alias]) {
+            protocol = this.config.required[alias].protocol?.toLowerCase() || 'udp';
+        } else if (this.config) {
+            // Robust lookup: Find a discovered service that matches this address/port
+            for (const svc of this.remoteServices.values()) {
+                if (svc.address === targetAddress && svc.port === targetPort) {
+                    protocol = (svc.protocol === 6 ? 'tcp' : 'udp');
+                    break;
+                }
+            }
+
+            // Fallback (heritage): search by serviceId but careful about duplicates
+            if (protocol === 'udp') {
                 const req = Object.values(this.config.required).find(r => r.serviceId === serviceId);
                 if (req) protocol = req.protocol?.toLowerCase() || 'udp';
             }
         }
 
         if (protocol === 'tcp') {
+            this.logger.log(LogLevel.DEBUG, 'Runtime', `[DEBUG] sendRequest via TCP to ${targetAddress}:${targetPort} (alias: ${alias}, protocol: ${protocol})`);
             const clientKey = `${targetAddress}:${targetPort}`;
             let tcpClient = this.tcpClients.get(clientKey);
             if (!tcpClient) {
@@ -476,8 +486,33 @@ export class SomeIpRuntime {
     ): Promise<void> {
         const sessionId = this.sessionMgr.nextSessionId(serviceId, methodId);
         const packet = buildPacket(serviceId, methodId, sessionId, MessageType.REQUEST_NO_RETURN, payload);
-        const ctx = this.interfaces.values().next().value;
+        let ifAlias = "";
+        if (this.config) {
+            if (alias && this.config.required[alias]) {
+                ifAlias = this.config.required[alias].findOn?.[0] || this.config.required[alias].interfaces?.[0] || "";
+            }
+        }
+        const ctx = this.interfaces.get(ifAlias) || this.interfaces.values().next().value;
         if (!ctx) return;
+
+        let protocol = 'udp';
+        if (this.config && alias && this.config.required[alias]) {
+            protocol = this.config.required[alias].protocol?.toLowerCase() || 'udp';
+        }
+
+        if (protocol === 'tcp') {
+            this.logger.log(LogLevel.DEBUG, 'Runtime', `[DEBUG] sendRequestNoReturn via TCP to ${targetAddress}:${targetPort} (alias: ${alias})`);
+            const clientKey = `${targetAddress}:${targetPort}`;
+            let tcpClient = this.tcpClients.get(clientKey);
+            if (!tcpClient) {
+                tcpClient = new TcpTransport(this.logger);
+                await tcpClient.connect(targetAddress, targetPort);
+                tcpClient.onMessage((data: Buffer, rinfo: RemoteInfo) => this.handleMessage(data, rinfo, ctx));
+                this.tcpClients.set(clientKey, tcpClient);
+            }
+            await tcpClient.send(packet, targetAddress, targetPort);
+            return;
+        }
         const isV6 = targetAddress.includes(':');
         const transport = isV6 ? (ctx.transportV6 || ctx.transport) : ctx.transport;
         await transport.send(packet, targetAddress, targetPort);
