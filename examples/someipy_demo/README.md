@@ -63,6 +63,13 @@ mkdir build; cd build; cmake ..; cmake --build .
 cargo run --bin someipy_client
 ```
 
+#### JavaScript/TypeScript Client
+```bash
+cd examples/someipy_demo/js_client
+npm install
+npm start
+```
+
 ## How it works
 
 1.  The `someipyd.py` daemon handles SOME/IP Service Discovery (SD).

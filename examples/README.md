@@ -61,6 +61,8 @@ These apps use the `SomeIpRuntime`, which handles:
 - **Service Discovery** (Multi-interface discovery).
 - **Code Generation** (Typed Interfaces).
 
+This demo leverages **Rust, Python, C++, and JavaScript/TypeScript** running concurrently to provide and consume services.
+
 ### Configuration (`config.json`)
 The `config.json` defines the network topology per interface.
 ```json
@@ -108,7 +110,7 @@ python -m tools.codegen.main interface.py --all
 ## 4. Automotive Pub-Sub (`automotive_pubsub/`)
 **Purpose**: The primary **cross-language showcase** demonstrating the publish-subscribe pattern with SOME/IP events.
 
-This example shows a realistic automotive data flow:
+This example shows a realistic automotive data flow involving **all supported languages (Rust, C++, Python, JS/TS)**:
 - **RadarService** (C++): Publishes radar object detections at 10Hz
 - **FusionService** (Rust): Subscribes to radar, publishes fused tracks
 - **ADAS App** (Python/JS): Subscribes to fusion events, logs warnings
