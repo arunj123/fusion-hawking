@@ -12,20 +12,8 @@ from typing import Tuple
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../third_party/someipy/src")))
 
 # Monkey-patch someipy for Windows support
-import someipy._internal.utils as someipy_utils
-
-def patched_create_rcv_multicast_socket(ip_address: str, port: int, interface_address: str) -> socket.socket:
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    if os.name == 'nt':
-        sock.bind(("", port))
-    else:
-        sock.bind((ip_address, port))
-    mreq = struct.pack("4s4s", socket.inet_aton(ip_address), socket.inet_aton(interface_address))
-    sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-    return sock
-
-someipy_utils.create_rcv_multicast_socket = patched_create_rcv_multicast_socket
+from someipy_patch import apply_patch
+apply_patch()
 
 from someipy import (
     TransportLayerProtocol,

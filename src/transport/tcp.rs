@@ -299,6 +299,15 @@ mod tests {
     use super::*;
     use std::thread;
     use std::time::Duration;
+
+    fn wrap_someip(payload: &[u8]) -> Vec<u8> {
+        let mut msg = vec![0u8; 16];
+        // SOME/IP Length = 8 (rest of header) + payload length
+        let length = (8 + payload.len()) as u32;
+        msg[4..8].copy_from_slice(&length.to_be_bytes());
+        msg.extend_from_slice(payload);
+        msg
+    }
     
     #[test]
     fn test_tcp_server_creation() {
@@ -332,26 +341,48 @@ mod tests {
             thread::sleep(Duration::from_millis(50));
             let client = TcpTransport::connect(server_addr).unwrap();
             
-            // Send data
-            client.send(b"Hello Server", None).unwrap();
+            // Send wrapped data
+            let msg = wrap_someip(b"Hello Server");
+            client.send(&msg, None).unwrap();
             
             // Receive response
             let mut buf = [0u8; 128];
             let (len, _) = client.receive(&mut buf).unwrap();
-            String::from_utf8_lossy(&buf[..len]).to_string()
+            // Buffer contains full SOME/IP message, payload starts at offset 16
+            String::from_utf8_lossy(&buf[16..len]).to_string()
         });
         
         // Accept connection
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
         loop {
+            if std::time::Instant::now() > deadline {
+                panic!("Timeout waiting for client connection");
+            }
             match server.accept() {
                 Ok(Some(addr)) => {
                     // Receive from client
                     let mut buf = [0u8; 128];
-                    let len = server.receive_from(&mut buf, &addr).unwrap();
-                    assert_eq!(&buf[..len], b"Hello Server");
+                    let mut len = 0;
+                    // Need to wait for data to arrive and be processed by framing
+                    let receive_deadline = std::time::Instant::now() + Duration::from_secs(2);
+                    while std::time::Instant::now() < receive_deadline {
+                        match server.receive_from(&mut buf, &addr) {
+                            Ok(l) => { len = l; break; }
+                            Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                                thread::sleep(Duration::from_millis(10));
+                            }
+                            Err(e) => panic!("Server receive error: {}", e),
+                        }
+                    }
+                    if len == 0 {
+                        panic!("Timeout waiting for data from client");
+                    }
+                    assert!(len >= 16);
+                    assert_eq!(&buf[16..len], b"Hello Server");
                     
                     // Send response
-                    server.send_to(b"Hello Client", &addr).unwrap();
+                    let resp = wrap_someip(b"Hello Client");
+                    server.send_to(&resp, &addr).unwrap();
                     break;
                 }
                 Ok(None) => thread::sleep(Duration::from_millis(10)),
@@ -394,12 +425,18 @@ mod tests {
         let _client = TcpTransport::connect(server_addr).unwrap();
         
         // Accept
-        thread::sleep(Duration::from_millis(50));
-        if let Ok(Some(addr)) = server.accept() {
-            assert_eq!(server.connection_count(), 1);
-            
-            server.disconnect(&addr);
-            assert_eq!(server.connection_count(), 0);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            if std::time::Instant::now() > deadline {
+                panic!("Timeout waiting for client connection");
+            }
+            if let Ok(Some(addr)) = server.accept() {
+                assert_eq!(server.connection_count(), 1);
+                server.disconnect(&addr);
+                assert_eq!(server.connection_count(), 0);
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
         }
     }
     
@@ -446,11 +483,27 @@ mod tests {
         });
         
         // Server: accept, receive SOME/IP message, build response, send back
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
         loop {
+            if std::time::Instant::now() > deadline {
+                panic!("Timeout waiting for client connection/data");
+            }
             match server.accept() {
                 Ok(Some(addr)) => {
                     let mut buf = [0u8; 256];
-                    let len = server.receive_from(&mut buf, &addr).unwrap();
+                    let mut len = 0;
+                    let receive_deadline = std::time::Instant::now() + Duration::from_secs(2);
+                    while std::time::Instant::now() < receive_deadline {
+                        match server.receive_from(&mut buf, &addr) {
+                            Ok(l) => { len = l; break; }
+                            Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                                thread::sleep(Duration::from_millis(10));
+                            }
+                            Err(e) => panic!("Server receive error: {}", e),
+                        }
+                    }
+                    
+                    if len == 0 { panic!("Timeout waiting for data from client"); }
                     assert_eq!(len, 24); // 16 header + 8 payload
                     assert_eq!(&buf[0..4], &[0x10, 0x01, 0x00, 0x01]); // service_id | method_id
                     assert_eq!(buf[14], 0x00); // msg_type = REQUEST
@@ -485,12 +538,13 @@ mod tests {
             thread::spawn(move || {
                 thread::sleep(Duration::from_millis(50));
                 let client = TcpTransport::connect(server_addr).unwrap();
-                let msg = format!("Client {}", i);
-                client.send(msg.as_bytes(), None).unwrap();
+                let payload = format!("Client {}", i);
+                let msg = wrap_someip(payload.as_bytes());
+                client.send(&msg, None).unwrap();
                 
                 let mut buf = [0u8; 128];
                 let (len, _) = client.receive(&mut buf).unwrap();
-                String::from_utf8_lossy(&buf[..len]).to_string()
+                String::from_utf8_lossy(&buf[16..len]).to_string()
             })
         }).collect();
         
@@ -514,10 +568,11 @@ mod tests {
             let deadline = std::time::Instant::now() + Duration::from_secs(2);
             loop {
                 match server.receive_from(&mut buf, addr) {
-                    Ok(len) if len > 0 => {
-                        let msg = String::from_utf8_lossy(&buf[..len]);
-                        let response = format!("Echo: {}", msg);
-                        server.send_to(response.as_bytes(), addr).unwrap();
+                    Ok(len) if len >= 16 => {
+                        let msg = String::from_utf8_lossy(&buf[16..len]);
+                        let response_payload = format!("Echo: {}", msg);
+                        let response = wrap_someip(response_payload.as_bytes());
+                        server.send_to(&response, addr).unwrap();
                         break;
                     }
                     _ => {

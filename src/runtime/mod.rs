@@ -178,25 +178,23 @@ impl SomeIpRuntime {
                     let addr: SocketAddr = addr_str.parse().expect("Invalid address");
 
                     if proto == "tcp" {
-                        if let Ok(server) = crate::transport::TcpServer::bind(addr) {
-                            let transport = Arc::new(crate::transport::TcpServerTransport::new(server));
-                            transport.set_nonblocking(true).unwrap();
-                            let actual_addr = transport.local_addr().unwrap_or(addr);
-                            bound_ports.insert(ep_name.clone(), actual_addr.port());
-                            bound_endpoints.insert((ip, actual_addr.port(), proto.clone()), transport.clone());
-                            tcp_transports.push(transport);
-                            logger.log(LogLevel::Info, "Runtime", &format!("Bound tcp server on {}", actual_addr));
-                        }
+                        let server = crate::transport::TcpServer::bind(addr).expect("STRICT BINDING: Failed to bind TCP server");
+                        let transport = Arc::new(crate::transport::TcpServerTransport::new(server));
+                        transport.set_nonblocking(true).unwrap();
+                        let actual_addr = transport.local_addr().unwrap_or(addr);
+                        bound_ports.insert(ep_name.clone(), actual_addr.port());
+                        bound_endpoints.insert((ip, actual_addr.port(), proto.clone()), transport.clone());
+                        tcp_transports.push(transport);
+                        logger.log(LogLevel::Info, "Runtime", &format!("Bound tcp server on {}", actual_addr));
                     } else {
-                        if let Ok(transport) = UdpTransport::new(addr) {
-                            let transport_arc: Arc<dyn SomeIpTransport> = Arc::new(transport);
-                            transport_arc.set_nonblocking(true).unwrap();
-                            let actual_addr = transport_arc.local_addr().unwrap();
-                            bound_ports.insert(ep_name.clone(), actual_addr.port());
-                            bound_endpoints.insert((ip, actual_addr.port(), proto.clone()), transport_arc.clone());
-                            udp_transports.push(transport_arc);
-                            logger.log(LogLevel::Info, "Runtime", &format!("Bound udp transport on {}", actual_addr));
-                        }
+                        let transport = UdpTransport::new(addr).expect("STRICT BINDING: Failed to bind UDP transport");
+                        let transport_arc: Arc<dyn SomeIpTransport> = Arc::new(transport);
+                        transport_arc.set_nonblocking(true).unwrap();
+                        let actual_addr = transport_arc.local_addr().expect("Failed to get local addr");
+                        bound_ports.insert(ep_name.clone(), actual_addr.port());
+                        bound_endpoints.insert((ip, actual_addr.port(), proto.clone()), transport_arc.clone());
+                        udp_transports.push(transport_arc);
+                        logger.log(LogLevel::Info, "Runtime", &format!("Bound udp transport on {}", actual_addr));
                     }
                 }
             }
@@ -236,15 +234,11 @@ impl SomeIpRuntime {
                 let bind_ip = instance_bind_ip
                     .or(local_ip_v4);
 
-                let bind_ip = if cfg!(target_os = "windows") { 
-                    Ipv4Addr::UNSPECIFIED 
-                } else { 
-                    bind_ip.unwrap_or_else(|| {
-                        let msg = format!("STRICT BINDING: No bind IP resolved for SD v4 on {}. Aborting.", alias);
-                        logger.log(LogLevel::Error, "Runtime", &msg);
-                        panic!("{}", msg);
-                    })
-                };
+                let bind_ip = bind_ip.unwrap_or_else(|| {
+                    let msg = format!("STRICT BINDING: No bind IP resolved for SD v4 on {}. Aborting.", alias);
+                    logger.log(LogLevel::Error, "Runtime", &msg);
+                    panic!("{}", msg);
+                });
 
                 let bind_addr = SocketAddr::new(IpAddr::V4(bind_ip), ep.port);
                 let mcast_addr = SocketAddr::new(IpAddr::V4(ep.ip.parse::<Ipv4Addr>().unwrap()), ep.port);
@@ -252,16 +246,15 @@ impl SomeIpRuntime {
                 // Use iface_cfg.name for SO_BINDTODEVICE if available, else alias
                 let if_name = if iface_cfg.name.is_empty() { alias.as_str() } else { iface_cfg.name.as_str() };
 
-                if let Ok(t) = UdpTransport::new_multicast(bind_addr, mcast_addr, Some(if_name)) {
-                    let _ = t.set_multicast_loop_v4(true);
-                    let _ = t.set_multicast_ttl_v4(instance_config.sd.multicast_hops as u32);
-                    if let (Some(lip), Ok(mip)) = (local_ip_v4, ep.ip.parse::<Ipv4Addr>()) {
-                        let _ = t.join_multicast_v4(&mip, &lip);
-                        let _ = t.set_multicast_if_v4(&lip);
-                        mcast_v4 = Some(SocketAddr::new(IpAddr::V4(mip), ep.port));
-                    }
-                    transport_v4 = Some(t);
+                let t = UdpTransport::new_multicast(bind_addr, mcast_addr, Some(if_name)).expect("STRICT BINDING: Failed to create SD v4 transport");
+                let _ = t.set_multicast_loop_v4(true);
+                let _ = t.set_multicast_ttl_v4(instance_config.sd.multicast_hops as u32);
+                if let (Some(lip), Ok(mip)) = (local_ip_v4, ep.ip.parse::<Ipv4Addr>()) {
+                    t.join_multicast_v4(&mip, &lip).expect("STRICT BINDING: Failed to join SD v4 multicast group");
+                    let _ = t.set_multicast_if_v4(&lip);
+                    mcast_v4 = Some(SocketAddr::new(IpAddr::V4(mip), ep.port));
                 }
+                transport_v4 = Some(t);
             }
 
             let mut transport_v6 = None;
@@ -279,27 +272,22 @@ impl SomeIpRuntime {
 
                 let bind_ip = instance_bind_ip.or(local_ip_v6);
 
-                let bind_ip_v6_opt = if cfg!(target_os = "windows") { 
-                    Some(Ipv6Addr::UNSPECIFIED)
-                } else { 
-                    bind_ip
-                };
+                let bind_ip_v6_opt = bind_ip;
 
                 if let Some(bind_ip_v6) = bind_ip_v6_opt {
                     let bind_addr = SocketAddr::new(IpAddr::V6(bind_ip_v6), ep.port);
                     let mcast_addr = SocketAddr::new(IpAddr::V6(mcast_ip_v6), ep.port);
                     let if_name = if iface_cfg.name.is_empty() { alias.as_str() } else { iface_cfg.name.as_str() };
                     
-                    if let Ok(t) = UdpTransport::new_multicast(bind_addr, mcast_addr, Some(if_name)) {
-                        let _ = t.set_multicast_loop_v6(true);
-                        let _ = t.set_multicast_hops_v6(instance_config.sd.multicast_hops as u32);
-                        // Need iface index
-                        let idx = Self::resolve_iface_index(&iface_cfg.name);
-                        let _ = t.join_multicast_v6(&mcast_ip_v6, idx);
-                        let _ = t.set_multicast_if_v6(idx);
-                        mcast_v6 = Some(SocketAddr::new(IpAddr::V6(mcast_ip_v6), ep.port));
-                        transport_v6 = Some(t);
-                    }
+                    let t = UdpTransport::new_multicast(bind_addr, mcast_addr, Some(if_name)).expect("STRICT BINDING: Failed to create SD v6 transport");
+                    let _ = t.set_multicast_loop_v6(true);
+                    let _ = t.set_multicast_hops_v6(instance_config.sd.multicast_hops as u32);
+                    // Need iface index
+                    let idx = Self::resolve_iface_index(&iface_cfg.name);
+                    t.join_multicast_v6(&mcast_ip_v6, idx).expect("STRICT BINDING: Failed to join SD v6 multicast group");
+                    let _ = t.set_multicast_if_v6(idx);
+                    mcast_v6 = Some(SocketAddr::new(IpAddr::V6(mcast_ip_v6), ep.port));
+                    transport_v6 = Some(t);
                 }
             }
 

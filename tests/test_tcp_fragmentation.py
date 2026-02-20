@@ -76,6 +76,55 @@ def generate_config(output_dir, protocol="tcp", ip_version=4, instance_prefix="t
         sd_multicast_ip = "ff02::5"
         sd_version = 6
 
+        # WSL2 doesn't support IPv6 multicast on loopback.
+        # If loopback multicast is broken, use a real interface with IPv6 instead.
+        if not getattr(env, 'has_ipv6_multicast', True):
+            # Find a real interface with a global-scope IPv6 address
+            # Use the existing env.interfaces data or parse ip addr output
+            found = False
+            for iface_alias, iface_data in interfaces.items():
+                if not isinstance(iface_data, dict):
+                    continue
+                if iface_data.get('type') == 'loopback':
+                    continue
+                v6_list = iface_data.get('ip_v6', [])
+                for addr in v6_list:
+                    clean = addr.split('%')[0]
+                    if not clean.startswith('fe80') and ':' in clean:
+                        ip = clean
+                        iface_name = iface_data.get('name', iface_alias)
+                        if isinstance(iface_name, dict):
+                            iface_name = iface_alias
+                        found = True
+                        break
+                if found:
+                    break
+
+            # Fallback: parse `ip -6 addr` directly
+            if not found:
+                import subprocess as _sp
+                try:
+                    out = _sp.run(['ip', '-6', 'addr', 'show', 'scope', 'global'],
+                                 capture_output=True, text=True, timeout=3)
+                    import re
+                    # ip addr output: "N: devname: <flags>...\n    inet6 addr/prefix ..."
+                    current_dev = None
+                    for line in out.stdout.splitlines():
+                        dev_m = re.match(r'^\d+:\s+(\S+):', line)
+                        if dev_m:
+                            current_dev = dev_m.group(1)
+                            continue
+                        addr_m = re.match(r'\s+inet6\s+(\S+)/\d+', line)
+                        if addr_m and current_dev and current_dev != 'lo':
+                            addr = addr_m.group(1)
+                            if not addr.startswith('fe80'):
+                                ip = addr
+                                iface_name = current_dev
+                                found = True
+                                break
+                except Exception:
+                    pass
+
     endpoints = {}
     # SD multicast endpoint (always UDP)
     endpoints["sd_multicast"] = {

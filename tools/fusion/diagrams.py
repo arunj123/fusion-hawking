@@ -182,43 +182,49 @@ class DiagramManager:
     def render_diagrams(self, puml_files: Optional[List[Path]] = None) -> Dict[str, str]:
         """
         Render .puml files to PNG images.
-        Uses PlantUML web server (no Java required).
+        Uses PlantUML web server via official package.
         Returns dict of {diagram_name: status}.
         """
         try:
             import plantuml
         except ImportError:
             return {"error": "plantuml package not installed"}
-        
+
         server = plantuml.PlantUML(url='http://www.plantuml.com/plantuml/png/')
-        
+
         if puml_files is None:
             puml_files = list(self.diagrams_dir.glob("*.puml"))
         
         results = {}
         hashes = self._load_hashes()
-        
+
         for puml_file in puml_files:
             name = puml_file.stem
             png_file = self.images_dir / f"{name}.png"
             
             try:
-                content = puml_file.read_text(encoding='utf-8')
-                
-                # Use plantuml library to render
                 success = server.processes_file(str(puml_file), str(png_file))
                 
                 if success and png_file.exists() and png_file.stat().st_size > 0:
                     results[name] = "PASS"
-                    hashes[name] = self._get_hash(content)
+                    hashes[name] = self._get_hash(puml_file.read_text(encoding='utf-8'))
                     print(f"    [OK] {name}.png")
                 else:
                     results[name] = "FAIL"
                     print(f"    [FAIL] {name}.png - render failed")
                     
             except Exception as e:
-                results[name] = f"FAIL: {str(e)}"
-                print(f"    [ERROR] {name}.png - {e}")
+                import json
+                err_msg = str(e)
+                # PlantUMLError string representation is sometimes a dict string: "{'error': '...'}"
+                if err_msg.startswith("{") and err_msg.endswith("}"):
+                    try:
+                        err_dict = json.loads(err_msg.replace("'", '"'))
+                        err_msg = err_dict.get('error', err_msg)
+                    except:
+                        pass
+                results[name] = f"FAIL: {err_msg}"
+                print(f"    [ERROR] {name}.png - {err_msg}")
         
         self._save_hashes(hashes)
         return results

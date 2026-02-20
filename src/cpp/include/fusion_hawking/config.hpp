@@ -336,7 +336,6 @@ private:
                 cfg.sd.endpoint = ExtractString(sd_val, "endpoint_v4");
                 if (cfg.sd.endpoint.empty()) cfg.sd.endpoint = ExtractString(sd_val, "endpoint");
                 cfg.sd.endpoint_v6 = ExtractString(sd_val, "endpoint_v6");
-                cfg.sd.endpoint_v6 = ExtractString(sd_val, "endpoint_v6");
             }
 
             map[key] = cfg;

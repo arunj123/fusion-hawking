@@ -1,9 +1,9 @@
-@startuml
+@startuml config_usecase_shared_dedicated
 component "Mixed Instance" as Inst
 interface "Primary Interface" as Iface
 
-port "Shared EP (40001)" as E1
-port "Dedicated EP (40002)" as E2
+interface "Shared EP (40001)" as E1
+interface "Dedicated EP (40002)" as E2
 
 Inst -- E1
 Inst -- E2

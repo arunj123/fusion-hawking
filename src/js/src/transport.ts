@@ -123,6 +123,7 @@ export class UdpTransport implements ITransport {
         return new Promise((resolve, reject) => {
             const errorHandler = (err: Error) => {
                 this.logger?.log(LogLevel.ERROR, 'Transport', `Bind error for ${address}:${port}: ${err.message}`);
+                this.socket.removeListener('error', errorHandler);
                 reject(err);
             };
 

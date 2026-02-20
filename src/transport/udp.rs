@@ -165,7 +165,7 @@ impl SomeIpTransport for UdpTransport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+    use std::time::Duration;
 
     #[test]
     fn test_udp_send_receive_loopback() {
@@ -179,7 +179,8 @@ mod tests {
         sender.send(msg, Some(receiver_addr)).unwrap();
         
         // Receiver might need a moment or blocking read
-        // It block by default
+        // Add a timeout to prevent hanging
+        receiver.socket.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
         let mut buf = [0u8; 128];
         let (len, src) = receiver.receive(&mut buf).unwrap();
         

@@ -30,7 +30,9 @@ class AppRunner:
         self.is_ci = bool(os.environ.get('CI') or os.environ.get('GITHUB_ACTIONS'))
         self.proc = None
         self.log_file = None
-        self.output_queue = queue.Queue()
+        self.all_output = []
+        self.output_pos = 0
+        self.output_lock = threading.Lock()
         self._stop_event = threading.Event()
         self.reader_thread = None
         
@@ -121,8 +123,9 @@ class AppRunner:
                 self.log_file.write(line)
                 self.log_file.flush()
                 
-                # Put to queue for wait_for_output
-                self.output_queue.put(line)
+                # Save to buffer for non-destructive wait_for_output
+                with self.output_lock:
+                    self.all_output.append(line)
             
             # Ensure we consume remaining output if process exited
             if self.proc:
@@ -137,7 +140,7 @@ class AppRunner:
 
     def wait_for_output(self, pattern, timeout=30, description=None):
         """
-        Waits for a specific regex pattern in the output.
+        Waits for a specific regex pattern in the output (non-destructive).
         Returns the matching line or None if timeout.
         """
         start_time = time.time()
@@ -145,57 +148,46 @@ class AppRunner:
         desc = f" ({description})" if description else ""
         
         while time.time() - start_time < timeout:
-            try:
-                # Use a small block to keep the loop responsive to timeouts
-                line = self.output_queue.get(timeout=0.1)
-                if regex.search(line):
-                    return line
-            except queue.Empty:
-                if self.proc.poll() is not None:
-                    # Wait for reader thread to finish flushing stdout to queue
-                    if self.reader_thread:
-                        self.reader_thread.join(timeout=1.0)
-                    
-                    # Final sweep of the queue
-                    while not self.output_queue.empty():
-                        try:
-                            line = self.output_queue.get_nowait()
-                            if regex.search(line):
-                                return line
-                        except queue.Empty:
-                            break
-                    logger.warning(f"Process {self.name} exited with code {self.proc.returncode} while waiting for '{pattern}'{desc}")
-                    break
-                continue
+            # Check existing output in buffer
+            with self.output_lock:
+                local_pos = self.output_pos
+                while local_pos < len(self.all_output):
+                    line = self.all_output[local_pos]
+                    local_pos += 1
+                    if regex.search(line):
+                        self.output_pos = local_pos
+                        return line
+            
+            # If line not found yet, check if process is still running
+            if self.proc.poll() is not None:
+                # Process exited, do one final check of the remaining buffer
+                with self.output_lock:
+                    local_pos = self.output_pos
+                    while local_pos < len(self.all_output):
+                        line = self.all_output[local_pos]
+                        local_pos += 1
+                        if regex.search(line):
+                            self.output_pos = local_pos
+                            return line
+                
+                logger.warning(f"Process {self.name} exited with code {self.proc.returncode} while waiting for '{pattern}'{desc}")
+                break
+                
+            # Wait for more output to arrive
+            time.sleep(0.1)
         
         # Diagnostics for timeout
-        recent_lines = []
-        while not self.output_queue.empty():
-            try:
-                recent_lines.append(self.output_queue.get_nowait())
-            except queue.Empty:
-                break
-        
         err_msg = f"Timed out waiting for '{pattern}' in {self.name}{desc}"
-        if recent_lines:
-            logger.error(f"{err_msg}. Last {len(recent_lines)} lines of output:")
-            for l in recent_lines[-10:]:
-                logger.error(f"  [{self.name} STDOUT] {l.rstrip()}")
-        else:
-            logger.error(err_msg)
-
+        logger.error(err_msg)
         if self.proc.poll() is not None:
              logger.error(f"  [PROCESS STATUS] {self.name} has already exited with code {self.proc.returncode}")
 
         return None
     
     def clear_output(self):
-        """Clears the output queue."""
-        while not self.output_queue.empty():
-            try:
-                self.output_queue.get_nowait()
-            except queue.Empty:
-                break
+        """Advances the internal cursor to the end of current output (effectively clearing it for next waiter)."""
+        with self.output_lock:
+            self.output_pos = len(self.all_output)
 
     def stop(self, timeout=5):
         """Stops the application process."""
