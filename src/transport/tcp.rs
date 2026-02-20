@@ -2,21 +2,38 @@ use super::traits::SomeIpTransport;
 use std::net::{TcpStream, TcpListener, SocketAddr};
 use std::io::{Result, Read, Write, ErrorKind};
 use std::collections::HashMap;
+use std::sync::Mutex;
+
+/// Minimum bytes needed to read the SOME/IP length field (service_id + method_id + length).
+const SOMEIP_HEADER_PREFIX: usize = 8;
+
+/// Check if `buf` contains a complete SOME/IP message.
+/// Returns `Some(total_len)` if complete, `None` otherwise.
+fn someip_message_len(buf: &[u8]) -> Option<usize> {
+    if buf.len() < SOMEIP_HEADER_PREFIX {
+        return None;
+    }
+    let length = u32::from_be_bytes([buf[4], buf[5], buf[6], buf[7]]) as usize;
+    let total = SOMEIP_HEADER_PREFIX + length;
+    if buf.len() >= total { Some(total) } else { None }
+}
 
 /// TCP client transport for SOME/IP
 pub struct TcpTransport {
     stream: TcpStream,
+    /// Internal buffer for accumulating partial SOME/IP messages.
+    recv_buf: Mutex<Vec<u8>>,
 }
 
 impl TcpTransport {
     pub fn new(stream: TcpStream) -> Self {
-        TcpTransport { stream }
+        TcpTransport { stream, recv_buf: Mutex::new(Vec::new()) }
     }
     
     /// Connect to a remote SOME/IP server
     pub fn connect(addr: SocketAddr) -> Result<Self> {
         let stream = TcpStream::connect(addr)?;
-        Ok(TcpTransport { stream })
+        Ok(TcpTransport { stream, recv_buf: Mutex::new(Vec::new()) })
     }
     
     /// Set non-blocking mode
@@ -36,9 +53,25 @@ impl SomeIpTransport for TcpTransport {
     }
 
     fn receive(&self, buffer: &mut [u8]) -> Result<(usize, SocketAddr)> {
-        let bytes_read = (&self.stream).read(buffer)?;
         let peer = self.stream.peer_addr()?;
-        Ok((bytes_read, peer))
+        // Read whatever is available into the internal buffer
+        let mut tmp = [0u8; 4096];
+        match (&self.stream).read(&mut tmp) {
+            Ok(0) => return Err(std::io::Error::new(ErrorKind::ConnectionReset, "Connection closed")),
+            Ok(n) => { self.recv_buf.lock().unwrap().extend_from_slice(&tmp[..n]); }
+            Err(e) if e.kind() == ErrorKind::WouldBlock => {}
+            Err(e) => return Err(e),
+        }
+        // Check if we have a complete SOME/IP message
+        let mut buf_ref = self.recv_buf.lock().unwrap();
+        if let Some(msg_len) = someip_message_len(&buf_ref) {
+            let copy_len = msg_len.min(buffer.len());
+            buffer[..copy_len].copy_from_slice(&buf_ref[..copy_len]);
+            buf_ref.drain(..msg_len);
+            Ok((copy_len, peer))
+        } else {
+            Err(std::io::Error::new(ErrorKind::WouldBlock, "Incomplete SOME/IP message"))
+        }
     }
 
     fn local_addr(&self) -> Result<SocketAddr> {
@@ -64,7 +97,6 @@ impl TcpServerTransport {
     }
 }
 
-use std::sync::Mutex;
 
 impl SomeIpTransport for TcpServerTransport {
     fn send(&self, data: &[u8], destination: Option<SocketAddr>) -> Result<usize> {
@@ -83,21 +115,28 @@ impl SomeIpTransport for TcpServerTransport {
         // 1. Accept any waiting connections
         let _ = server.poll_accept();
         
-        // 2. Poll all connections for data
+        // 2. Read available data into per-connection buffers
         let clients = server.connected_clients();
-        for addr in clients {
-            match server.receive_from(buffer, &addr) {
-                Ok(len) if len > 0 => return Ok((len, addr)),
-                Ok(_) => continue, // EOF or 0 bytes
-                Err(e) if e.kind() == ErrorKind::WouldBlock => continue,
-                Err(_) => {
-                    server.disconnect(&addr);
-                    continue;
-                }
+        for addr in &clients {
+            let mut tmp = [0u8; 4096];
+            match server.raw_receive_from(&mut tmp, addr) {
+                Ok(0) => { server.disconnect(addr); continue; }
+                Ok(n) => { server.append_to_buffer(addr, &tmp[..n]); }
+                Err(e) if e.kind() == ErrorKind::WouldBlock => {}
+                Err(_) => { server.disconnect(addr); continue; }
             }
         }
         
-        Err(std::io::Error::new(ErrorKind::WouldBlock, "No data available"))
+        // 3. Check all buffers for a complete SOME/IP message
+        for addr in &clients {
+            if let Some(msg_len) = server.check_buffer(addr) {
+                let copy_len = msg_len.min(buffer.len());
+                server.drain_buffer(addr, copy_len, buffer);
+                return Ok((copy_len, *addr));
+            }
+        }
+        
+        Err(std::io::Error::new(ErrorKind::WouldBlock, "No complete SOME/IP message available"))
     }
 
     fn local_addr(&self) -> Result<SocketAddr> {
@@ -115,6 +154,8 @@ impl SomeIpTransport for TcpServerTransport {
 pub struct TcpServer {
     listener: TcpListener,
     connections: HashMap<SocketAddr, TcpStream>,
+    /// Per-connection receive buffers for SOME/IP message reassembly.
+    tcp_buffers: HashMap<SocketAddr, Vec<u8>>,
 }
 
 impl TcpServer {
@@ -124,6 +165,7 @@ impl TcpServer {
         Ok(TcpServer {
             listener,
             connections: HashMap::new(),
+            tcp_buffers: HashMap::new(),
         })
     }
     
@@ -143,6 +185,7 @@ impl TcpServer {
         match self.listener.accept() {
             Ok((stream, addr)) => {
                 self.connections.insert(addr, stream);
+                self.tcp_buffers.entry(addr).or_insert_with(Vec::new);
                 Ok(Some(addr))
             }
             Err(e) if e.kind() == ErrorKind::WouldBlock => Ok(None),
@@ -172,18 +215,72 @@ impl TcpServer {
         }
     }
     
-    /// Receive data from a specific connected client
+    /// Receive data from a specific connected client.
+    /// Returns a complete SOME/IP message if one is buffered, otherwise reads
+    /// more data and returns WouldBlock until a full message is available.
     pub fn receive_from(&mut self, buffer: &mut [u8], addr: &SocketAddr) -> Result<usize> {
+        // Read whatever is available
+        if let Some(stream) = self.connections.get_mut(addr) {
+            let mut tmp = [0u8; 4096];
+            match stream.read(&mut tmp) {
+                Ok(0) => {
+                    self.tcp_buffers.remove(addr);
+                    return Err(std::io::Error::new(ErrorKind::ConnectionReset, "EOF"));
+                }
+                Ok(n) => {
+                    self.tcp_buffers.entry(*addr).or_insert_with(Vec::new).extend_from_slice(&tmp[..n]);
+                }
+                Err(e) if e.kind() == ErrorKind::WouldBlock => {}
+                Err(e) => return Err(e),
+            }
+        } else {
+            return Err(std::io::Error::new(ErrorKind::NotConnected, "Client not connected"));
+        }
+
+        // Check if buffer has a complete SOME/IP message
+        if let Some(conn_buf) = self.tcp_buffers.get_mut(addr) {
+            if let Some(msg_len) = someip_message_len(conn_buf) {
+                let copy_len = msg_len.min(buffer.len());
+                buffer[..copy_len].copy_from_slice(&conn_buf[..copy_len]);
+                conn_buf.drain(..msg_len);
+                return Ok(copy_len);
+            }
+        }
+        Err(std::io::Error::new(ErrorKind::WouldBlock, "Incomplete SOME/IP message"))
+    }
+
+    /// Raw read from a connection (used by TcpServerTransport buffering layer).
+    pub fn raw_receive_from(&mut self, buffer: &mut [u8], addr: &SocketAddr) -> Result<usize> {
         if let Some(stream) = self.connections.get_mut(addr) {
             stream.read(buffer)
         } else {
             Err(std::io::Error::new(ErrorKind::NotConnected, "Client not connected"))
         }
     }
+
+    /// Append data to a connection's buffer.
+    pub fn append_to_buffer(&mut self, addr: &SocketAddr, data: &[u8]) {
+        self.tcp_buffers.entry(*addr).or_insert_with(Vec::new).extend_from_slice(data);
+    }
+
+    /// Check if a connection buffer has a complete SOME/IP message.
+    pub fn check_buffer(&self, addr: &SocketAddr) -> Option<usize> {
+        self.tcp_buffers.get(addr).and_then(|buf| someip_message_len(buf))
+    }
+
+    /// Drain bytes from a connection buffer into the output buffer.
+    pub fn drain_buffer(&mut self, addr: &SocketAddr, len: usize, out: &mut [u8]) {
+        if let Some(buf) = self.tcp_buffers.get_mut(addr) {
+            let copy_len = len.min(out.len()).min(buf.len());
+            out[..copy_len].copy_from_slice(&buf[..copy_len]);
+            buf.drain(..len);
+        }
+    }
     
-    /// Remove a connection
+    /// Remove a connection and its buffer
     pub fn disconnect(&mut self, addr: &SocketAddr) {
         self.connections.remove(addr);
+        self.tcp_buffers.remove(addr);
     }
     
     /// Get all connected client addresses

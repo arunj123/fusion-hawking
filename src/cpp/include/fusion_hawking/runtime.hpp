@@ -141,6 +141,8 @@ private:
     std::mutex pending_requests_mutex;
 
     TpReassembler tp_reassembler;
+    std::map<SOCKET, std::vector<uint8_t>> tcp_buffers;
+    std::mutex tcp_buffers_mutex;
 
     // SendRequestGlue Declaration within Runtime to access privates
     friend std::vector<uint8_t> SendRequestGlue(void* rt, uint16_t service_id, uint16_t method_id, const std::vector<uint8_t>& payload);

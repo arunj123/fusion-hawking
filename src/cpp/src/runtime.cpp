@@ -373,6 +373,10 @@ SomeIpRuntime::~SomeIpRuntime() {
         }
         tcp_clients.clear();
     }
+    {
+        std::lock_guard<std::mutex> lock(tcp_buffers_mutex);
+        tcp_buffers.clear();
+    }
 #ifdef _WIN32
     WSACleanup();
 #endif
@@ -740,15 +744,33 @@ std::vector<uint8_t> SomeIpRuntime::SendRequest(uint16_t service_id, uint16_t me
                     send(client_sock, (const char*)buffer.data(), (int)buffer.size(), 0);
                 }
                 
-                // Wait for response
-                char res_buf[4096];
-                int res_bytes = recv(client_sock, res_buf, sizeof(res_buf), 0);
+                // Wait for response - loop to handle fragmentation
+                std::vector<uint8_t> res_buffer;
+                char piece[2048];
+                bool message_complete = false;
+                uint32_t expected_size = 0;
+
+                while (true) {
+                    int n = recv(client_sock, piece, sizeof(piece), 0);
+                    if (n <= 0) break;
+                    res_buffer.insert(res_buffer.end(), piece, piece + n);
+                    
+                    if (expected_size == 0 && res_buffer.size() >= 8) {
+                        expected_size = (uint8_t(res_buffer[4]) << 24) | (uint8_t(res_buffer[5]) << 16) | (uint8_t(res_buffer[6]) << 8) | uint8_t(res_buffer[7]);
+                        expected_size += 8; // Include header
+                    }
+                    
+                    if (expected_size > 0 && res_buffer.size() >= expected_size) {
+                        message_complete = true;
+                        break;
+                    }
+                }
                 closesocket(client_sock);
 
                 std::lock_guard<std::mutex> lk(pending_requests_mutex);
                 pending_requests.erase({service_id, method_id, session_id});
-                if (res_bytes >= 16) {
-                    return std::vector<uint8_t>(res_buf + 16, res_buf + res_bytes);
+                if (message_complete && res_buffer.size() >= 16) {
+                    return std::vector<uint8_t>(res_buffer.begin() + 16, res_buffer.begin() + expected_size);
                 }
             } else {
                 closesocket(client_sock);
@@ -1367,10 +1389,36 @@ void SomeIpRuntime::Run() {
                 int bytes = recv(it->first, buf, sizeof(buf), 0);
                 if (bytes <= 0) {
                     closesocket(it->first);
+                    {
+                        std::lock_guard<std::mutex> b_lock(tcp_buffers_mutex);
+                        tcp_buffers.erase(it->first);
+                    }
                     it = tcp_clients.erase(it);
                     continue;
                 }
-                process_packet(buf, bytes, it->second, nullptr, true, it->first);
+                
+                // Append to buffer
+                {
+                    std::lock_guard<std::mutex> b_lock(tcp_buffers_mutex);
+                    auto& buffer = tcp_buffers[it->first];
+                    buffer.insert(buffer.end(), buf, buf + bytes);
+
+                    // Process all complete packets in the buffer
+                    while (buffer.size() >= 16) {
+                        // Read length from SOME/IP header (bytes 4-7)
+                        uint32_t length = (uint8_t(buffer[4]) << 24) | (uint8_t(buffer[5]) << 16) | (uint8_t(buffer[6]) << 8) | uint8_t(buffer[7]);
+                        uint32_t full_packet_size = length + 8;
+                        
+                        if (buffer.size() >= full_packet_size) {
+                            // Extract full packet
+                            process_packet((const char*)buffer.data(), (int)full_packet_size, it->second, nullptr, true, it->first);
+                            // Remove from buffer
+                            buffer.erase(buffer.begin(), buffer.begin() + full_packet_size);
+                        } else {
+                            break; // Wait for more data
+                        }
+                    }
+                }
             }
             ++it;
         }
