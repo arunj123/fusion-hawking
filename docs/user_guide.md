@@ -109,16 +109,32 @@ All runtimes share the same semantics and service-oriented lifecycle.
 ### Rust
 
 ```rust
+// 1. Initialize Runtime
 let rt = SomeIpRuntime::load("config.json", "my_instance");
+
+// 2. Offer Service (Provider)
 rt.offer_service("math-service", Box::new(MathServiceImpl));
+
+// 3. Request Service (Consumer)
+let client = rt.get_client::<MathServiceClient>("math-client");
+
+// 4. Start Event Loop (Blocks)
 rt.run();
 ```
 
 ### Python
 
 ```python
+# 1. Initialize Runtime
 rt = SomeIpRuntime("config.json", "my_instance")
+
+# 2. Offer Service (Provider)
 rt.offer_service("math-service", MathServiceStub())
+
+# 3. Request Service (Consumer)
+client = rt.get_client("math-client", MathServiceClient)
+
+# 4. Start Event Loop (Blocks)
 rt.start()
 ```
 
@@ -127,8 +143,16 @@ rt.start()
 High-performance implementation with minimal overhead.
 
 ```cpp
+// 1. Initialize Runtime
 SomeIpRuntime rt("config.json", "my_instance");
+
+// 2. Offer Service (Provider)
 rt.offer_service("math-service", &my_service_impl);
+
+// 3. Request Service (Consumer)
+auto client = rt.create_client<MathServiceClient>("math-client");
+
+// 4. Start Event Loop (Blocks)
 rt.run();
 ```
 
@@ -138,21 +162,19 @@ Pure TypeScript implementation. No native addons required.
 
 ```typescript
 import { SomeIpRuntime } from 'fusion-hawking';
+import { MathServiceServer, MathServiceClient } from './generated/ts';
 
+// 1. Initialize Runtime
 const rt = new SomeIpRuntime();
 await rt.loadConfigFile('config.json', 'js_app_instance');
 
-// Method Handler
-rt.registerHandler(0x0001, (header, payload) => {
-    const result = handleRequest(payload);
-    return Buffer.from(result);
-});
+// 2. Offer Service (Provider) - using generated stubs
+rt.offerService('math-service', new MathServiceServerImpl());
 
-// Event Subscription
-rt.subscribeEvent(0x1001, 0x01, (payload) => {
-    console.log("Received event notification:", payload);
-});
+// 3. Request Service (Consumer) - using generated stubs
+const client = new MathServiceClient(rt, 'math-client');
 
+// 4. Start Event Loop
 await rt.start();
 ```
 

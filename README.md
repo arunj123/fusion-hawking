@@ -14,6 +14,7 @@ A lightweight, dependency-free SOME/IP library implemented in Rust, adhering to 
     - **Python**: Generated bindings and runtime with Event support.
     - **C++**: High-performance runtime with modern C++23 support.
     - **JavaScript/TypeScript**: Pure TS implementation running on Node.js (no native bindings required).
+- **Automotive Pub-Sub Demos**: Included examples demonstrating cross-language (Rust, C++, Python, JS/TS) publish-subscribe patterns typical of automotive middleware.
 - **IDL Compiler**: Python-based tool (`tools/codegen`) to generate code from simple Python dataclasses. Supports recursive types and synchronous RPC. See [IDL Documentation](docs/IDL.md).
 
 
@@ -122,7 +123,13 @@ The project includes a robust CI/CD pipeline implemented via GitHub Actions (`.g
 4.  **Integration Demos**: Runs the "Automotive Pub-Sub" and "Integrated App" demos.
 5.  **Virtual Network (VNet)**: On Linux, performs high-fidelity network testing using namespaces and `setup_vnet.sh`.
 
-**How to verify:**
+**How to verify locally:**
+The CI/CD pipeline can be fully simulated and verified locally using the automation toolkit:
+- **Windows**: Run `.\fusion.bat` to execute the full build, test, demo, and coverage pipeline.
+- **Linux/WSL**: Run `./fusion.sh` to execute the pipeline natively or in WSL.
+- **Dashboard**: A live dashboard will be hosted at `http://localhost:8000` to monitor CI progress in real-time.
+
+**How to verify via GitHub Actions:**
 - **Trigger**: Every push or PR to `main` triggers a run.
 - **Status**: View badge or Actions tab.
 - **Artifacts**: CI uploads full `logs` and `generated` bindings as artifacts for every run.
