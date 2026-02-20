@@ -30,12 +30,17 @@ package "Generated Artifacts (build/generated)" {
         [mod.rs] as RustGen
         [bindings.rs] as RustBindings
     }
+    folder "JS/TS" {
+        [index.ts] as JsGen
+        [types.ts] as JsBindings
+    }
 }
 
 package "Applications" {
     [Python App] as PyApp
     [C++ App] as CppApp
     [Rust App] as RustApp
+    [JS/TS App] as JsApp
     
     [config.json] as Config
 }
@@ -46,14 +51,17 @@ Builder --> CodeGen : Invokes
 CodeGen --> PyGen : Generates
 CodeGen --> CppGen : Generates
 CodeGen --> RustGen : Generates
+CodeGen --> JsGen : Generates
 
 ' Usage Flow
 PyGen --> PyApp : Imported
 CppGen --> CppApp : Included
 RustGen --> RustApp : Used
+JsGen --> JsApp : Imported
 
 Config --> PyApp : Configures Instances
 Config --> CppApp : Configures Instances
 Config --> RustApp : Configures Instances
+Config --> JsApp : Configures Instances
 
 @enduml

@@ -15,6 +15,7 @@ package "Fusion World" {
     [client_fusion.py] as PyClient
     [client_fusion.cpp] as CppClient
     [client_fusion.rs] as RustClient
+    [client_fusion.ts] as JsClient
     
     note right of PyClient
         Uses Fusion Runtime
@@ -41,15 +42,18 @@ CommonIDs --> ExtService : Imports IDs
 CommonIDs --> PyClient : Imports IDs
 CommonIDs --> CppClient : Manual ID Sync
 CommonIDs --> RustClient : Manual ID Sync
+CommonIDs --> JsClient : Manual ID Sync
 
 DaemonConfig --> Daemon : Configures
 FusionConfig --> PyClient : Configures
 FusionConfig --> CppClient : Configures
 FusionConfig --> RustClient : Configures
+FusionConfig --> JsClient : Configures
 
 ExtService <--> Daemon : SD Offer
 PyClient <--> Daemon : SD Find
 CppClient <--> Daemon : SD Find
 RustClient <--> Daemon : SD Find
+JsClient <--> Daemon : SD Find
 
 @enduml
