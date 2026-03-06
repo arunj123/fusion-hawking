@@ -1,6 +1,6 @@
 # Fusion Hawking - High-Performance SOME/IP Stack
 
-A lightweight, dependency-free SOME/IP library implemented in Rust, adhering to **AUTOSAR R22-11** (PRS_SOMEIPProtocol & PRS_SOMEIPServiceDiscoveryProtocol) safety and performance standards. It includes bindings for Python and C++ to enable cross-language communication.
+A lightweight, dependency-free SOME/IP library implemented in Rust, adhering to **AUTOSAR R22-11** (PRS_SOMEIPProtocol & PRS_SOMEIPServiceDiscoveryProtocol) safety and performance standards. It includes high-performance native runtimes for Python and C++ to enable cross-language communication.
 
 ## Features
 
@@ -43,7 +43,7 @@ The easiest way to see everything in action is the automation dashboard:
 This will:
 1.  **Check Toolchain**: Verifies Rust, Python, CMake, and Coverage tools.
 2.  **Dashboard**: Starts a local web server (http://localhost:8000) to show live progress.
-3.  **Build**: Compiles Rust, Python bindings, C++, and TypeScript.
+3.  **Build**: Compiles Rust, Python, C++, and TypeScript.
 4.  **Test**: Runs unit tests for all languages (Rust, Python, C++, JS).
 5.  **Simulate**: Runs the integrated multi-process demo (Rust/Python/C++/JS interacting).
 6.  **Report**: Generates a comprehensive HTML report with coverage data.

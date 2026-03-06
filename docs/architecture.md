@@ -200,8 +200,8 @@ The `tools/fusion/` toolkit orchestrates the complete build/test/coverage workfl
 | **Service Discovery** | `src/sd/` | AUTOSAR-compliant SD state machine | |
 | **Runtime** | `src/runtime/` | High-level API for service lifecycle | [User Guide](user_guide.md#runtime-api) |
 | **Logging** | `src/logging.rs` | DLT-ready logger abstraction | [Design Doc](design_and_requirements.md#3-logging-abstraction-dlt-ready) |
-| **Python Bindings** | `src/python/` | Native Python runtime | |
-| **C++ Bindings** | `src/cpp/` | Modern C++23 runtime | |
+| **Python Runtime** | `src/python/` | Native Python runtime | |
+| **C++ Runtime** | `src/cpp/` | Modern C++23 runtime | |
 | **JS/TS Runtime** | `src/js/` | Pure TypeScript runtime | [User Guide](user_guide.md#runtime-api) |
 | **Code Generator** | `tools/codegen/` | IDL compiler for multi-language stubs | [IDL](IDL.md) |
 
