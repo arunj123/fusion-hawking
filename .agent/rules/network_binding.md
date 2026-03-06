@@ -1,8 +1,4 @@
----
-description: Configuration Rules
----
-
-This document outlines the strict network binding and ID management rules for Fusion Hawking runtimes (Python, C++, Rust, JS).
+This document outlines the strict network binding rules for Fusion Hawking runtimes (Python, C++, Rust, JS).
 
 ## Network Binding Rules
 
@@ -10,12 +6,7 @@ This document outlines the strict network binding and ID management rules for Fu
 2.  **No Fallbacks**: Runtimes MUST NOT fall back to `0.0.0.0` or loopback (`127.0.0.1` / `::1`) if it's not explicitly requested in the configuration.
 3.  **Interface Requirement**: Every network endpoint MUST specify a physical or virtual interface (e.g., `eth0`, `lo`, `Wi-Fi`) to ensure stable multicast routing.
 4.  **Shared Endpoints**: Multiple services MAY bind to the same IP/Port/Protocol combination if supported by the runtime (e.g., Python `SomeIpRuntime`). Routing is handled by the runtime dispatcher.
-
-## ID Management
-
-1.  **Service IDs**: Must be unique within the system according to `ID_MANAGEMENT_RULES.md`.
-2.  **Instance IDs**: Used to differentiate between multiple instances of the same service type.
-3.  **Endpoint Names**: Must be unique globally in the `endpoints` section of the configuration.
+5.  **Strict Exit**: If a runtime cannot bind to a configured local endpoint for an offered service, it MUST exit with an error. No "automatic loopback" fallbacks.
 
 ## Service Discovery (SD)
 
