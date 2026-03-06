@@ -53,7 +53,7 @@ def generate_config(env, output_dir):
                     }
                 },
                 "sd": {
-                    "endpoint": "sd_multicast"
+                    "endpoint_v4": "sd_multicast"
                 }
             }
         },
@@ -298,28 +298,24 @@ class TestEphemeralPortTracking(unittest.TestCase):
                         "main_udp": {"ip": "127.0.0.1", "port": 0, "version": 4, "protocol": "udp"},
                         "sd_mcast": {"ip": "224.224.224.245", "port": 30490, "version": 4, "protocol": "udp"}
                     },
-                    "sd": {"endpoint": "sd_mcast"}
+                    "sd": {"endpoint_v4": "sd_mcast"}
                 }
             },
             # Flat endpoints for legacy compat if runtime still checks them? 
             # Ideally runtime only checks interfaces->endpoints now but keeping for safety
-            "endpoints": {
-                "main_udp": {"ip": "127.0.0.1", "port": 0, "version": 4, "protocol": "udp"},
-                "sd_mcast": {"ip": "224.224.224.245", "port": 30490, "version": 4, "protocol": "udp"}
-            },
             "instances": {
                 "test_ephemeral": {
-                    "interfaces": ["primary"],
+                    "unicast_bind": {"primary": "sd_mcast"},
                     "providing": {
                         "test_svc": {
                             "service_id": 9999,
                             "instance_id": 1,
-                            "endpoint": "main_udp",
+                            "offer_on": {"primary": "main_udp"},
                             "major_version": 1,
                             "minor_version": 0
                         }
                     },
-                    "sd": {"multicast_endpoint": "sd_mcast"}
+                    "sd": {"endpoint_v4": "sd_mcast"}
                 }
             }
         }
@@ -361,26 +357,22 @@ class TestEphemeralPortTracking(unittest.TestCase):
                         "main_tcp": {"ip": "127.0.0.1", "port": 0, "version": 4, "protocol": "tcp"},
                         "sd_mcast": {"ip": "224.224.224.245", "port": 30490, "version": 4, "protocol": "udp"}
                     },
-                    "sd": {"endpoint": "sd_mcast"}
+                    "sd": {"endpoint_v4": "sd_mcast"}
                 }
-            },
-            "endpoints": {
-                "main_tcp": {"ip": "127.0.0.1", "port": 0, "version": 4, "protocol": "tcp"},
-                "sd_mcast": {"ip": "224.224.224.245", "port": 30490, "version": 4, "protocol": "udp"}
             },
             "instances": {
                 "test_tcp_eph": {
-                    "interfaces": ["primary"],
+                    "unicast_bind": {"primary": "sd_mcast"},
                     "providing": {
                         "tcp_svc": {
                             "service_id": 9998,
                             "instance_id": 1,
-                            "endpoint": "main_tcp",
+                            "offer_on": {"primary": "main_tcp"},
                             "major_version": 1,
                             "minor_version": 0
                         }
                     },
-                    "sd": {"multicast_endpoint": "sd_mcast"}
+                    "sd": {"endpoint_v4": "sd_mcast"}
                 }
             }
         }

@@ -41,11 +41,11 @@ class OtherClass:
                     "providing": {
                         "math-service": {
                             "service_id": 0,
-                            "endpoint": "ep1"
+                            "endpoint_v4": "ep1"
                         },
                         "string-client": { # Alias matches mapped name for StringService
                             "service_id": 0,
-                            "endpoint": "ep2"
+                            "endpoint_v4": "ep2"
                         }
                     }
                 }

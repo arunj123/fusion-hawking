@@ -612,13 +612,15 @@ class SomeIpRuntime:
 
                 if allowed:
                     opts = []
-                    optr, oend = end + 4, end + 4 + struct.unpack(">I", data[end:end+4])[0]
-                    while optr + 3 <= oend:
-                        l, t = struct.unpack(">H", data[optr:optr+2])[0], data[optr+2]
-                        if t == 0x04: opts.append((socket.inet_ntoa(data[optr+4:optr+8]), struct.unpack(">H", data[optr+10:optr+12])[0], ("tcp" if data[optr+9] == 6 else "udp")))
-                        elif t == 0x06: opts.append((socket.inet_ntop(socket.AF_INET6, data[optr+4:optr+20]), struct.unpack(">H", data[optr+22:optr+24])[0], ("tcp" if data[optr+21] == 6 else "udp")))
-                        else: opts.append(None)
-                        optr += 3 + l
+                    if end + 4 <= len(data):
+                        options_len = struct.unpack(">I", data[end:end+4])[0]
+                        optr, oend = end + 4, min(end + 4 + options_len, len(data))
+                        while optr + 3 <= oend:
+                            l, t = struct.unpack(">H", data[optr:optr+2])[0], data[optr+2]
+                            if t == 0x04 and optr + 12 <= oend: opts.append((socket.inet_ntoa(data[optr+4:optr+8]), struct.unpack(">H", data[optr+10:optr+12])[0], ("tcp" if data[optr+9] == 6 else "udp")))
+                            elif t == 0x06 and optr + 24 <= oend: opts.append((socket.inet_ntop(socket.AF_INET6, data[optr+4:optr+20]), struct.unpack(">H", data[optr+22:optr+24])[0], ("tcp" if data[optr+21] == 6 else "udp")))
+                            else: opts.append(None)
+                            optr += 3 + l
                     ep = opts[idx1] if n1 > 0 and idx1 < len(opts) else next((o for o in opts if o), None)
                     if ep: self.remote_services[(sid, maj)] = ep
             

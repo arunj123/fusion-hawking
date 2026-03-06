@@ -79,14 +79,14 @@ class TestUseCases:
                 "sd_mcast": SD_MCAST,
                 "svc_ep": {"ip": "10.0.1.1", "port": 31001, "proto": "udp"},
                 "sd_uc": {"ip": "10.0.1.1", "port": 31000, "proto": "udp"}
-            }, sd={"endpoint": "sd_mcast"}).add_interface("secondary", if2, {
+            }, sd={"endpoint_v4": "sd_mcast"}).add_interface("secondary", if2, {
                 "sd_mcast": SD_MCAST,
                 "svc_ep_2": {"ip": "10.0.2.1", "port": 31002, "proto": "udp"},
                 "sd_uc": {"ip": "10.0.2.1", "port": 31000, "proto": "udp"}
-            }, sd={"endpoint": "sd_mcast"}).add_interface("client_iface", if3, {
+            }, sd={"endpoint_v4": "sd_mcast"}).add_interface("client_iface", if3, {
                  "sd_mcast": SD_MCAST,
                  "client_ep": {"ip": "10.0.1.3", "port": 32000, "proto": "udp"}
-            }, sd={"endpoint": "sd_mcast"})
+            }, sd={"endpoint_v4": "sd_mcast"})
 
             ctx.config_gen.add_instance("multi_provider", 
                 unicast_bind={"primary": "sd_uc", "secondary": "sd_uc"},
@@ -181,14 +181,14 @@ while True: time.sleep(1)
                 "sd_mcast": SD_MCAST,
                 "svc_a_ep": {"ip": "10.0.1.1", "port": 31001, "proto": "udp"},
                 "sd_uc": {"ip": "10.0.1.1", "port": 31000, "proto": "udp"}
-            }, sd={"endpoint": "sd_mcast"}).add_interface("secondary", if2, {
+            }, sd={"endpoint_v4": "sd_mcast"}).add_interface("secondary", if2, {
                 "sd_mcast": SD_MCAST,
                 "svc_b_ep": {"ip": "10.0.1.2", "port": 31002, "proto": "udp"},
                 "sd_uc": {"ip": "10.0.1.2", "port": 31000, "proto": "udp"}
-            }, sd={"endpoint": "sd_mcast"}).add_interface("client_iface", if3, {
+            }, sd={"endpoint_v4": "sd_mcast"}).add_interface("client_iface", if3, {
                  "sd_mcast": SD_MCAST,
                  "client_ep": {"ip": "10.0.1.3", "port": 32000, "proto": "udp"}
-            }, sd={"endpoint": "sd_mcast"})
+            }, sd={"endpoint_v4": "sd_mcast"})
 
             ctx.config_gen.add_instance("provider_a", unicast_bind={"primary": "sd_uc"},
                 providing={"ServiceA": {"service_id": 0x1000, "instance_id": 1, "major_version": 1, "offer_on": {"primary": "svc_a_ep"}}}
@@ -257,10 +257,10 @@ rt.stop()
                 "svc_ep_2": {"ip": "10.0.1.1", "port": 31002, "proto": "udp"},
                 "sd_uc_1": {"ip": "10.0.1.1", "port": 31000, "proto": "udp"},
                 "sd_uc_2": {"ip": "10.0.1.1", "port": 31005, "proto": "udp"} 
-            }, sd={"endpoint": "sd_mcast"}).add_interface("client_iface", if3, {
+            }, sd={"endpoint_v4": "sd_mcast"}).add_interface("client_iface", if3, {
                  "sd_mcast": SD_MCAST,
                  "client_ep": {"ip": "10.0.1.3", "port": 32000, "proto": "udp"}
-            }, sd={"endpoint": "sd_mcast"})
+            }, sd={"endpoint_v4": "sd_mcast"})
             
             ctx.config_gen.add_instance("inst_1", unicast_bind={"primary": "sd_uc_1"},
                 providing={"Svc": {"service_id": 0x1000, "instance_id": 1, "major_version": 1, "offer_on": {"primary": "svc_ep_1"}}}
@@ -336,14 +336,14 @@ rt.stop()
                 "sd_mcast": SD_MCAST,
                 "svc_ep_1": {"ip": "10.0.1.1", "port": 31001, "proto": "udp"},
                 "sd_uc": {"ip": "10.0.1.1", "port": 31000, "proto": "udp"}
-            }, sd={"endpoint": "sd_mcast"}).add_interface("secondary", if2, {
+            }, sd={"endpoint_v4": "sd_mcast"}).add_interface("secondary", if2, {
                 "sd_mcast": SD_MCAST,
                 "svc_ep_2": {"ip": "10.0.1.2", "port": 31002, "proto": "udp"},
                 "sd_uc": {"ip": "10.0.1.2", "port": 31000, "proto": "udp"}
-            }, sd={"endpoint": "sd_mcast"}).add_interface("client_iface", if3, {
+            }, sd={"endpoint_v4": "sd_mcast"}).add_interface("client_iface", if3, {
                  "sd_mcast": SD_MCAST,
                  "client_ep": {"ip": "10.0.1.3", "port": 32000, "proto": "udp"}
-            }, sd={"endpoint": "sd_mcast"})
+            }, sd={"endpoint_v4": "sd_mcast"})
 
             ctx.config_gen.add_instance("inst_1", unicast_bind={"primary": "sd_uc"},
                 providing={"Svc": {"service_id": 0x1000, "instance_id": 1, "major_version": 1, "offer_on": {"primary": "svc_ep_1"}}}
@@ -465,10 +465,10 @@ rt.stop()
                 "sd_mcast": SD_MCAST,
                 "shared_ep": {"ip": "10.0.1.1", "port": 31050, "proto": "udp"},
                 "sd_uc": {"ip": "10.0.1.1", "port": 31000, "proto": "udp"}
-            }, sd={"endpoint": "sd_mcast"}).add_interface("client_iface", if3, {
+            }, sd={"endpoint_v4": "sd_mcast"}).add_interface("client_iface", if3, {
                  "sd_mcast": SD_MCAST,
                  "client_ep": {"ip": "10.0.1.3", "port": 32000, "proto": "udp"}
-            }, sd={"endpoint": "sd_mcast"})
+            }, sd={"endpoint_v4": "sd_mcast"})
 
             ctx.config_gen.add_instance("shared_server", unicast_bind={"primary": "sd_uc"},
                 providing={

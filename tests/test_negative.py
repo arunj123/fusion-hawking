@@ -26,14 +26,12 @@ CONFIG_JSON = """
                     "service_id": 57005,
                     "instance_id": 1
                 }
-            },
-            "interfaces": [ "primary" ]
+            }
         },
         "target_instance": {
              "unicast_bind": { "primary": "127.0.0.1" },
              "providing": {},
-             "required": {},
-             "interfaces": [ "primary" ]
+             "required": {}
         }
     },
     "interfaces": {
