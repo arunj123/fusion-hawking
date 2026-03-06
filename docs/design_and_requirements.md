@@ -91,6 +91,33 @@ The schema separates **Control Plane** (SD Unicast) from **Data Plane** (Service
 | `required.find_on` | List of interfaces to search for this service. |
 | `sd.endpoint` | Multicast group used for Service Discovery on that interface. |
 
+### Eventgroup Mapping
+
+In SOME/IP Service Discovery, events are bundled into **Eventgroups** for subscription. In Fusion Hawking, this mapping is defined purely in the configuration layer to maintain interface stability while allowing deployment flexibility.
+
+Each service in `providing` can optionally contain an `eventgroups` object:
+
+```json
+"providing": {
+  "RadarService": {
+    "service_id": 28673,
+    "eventgroups": {
+      "object-detections": {
+        "eventgroup_id": 1,
+        "events": [32769, 32770],
+        "multicast": { "primary": "event_mcast_ep" }
+      }
+    }
+  }
+}
+```
+
+- **Eventgroup ID**: The SOME/IP ID used in SD Subscribe messages.
+- **Events**: A list of SOME/IP Event IDs (defined in IDL) belonging to this group.
+- **Multicast**: (Optional) The name of a multicast endpoint on specific interfaces where the provider will publish these events.
+
+---
+
 ### Use Case Configuration Matrix
 
 This schema supports complex deployment scenarios without code changes.

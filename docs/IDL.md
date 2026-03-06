@@ -125,6 +125,9 @@ class RadarService:
 ```
 
 > **Event Flow Diagram:** See [Architecture - Subscription Flow](architecture.md#subscription-flow)
+>
+> [!IMPORTANT]
+> **Eventgroup Definition:** Unlike Event IDs, **Eventgroup IDs are not defined in the IDL**. They are defined at the deployment level in `config.json`. This allows the same service to be configured with different event grouping strategies (e.g., all events in one group vs. each event in its own group) without changing the interface code.
 
 ---
 
