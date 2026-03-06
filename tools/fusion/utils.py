@@ -66,7 +66,10 @@ def find_binary(name, search_dirs=None, root=None):
     if root is None:
         root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     
-    targets = [f"{name}.exe", name] if os.name == 'nt' else [name]
+    if os.name == 'nt':
+        targets = [f"{name}.exe"] if not name.endswith(".exe") else [name]
+    else:
+        targets = [name]
     
     # Default search locations
     candidates = []

@@ -15,16 +15,16 @@ class TestGoldenBytes(unittest.TestCase):
         with patch('fusion_hawking.runtime.SomeIpRuntime._load_config') as mock_load:
             mock_load.return_value = (
                 { 
-                    "sd": { "multicast_endpoint": "sd-mcast", "multicast_endpoint_v6": "sd-mcast-v6" },
+                    "sd": { "endpoint_v4": "sd-mcast", "endpoint_v6": "sd-mcast-v6" },
                     "providing": { 
-                        "dummy_v4": { "service_id": 0x1234, "endpoint": "unicast-ep-v4" },
-                        "dummy_v6": { "service_id": 0x1234, "endpoint": "unicast-ep-v6" } 
+                        "dummy_v4": { "service_id": 0x1234, "offer_on": { "lo": "unicast-ep-v4" } },
+                        "dummy_v6": { "service_id": 0x1234, "offer_on": { "lo": "unicast-ep-v6" } } 
                     }
                 }, 
                 { 
                     "lo": {
                         "name": "lo",
-                        "sd": { "endpoint": "sd-mcast", "endpoint_v6": "sd-mcast-v6" },
+                        "sd": { "endpoint_v4": "sd-mcast", "endpoint_v6": "sd-mcast-v6" },
                         "endpoints": {
                             "sd-mcast": { "ip": "224.0.0.1", "port": 30490, "version": 4, "interface": "lo" },
                             "sd-mcast-v6": { "ip": "ff02::1", "port": 30490, "version": 6, "interface": "lo" },
@@ -59,16 +59,16 @@ class TestGoldenBytes(unittest.TestCase):
         with patch('fusion_hawking.runtime.SomeIpRuntime._load_config') as mock_load:
             mock_load.return_value = (
                 { 
-                    "sd": { "multicast_endpoint": "sd-mcast", "multicast_endpoint_v6": "sd-mcast-v6" },
+                    "sd": { "endpoint_v4": "sd-mcast", "endpoint_v6": "sd-mcast-v6" },
                     "providing": { 
-                        "dummy_v4": { "service_id": 0x1234, "endpoint": "unicast-ep-v4" },
-                        "dummy_v6": { "service_id": 0x1234, "endpoint": "unicast-ep-v6" } 
+                        "dummy_v4": { "service_id": 0x1234, "offer_on": { "lo": "unicast-ep-v4" } },
+                        "dummy_v6": { "service_id": 0x1234, "offer_on": { "lo": "unicast-ep-v6" } } 
                     }
                 }, 
                 { 
                     "lo": {
                         "name": "lo",
-                        "sd": { "endpoint": "sd-mcast", "endpoint_v6": "sd-mcast-v6" },
+                        "sd": { "endpoint_v4": "sd-mcast", "endpoint_v6": "sd-mcast-v6" },
                         "endpoints": {
                             "sd-mcast": { "ip": "224.0.0.1", "port": 30490, "version": 4, "interface": "lo" },
                             "sd-mcast-v6": { "ip": "ff02::1", "port": 30490, "version": 6, "interface": "lo" },

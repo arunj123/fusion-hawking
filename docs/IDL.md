@@ -57,6 +57,8 @@ class Point:
 
 ## Defining Services
 
+Services are defined using Python decorators on classes and methods.
+
 ```python
 from typing import List
 
@@ -64,14 +66,15 @@ class Point:
     x: int
     y: int
 
+@service(id=0x1000)
 class MapService:
-    SERVICE_ID = 0x1000
-    
+    @method(id=1)
     def get_path(self, start: Point, end: Point) -> List[Point]:
         """Returns a path between two points."""
         pass
     
-    def add_waypoint(self, point: Point):
+    @method(id=2)
+    def add_waypoint(self, point: Point) -> None:
         """Adds a waypoint (fire-and-forget)."""
         pass
 ```
@@ -88,15 +91,16 @@ class MapService:
 ### Example
 
 ```python
+@service(id=0x2000)
 class ExampleService:
-    SERVICE_ID = 0x2000
-    
     # Synchronous - client waits for int result
+    @method(id=1)
     def compute(self, x: int) -> int:
         pass
     
     # Fire-and-forget - client returns immediately  
-    def notify(self, message: str):
+    @method(id=2)
+    def notify(self, message: str) -> None:
         pass
 ```
 
@@ -107,14 +111,15 @@ class ExampleService:
 Events enable the publish/subscribe pattern for notifications:
 
 ```python
+@service(id=0x3000)
 class RadarService:
-    SERVICE_ID = 0x3000
-    
     # Event definition
-    @event(id=0x8001, eventgroup_id=1)
-    on_detection: List[Detection]
+    @event(id=0x8001)
+    def on_detection(self, detections: List[Detection]):
+        pass
     
     # Methods still work alongside events
+    @method(id=1)
     def get_status(self) -> int:
         pass
 ```

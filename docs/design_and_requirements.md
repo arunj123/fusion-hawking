@@ -38,7 +38,7 @@ The schema separates **Control Plane** (SD Unicast) from **Data Plane** (Service
         "sd_multicast": { "ip": "239.255.0.1", "port": 30490, "protocol": "udp", "version": 4 }
       },
       "sd": {
-        "endpoint": "sd_multicast"
+        "endpoint_v4": "sd_multicast"
       }
     }
   },
@@ -159,11 +159,11 @@ An instance requires `RadarService` from the high-speed bus (`eth0`) and `CloudS
       "unicast_bind": { "eth0": "fusion_sd_ep", "wan0": "fusion_sd_wan_ep" },
       "required": {
         "RadarService": {
-          "service_id": 0x2000,
+          "service_id": "0x7001",
           "find_on": ["eth0"]
         },
         "CloudService": {
-          "service_id": 0x3000,
+          "service_id": "0x3000",
           "find_on": ["wan0"]
         }
       }
@@ -196,7 +196,7 @@ Two instances of the same application running on the same host and interface (`e
         "inst2_sd_ep": { "ip": "192.168.1.10", "port": 40002, ... },
         "inst2_data_ep": { "ip": "192.168.1.10", "port": 40003, ... }
       },
-      "sd": { "endpoint": "sd_mcast" }
+      "sd": { "endpoint_v4": "sd_mcast" }
     }
   },
   "instances": {

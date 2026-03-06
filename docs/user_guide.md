@@ -30,14 +30,15 @@ Create an interface file using Python dataclasses:
 
 ```python
 # examples/integrated_apps/interface.py
+@service(id=0x1001)
 class MathService:
-    SERVICE_ID = 0x1001
-    
+    @method(id=1)
     def add(self, a: int, b: int) -> int:
         """Synchronous RPC - waits for response."""
         pass
     
-    def log(self, message: str):
+    @method(id=2)
+    def log(self, message: str) -> None:
         """Fire-and-forget - returns immediately."""
         pass
 ```
@@ -71,26 +72,30 @@ Applications load a shared `config.json` that defines the network topology. The 
         "sd_mcast": { "ip": "224.0.0.1", "port": 30490, "version": 4 },
         "service_ep": { "ip": "127.0.0.1", "port": 30500, "version": 4, "protocol": "udp" }
       },
-      "sd": { "endpoint": "sd_mcast" }
+      "sd": { "endpoint_v4": "sd_mcast" }
     }
   },
   "instances": {
     "my_instance": {
-      "bind": {
-        "interface": "lo",
-        "endpoint": "service_ep"
+      "unicast_bind": {
+        "lo": "service_ep"
       },
       "providing": {
         "math-service": {
           "service_id": 4097,
           "instance_id": 1,
-          "endpoint": "service_ep"
+          "major_version": 1,
+          "offer_on": {
+            "lo": "service_ep"
+          }
         }
       },
       "required": {
         "string-service": { 
           "service_id": 4098,
-          "preferred_interface": "lo" 
+          "instance_id": 1,
+          "major_version": 1,
+          "find_on": ["lo"]
         }
       }
     }

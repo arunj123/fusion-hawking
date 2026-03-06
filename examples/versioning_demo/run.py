@@ -32,7 +32,7 @@ def generate_config():
                     "client_ep": { "ip": "127.0.0.1", "port": 0, "protocol": "udp", "version": 4 },
                     "sd_multicast": { "ip": "224.0.0.4", "port": 30695, "protocol": "udp", "version": 4 }
                 },
-                "sd": { "endpoint": "sd_multicast" }
+                "sd": { "endpoint_v4": "sd_multicast" }
             }
         },
         "instances": {

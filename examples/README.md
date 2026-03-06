@@ -79,8 +79,9 @@ The `config.json` defines the network topology per interface.
   },
   "instances": {
     "python_app": {
+      "unicast_bind": { "lo": "service_ep" },
       "providing": {
-        "math-service": { "service_id": 4660, "endpoint": "service_ep", "interfaces": ["lo"] }
+        "math-service": { "service_id": 4660, "instance_id": 1, "major_version": 1, "offer_on": { "lo": "service_ep" } }
       }
     }
   }

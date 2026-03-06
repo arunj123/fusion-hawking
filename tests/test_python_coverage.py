@@ -29,7 +29,7 @@ def generate_config(env, output_dir):
                     }
                 },
                 "sd": {
-                    "endpoint": "sd_multicast"
+                    "endpoint_v4": "sd_multicast"
                 }
             }
         },

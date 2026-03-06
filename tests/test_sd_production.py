@@ -17,8 +17,8 @@ class TestSdPacketProduction(unittest.TestCase):
         mock_load_config.return_value = (
             { 
                 "providing": { 
-                    "dummy_v4": { "service_id": 0x9999, "endpoint": "unicast-ep-v4", "interfaces": ["lo"] },
-                    "dummy_v6": { "service_id": 0x9999, "endpoint": "unicast-ep-v6", "interfaces": ["lo"] }
+                    "dummy_v4": { "service_id": 0x9999, "offer_on": { "lo": "unicast-ep-v4" } },
+                    "dummy_v6": { "service_id": 0x9999, "offer_on": { "lo": "unicast-ep-v6" } }
                 }
             }, 
             {
