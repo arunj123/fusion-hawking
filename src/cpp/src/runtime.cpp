@@ -110,6 +110,7 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
         
         // Scan for an interface specifically offered on
         if (ep_name.empty() && !svc.offer_on.empty()) {
+            primary_iface = svc.offer_on.begin()->first;
             ep_name = svc.offer_on.begin()->second;
         }
 
@@ -118,6 +119,13 @@ SomeIpRuntime::SomeIpRuntime(const std::string& config_path, const std::string& 
             this->port = ep.port;
             this->protocol = ep.protocol;
             primary_iface = ep.iface;
+        } else if (!ep_name.empty() && !primary_iface.empty() && config.interfaces.count(primary_iface)) {
+            const auto& iface = config.interfaces.at(primary_iface);
+            if (iface.endpoints.count(ep_name)) {
+                const auto& ep = iface.endpoints.at(ep_name);
+                this->port = ep.port;
+                this->protocol = ep.protocol;
+            }
         }
     } else if (!config.endpoint.empty() && config.endpoints.count(config.endpoint)) {
         const auto& ep = config.endpoints.at(config.endpoint);
