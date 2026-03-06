@@ -87,6 +87,12 @@ Applications load a shared `config.json` that defines the network topology. The 
           "major_version": 1,
           "offer_on": {
             "lo": "service_ep"
+          },
+          "eventgroups": {
+            "math-events": {
+              "eventgroup_id": 1,
+              "events": [32769]
+            }
           }
         }
       },
